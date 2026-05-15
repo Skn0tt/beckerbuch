@@ -6,5 +6,6 @@ export default [
     route("logout", "routes/logout.tsx"),
   ]),
   route("login", "routes/login.tsx"),
+  route("invite/:token", "routes/invite.$token.tsx"),
 ] satisfies RouteConfig;
 

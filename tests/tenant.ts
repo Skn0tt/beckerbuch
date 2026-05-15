@@ -1,7 +1,8 @@
 import argon2 from "argon2";
 import { randomUUID } from "node:crypto";
 import { db } from "./db";
-import { flatMembers, flats, users } from "../app/db/schema";
+import { flatMembers, flats, invites, users } from "../app/db/schema";
+import { generateInviteToken } from "../app/auth/invite";
 
 export const TEST_PASSWORD = "cookbook-test-password";
 
@@ -57,4 +58,26 @@ export async function createTenant(): Promise<Tenant> {
     user: { id: user.id, email, password: TEST_PASSWORD, displayName },
     flat: { id: flat.id, name: flatName },
   };
+}
+
+/**
+ * Insert an invite row directly. Used by tests to skip the (Phase 2.4)
+ * invite-creation UI and exercise the redemption flow in isolation.
+ */
+export async function seedInvite(opts: {
+  flatId: string;
+  createdBy: string;
+  used?: { byUserId: string };
+  expiresAt?: Date;
+}): Promise<{ token: string; url: string }> {
+  const token = generateInviteToken();
+  await db().insert(invites).values({
+    token,
+    flatId: opts.flatId,
+    createdBy: opts.createdBy,
+    usedBy: opts.used?.byUserId ?? null,
+    usedAt: opts.used ? new Date() : null,
+    expiresAt: opts.expiresAt ?? null,
+  });
+  return { token, url: `/invite/${token}` };
 }
