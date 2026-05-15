@@ -192,3 +192,47 @@ test("promote draft → in-stock lane → mark cooked → empty", async ({
   await expect(page.getByText(/In stock \(0\)/)).toBeVisible();
   await expect(page.getByText(/Nothing in stock yet/)).toBeVisible();
 });
+
+test("reorder draft entries with up/down buttons", async ({ page, flat }) => {
+  await login(page, flat.user);
+  // Create two distinct recipes.
+  await createPasta(page);
+  await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await page.getByRole("link", { name: "← Collection" }).click();
+
+  await page.getByRole("link", { name: "+ New recipe" }).click();
+  await page.getByLabel("Name").fill("Risotto");
+  await page.getByLabel("Ingredient 1 amount").fill("300");
+  await page.getByLabel("Ingredient 1 unit").fill("g");
+  await page.getByLabel("Ingredient 1 item").fill("rice");
+  await page.getByRole("button", { name: "Save recipe" }).click();
+  await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await page.getByRole("link", { name: "Open Kitchen" }).click();
+
+  const cardLinks = page
+    .getByRole("link", { name: /Pasta al limone|Risotto/ });
+
+  // Initial order: Pasta first, Risotto second.
+  await expect(cardLinks.nth(0)).toHaveText("Pasta al limone");
+  await expect(cardLinks.nth(1)).toHaveText("Risotto");
+
+  // First card's ↑ is disabled, last card's ↓ is disabled.
+  await expect(
+    page.getByRole("button", { name: "Move Pasta al limone up" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Move Risotto down" }),
+  ).toBeDisabled();
+
+  // Move Risotto up — should swap with Pasta.
+  await page.getByRole("button", { name: "Move Risotto up" }).click();
+  await expect(cardLinks.nth(0)).toHaveText("Risotto");
+  await expect(cardLinks.nth(1)).toHaveText("Pasta al limone");
+
+  // Reload — order persisted.
+  await page.reload();
+  const reloadedLinks = page
+    .getByRole("link", { name: /Pasta al limone|Risotto/ });
+  await expect(reloadedLinks.nth(0)).toHaveText("Risotto");
+  await expect(reloadedLinks.nth(1)).toHaveText("Pasta al limone");
+});

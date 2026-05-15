@@ -236,6 +236,75 @@ export async function action({ request }: Route.ActionArgs) {
     return { ok: true };
   }
 
+  if (intent === "move") {
+    if (!UUID_RE.test(instanceId)) return { error: "Invalid instance." };
+    const direction = String(form.get("direction") ?? "");
+    if (direction !== "up" && direction !== "down") {
+      return { error: "Invalid direction." };
+    }
+    // Look up the row to determine its lane.
+    const rows = await db()
+      .select({
+        id: recipeInstances.id,
+        position: recipeInstances.position,
+        finalisedAt: recipeInstances.finalisedAt,
+        cookedAt: recipeInstances.cookedAt,
+      })
+      .from(recipeInstances)
+      .where(
+        and(
+          eq(recipeInstances.id, instanceId),
+          eq(recipeInstances.flatId, ctx.flat.id),
+        ),
+      )
+      .limit(1);
+    if (rows.length === 0) return { error: "Not found." };
+    const row = rows[0];
+    if (row.cookedAt !== null) return { error: "Cooked entries can't move." };
+    const inDraft = row.finalisedAt === null;
+    const laneCond = inDraft
+      ? isNull(recipeInstances.finalisedAt)
+      : and(
+          isNotNull(recipeInstances.finalisedAt),
+          isNull(recipeInstances.cookedAt),
+        );
+
+    // Find adjacent neighbour by position.
+    const neighbours = await db()
+      .select({ id: recipeInstances.id, position: recipeInstances.position })
+      .from(recipeInstances)
+      .where(
+        and(
+          eq(recipeInstances.flatId, ctx.flat.id),
+          laneCond,
+          direction === "up"
+            ? sql`${recipeInstances.position} < ${row.position}`
+            : sql`${recipeInstances.position} > ${row.position}`,
+        ),
+      )
+      .orderBy(direction === "up" ? sql`position desc` : sql`position asc`)
+      .limit(1);
+    if (neighbours.length === 0) return { ok: true }; // already at edge
+    const neighbour = neighbours[0];
+
+    // 2-phase swap to avoid violating partial unique on position.
+    await db().transaction(async (tx) => {
+      await tx
+        .update(recipeInstances)
+        .set({ position: -1 - row.position })
+        .where(eq(recipeInstances.id, row.id));
+      await tx
+        .update(recipeInstances)
+        .set({ position: row.position })
+        .where(eq(recipeInstances.id, neighbour.id));
+      await tx
+        .update(recipeInstances)
+        .set({ position: neighbour.position })
+        .where(eq(recipeInstances.id, row.id));
+    });
+    return { ok: true };
+  }
+
   return { error: "Unknown action." };
 }
 
@@ -269,14 +338,65 @@ function formatIngredient(ing: DraftIngredient, factor: number): string {
 
 type DraftEntry = Awaited<ReturnType<typeof loader>>["draft"][number];
 
+function MoveButtons({
+  entry,
+  csrfToken,
+  isFirst,
+  isLast,
+}: {
+  entry: DraftEntry;
+  csrfToken: string;
+  isFirst: boolean;
+  isLast: boolean;
+}) {
+  return (
+    <Group gap={2} wrap="nowrap">
+      <Form method="post">
+        <CsrfField token={csrfToken} />
+        <input type="hidden" name="intent" value="move" />
+        <input type="hidden" name="instanceId" value={entry.id} />
+        <input type="hidden" name="direction" value="up" />
+        <ActionIcon
+          type="submit"
+          variant="default"
+          size="sm"
+          disabled={isFirst}
+          aria-label={`Move ${entry.recipeName} up`}
+        >
+          ↑
+        </ActionIcon>
+      </Form>
+      <Form method="post">
+        <CsrfField token={csrfToken} />
+        <input type="hidden" name="intent" value="move" />
+        <input type="hidden" name="instanceId" value={entry.id} />
+        <input type="hidden" name="direction" value="down" />
+        <ActionIcon
+          type="submit"
+          variant="default"
+          size="sm"
+          disabled={isLast}
+          aria-label={`Move ${entry.recipeName} down`}
+        >
+          ↓
+        </ActionIcon>
+      </Form>
+    </Group>
+  );
+}
+
 function DraftCard({
   entry,
   csrfToken,
   members,
+  isFirst,
+  isLast,
 }: {
   entry: DraftEntry;
   csrfToken: string;
   members: { id: string; displayName: string }[];
+  isFirst: boolean;
+  isLast: boolean;
 }) {
   const fetcher = useFetcher();
   // Optimistic target while a submit is in flight; otherwise use server value.
@@ -312,9 +432,17 @@ function DraftCard({
     <Card withBorder padding="sm">
       <Stack gap="xs">
         <Group justify="space-between" align="center" wrap="nowrap">
-          <Anchor href={`/recipes/${entry.recipeId}`} fw={500}>
-            {entry.recipeName}
-          </Anchor>
+          <Group gap="xs" wrap="nowrap">
+            <MoveButtons
+              entry={entry}
+              csrfToken={csrfToken}
+              isFirst={isFirst}
+              isLast={isLast}
+            />
+            <Anchor href={`/recipes/${entry.recipeId}`} fw={500}>
+              {entry.recipeName}
+            </Anchor>
+          </Group>
           <Group gap="xs" wrap="nowrap">
             <Group gap={4} wrap="nowrap">
               <ActionIcon
@@ -412,9 +540,13 @@ function DraftCard({
 function StockCard({
   entry,
   csrfToken,
+  isFirst,
+  isLast,
 }: {
   entry: DraftEntry;
   csrfToken: string;
+  isFirst: boolean;
+  isLast: boolean;
 }) {
   const factor =
     entry.baseQuantity > 0 ? entry.targetQuantity / entry.baseQuantity : 1;
@@ -422,9 +554,17 @@ function StockCard({
     <Card withBorder padding="sm">
       <Stack gap="xs">
         <Group justify="space-between" align="center" wrap="nowrap">
-          <Anchor href={`/recipes/${entry.recipeId}`} fw={500}>
-            {entry.recipeName}
-          </Anchor>
+          <Group gap="xs" wrap="nowrap">
+            <MoveButtons
+              entry={entry}
+              csrfToken={csrfToken}
+              isFirst={isFirst}
+              isLast={isLast}
+            />
+            <Anchor href={`/recipes/${entry.recipeId}`} fw={500}>
+              {entry.recipeName}
+            </Anchor>
+          </Group>
           <Group gap="xs" wrap="nowrap">
             <Text size="sm" c="dimmed">
               {entry.targetQuantity} portions
@@ -502,12 +642,14 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
             </Text>
           ) : (
             <Stack gap="xs">
-              {draft.map((d) => (
+              {draft.map((d, i) => (
                 <DraftCard
                   key={d.id}
                   entry={d}
                   csrfToken={csrfToken}
                   members={members}
+                  isFirst={i === 0}
+                  isLast={i === draft.length - 1}
                 />
               ))}
             </Stack>
@@ -518,8 +660,14 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
           </Text>
         ) : (
           <Stack gap="xs">
-            {stock.map((s) => (
-              <StockCard key={s.id} entry={s} csrfToken={csrfToken} />
+            {stock.map((s, i) => (
+              <StockCard
+                key={s.id}
+                entry={s}
+                csrfToken={csrfToken}
+                isFirst={i === 0}
+                isLast={i === stock.length - 1}
+              />
             ))}
           </Stack>
         )}
