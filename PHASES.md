@@ -27,7 +27,7 @@ as Phase 1.10.
 (locked in TECH.md, with rewrite pending in 1.10)
 
 - React Router v7 + TypeScript, SSR
-- Mantine (`@mantine/core`, `@mantine/form`, `@mantine/notifications`, `@mantine/dnd`)
+- Mantine (`@mantine/core`, `@mantine/form`, `@mantine/notifications`, `@mantine/dropzone`); drag-and-drop via `@hello-pangea/dnd` (added in Phase 4 — `@mantine/dnd` does not exist)
 - Postgres 16 — **launched by Testcontainers in Playwright globalSetup** locally and in CI
 - Drizzle + `pg`
 - argon2id + signed cookie sessions, no expiry
@@ -45,7 +45,7 @@ asserts the empty-state. Green means ready for Phase 2.
 
 - `npm create react-router@latest .` (TypeScript, no template extras)
 - Add Mantine, Drizzle + drizzle-kit, `pg`, `argon2`, `zod`,
-  `@netlify/plugin-react-router`
+  `@netlify/vite-plugin-react-router`
 - `app/root.tsx` wraps in `<MantineProvider>` + `<Notifications>`
 - Strict TS, ESLint, Prettier
 
@@ -64,7 +64,7 @@ asserts the empty-state. Green means ready for Phase 2.
 - Init script enables `pgcrypto`, `pg_trgm`, `unaccent`
 - Wait for ready → set `process.env.DATABASE_URL`
 - Run `drizzle-kit push` (apply schema)
-- Save the container handle for `global-teardown.ts`
+- Return a teardown function from `globalSetup` (Playwright supports this — no separate `global-teardown.ts` file needed)
 - **No browser launch, no auth dance.** Per-test fixtures handle
   user seeding and login.
 - **Reuse mode**: `TESTCONTAINERS_REUSE_ENABLE=true` honoured for
@@ -79,22 +79,26 @@ asserts the empty-state. Green means ready for Phase 2.
 
 ### 1.5 Test fixtures + `login()` helper
 
-`tests/fixtures.ts`, `tests/seed.ts`, `tests/login.ts`.
+`tests/fixtures.ts`, `tests/tenant.ts`, `tests/login.ts`.
 
 - No `/_test/*` routes. The test process owns its own `pg` pool
   and imports `app/db/schema.ts` directly.
-- Auto-fixture `resetDb`:
-  1. `TRUNCATE … CASCADE` of every app table
-  2. Insert one default flat + at least one default user
-     (`demo@cookbook.local` / password `cookbook`). Returns the
-     IDs.
+- `tenant` fixture (opt-in via `({ tenant }) => …`):
+  - Calls `createTenant()` which inserts a fresh user (random
+    `test-<uuid>@cookbook.test`, password `cookbook`) + a fresh flat
+    + the membership row, and returns `{ user, flat }`.
+  - Argon2 hashes the shared test password once at module load and
+    reuses the resulting string across tenants (the salt is embedded).
+  - We rely on multi-tenancy for isolation between tests rather than
+    a global TRUNCATE — much simpler, naturally parallel-safe.
 - Helper `seed(payload)`: typed Drizzle inserts for additional
-  users / recipes / ingredients / instances. Returns IDs.
-- Helper `login(page, { email, password } = defaultUser)`:
+  recipes / ingredients / instances scoped to a tenant. Returns IDs.
+  (Added as needed in later phases; not required for Phase 1.)
+- Helper `login(page, user)`:
   ```ts
   await page.goto('/login');
-  await page.fill('[name=email]', email);
-  await page.fill('[name=password]', password);
+  await page.fill('[name=email]', user.email);
+  await page.fill('[name=password]', user.password);
   await page.click('button[type=submit]');
   await page.waitForURL('/');
   ```
@@ -104,26 +108,25 @@ asserts the empty-state. Green means ready for Phase 2.
 
 - `playwright.config.ts`:
   - `globalSetup: ./tests/global-setup.ts`
-  - `globalTeardown: ./tests/global-teardown.ts`
+  - (no separate `globalTeardown` — `globalSetup` returns its own teardown function)
   - `webServer`: `netlify dev` with `.env.test` loaded;
     `DATABASE_URL` already in `process.env` from globalSetup
   - `baseURL: http://localhost:8888`
   - **No `storageState`** — every test starts fresh
   - `fullyParallel: false` for v1 (single shared container)
 - `tests/smoke.spec.ts`:
-  1. (auto) `resetDb` → seed user/flat exist
+  1. (opt-in) `tenant` fixture → fresh user/flat exist
   2. `await login(page)`
   3. visit `/`
   4. expect "No recipes yet" empty state
 
-### 1.7 Login spec
+### 1.7 Login spec — **deferred to Phase 2**
 
-`tests/login.spec.ts` — a regular spec that drives the form
-directly (doesn't use the `login()` helper, since it's testing the
-form itself). Covers happy path, wrong password,
-redirect-after-login. Login is also exercised at the top of every
-other spec via `login(page)`, so any regression breaks the whole
-run loudly.
+`tests/login.spec.ts` needs the real `/login` route, which is built
+in Phase 2 (auth). Phase 1 ships the `login()` helper and `tenant.ts`
+so Phase 2 can land the spec immediately alongside the route. The
+Phase 1 smoke spec asserts only the public empty-state rather than
+logging in.
 
 ### 1.8 npm scripts
 
@@ -225,7 +228,7 @@ all covered by E2E.
 - Add to draft from recipe view
 - Target-quantity stepper (live ingredient scaling preview)
 - Designated cook picker
-- Reorder via `@mantine/dnd` in both lanes
+- Reorder via `@hello-pangea/dnd` in both lanes
 - Mark cooked / remove from stock
 - E2Es: add to draft, scale qty, reorder, cook, remove
 
@@ -272,10 +275,11 @@ all covered by E2E.
   - `npm run test:ui` — time-travel UI
   - `await page.pause()` in any spec — full app loaded & seeded,
     container alive; click around freely
-- **DB reset between specs** = `TRUNCATE … CASCADE` + re-insert
-  the default flat/user. Container is reused across specs in a
-  single `npm test` run.
-- **`fullyParallel: false`** in v1 is a deliberate simplification:
-  ~30-50 specs, one shared container. If runtime ever bites,
-  switch to a container-per-worker (Testcontainers makes this
-  trivial).
+- **Test isolation** = a fresh tenant (user + flat) per test via
+  the `tenant` fixture. No global TRUNCATE; multi-tenancy gives us
+  isolation for free. Container is reused across specs in a single
+  `npm test` run.
+- **`fullyParallel: true`** from the start — per-test tenants
+  remove the only source of shared mutable state, so parallelism
+  is safe by construction. Playwright picks the worker count
+  automatically.

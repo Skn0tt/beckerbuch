@@ -1,0 +1,17 @@
+.DS_Store
+.env
+/node_modules/
+
+# React Router
+/.react-router/
+/build/
+
+# Netlify
+/.netlify/
+
+# Playwright
+/playwright-report/
+/test-results/
+
+# Local Netlify folder
+.netlify

@@ -15,8 +15,8 @@
 | Concern              | Choice                                                                 |
 | -------------------- | ---------------------------------------------------------------------- |
 | Framework            | **React Router v7** (Remix successor), TypeScript, SSR                 |
-| Hosting              | **Netlify** (`@netlify/plugin-react-router`)                           |
-| Styling / components | **Mantine** (component library + hooks: `@mantine/core`, `@mantine/form`, `@mantine/notifications`, `@mantine/dnd`) |
+| Hosting              | **Netlify** (`@netlify/vite-plugin-react-router`)                      |
+| Styling / components | **Mantine** (component library + hooks: `@mantine/core`, `@mantine/form`, `@mantine/notifications`, `@mantine/dropzone`); drag-and-drop via `@hello-pangea/dnd` |
 | Database             | **Neon Postgres** (Netlify DB) in production; **Testcontainers** (`postgres:16`) in tests. Pinned to Postgres 16. |
 | ORM / migrations     | **Drizzle ORM** + `drizzle-kit`                                        |
 | DB driver            | **`pg`** (standard node-postgres). *Not* `@neondatabase/serverless`    |
@@ -528,16 +528,23 @@ Specifically:
 
 Two Playwright fixtures live in `tests/fixtures.ts`:
 
-- **`resetDb` (auto)** — runs before every test. `TRUNCATE … CASCADE`
-  over all app tables, then re-inserts a default flat + a default
-  user (`demo@cookbook.local` / `cookbook`). Returns the IDs.
-- **`seed(payload)`** — typed Drizzle inserts for additional users,
-  recipes, ingredients, and recipe_instances. Returns IDs the spec
-  can use.
+- **`tenant` (opt-in)** — runs when a spec asks for it via
+  `({ tenant }) => …`. Calls `createTenant()` (in `tests/tenant.ts`),
+  which inserts a fresh user (`test-<uuid>@cookbook.test` / password
+  `cookbook`) + a fresh flat + the membership row, and returns
+  `{ user, flat }`. The argon2 hash for the shared test password is
+  computed once at module load and reused across all tenants.
+- **`seed(payload)`** — typed Drizzle inserts for additional
+  recipes, ingredients, and recipe_instances scoped to a tenant.
+  Returns IDs the spec can use. (Added as needed in later phases.)
 
-`fullyParallel: false` in v1 — one shared container, specs run
-serially. ~30-50 specs is fast enough; if it ever bites, switch to
-container-per-worker (Testcontainers makes this trivial).
+We rely on **multi-tenancy** for test isolation rather than a global
+TRUNCATE: each test gets its own user + flat, so tests can't see
+each other's data through the app. No reset step is needed.
+
+`fullyParallel: true` from the start — per-test tenants remove the
+only source of shared mutable state, so parallelism is safe by
+construction. Playwright picks the worker count automatically.
 
 ### 10.4 Coverage targets for v1
 
@@ -589,10 +596,10 @@ That's it. `npm test` is `playwright test`, which:
 2. Starts the web server (`netlify dev`) via Playwright's `webServer`
    config — same React Router app, same Function runtime as
    production, pointed at the container.
-3. Runs the suite. Each test gets a fresh DB via the `resetDb`
-   fixture (§10.3) and logs in via the real form using the `login()`
-   helper.
-4. Runs `tests/global-teardown.ts` — stops the container.
+3. Runs the suite. Each test that asks for a tenant gets a fresh
+   user/flat via the `tenant` fixture (§10.3) and logs in via the
+   real form using the `login()` helper.
+4. The teardown function returned by `globalSetup` stops the container (no separate `global-teardown.ts` file).
 
 Local Postgres ↔ production parity is enforced the same way it is
 in CI (§11.2): same `pg` driver, same extensions, pinned major.
@@ -648,8 +655,8 @@ Only four:
 | `npm run build`     | Production build (used by Netlify).                     |
 
 No `db:push` (globalSetup applies the schema), no `db:reset`
-(`resetDb` fixture handles it per-test), no `dev:*` (no dev mode),
-no separate `typecheck` (folded into `lint`).
+(per-test tenants make a global reset unnecessary), no `dev:*` (no
+dev mode), no separate `typecheck` (folded into `lint`).
 
 For Playwright variants (`--debug`, `--ui`, `--headed`), invoke the
 CLI directly — see §11.1.
@@ -671,7 +678,7 @@ CLI directly — see §11.1.
 - Netlify site connected to the GitHub repo. Production branch:
   `main`. Preview deploys per PR.
 - **Build:** `npm run build` (React Router → `build/` server bundle +
-  `build/client/` assets). The `@netlify/plugin-react-router`
+  `build/client/` assets). The `@netlify/vite-plugin-react-router`
   Netlify plugin wraps the server bundle as a Function automatically.
 - **Migrations:** a `npm run db:migrate` step in the Netlify build
   command applies pending Drizzle migrations against the production

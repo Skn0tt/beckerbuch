@@ -1,0 +1,52 @@
+{
+  "name": "kochbuch",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "db:generate": "drizzle-kit generate",
+    "lint": "eslint . && react-router typegen && tsc --noEmit",
+    "build": "react-router build"
+  },
+  "dependencies": {
+    "@mantine/core": "^9.2.1",
+    "@mantine/dropzone": "^9.2.1",
+    "@mantine/form": "^9.2.1",
+    "@mantine/hooks": "^9.2.1",
+    "@mantine/notifications": "^9.2.1",
+    "@react-router/node": "7.15.1",
+    "@react-router/serve": "7.15.1",
+    "argon2": "^0.44.0",
+    "drizzle-orm": "^0.45.2",
+    "isbot": "^5.1.36",
+    "pg": "^8.20.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-router": "7.15.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@netlify/vite-plugin-react-router": "^3.1.1",
+    "@playwright/test": "^1.60.0",
+    "@react-router/dev": "7.15.1",
+    "@testcontainers/postgresql": "^11.14.0",
+    "@types/node": "^22",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "drizzle-kit": "^0.31.10",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "postcss": "^8.5.14",
+    "postcss-preset-mantine": "^1.18.0",
+    "postcss-simple-vars": "^7.0.1",
+    "prettier": "^3.8.3",
+    "testcontainers": "^11.14.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.59.3",
+    "vite": "^8.0.3"
+  }
+}
