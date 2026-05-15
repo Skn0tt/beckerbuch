@@ -9,6 +9,7 @@ import { requireCsrf } from "../auth/csrf";
 import { isSameOrigin } from "../auth/origin";
 import { RecipeForm, parseRecipeFields } from "../components/recipe-form";
 import { deletePhoto, storePhoto, validatePhoto } from "../blobs";
+import { updateSearchVector } from "../search";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -94,6 +95,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         item: p.item,
       })),
     );
+    await updateSearchVector(tx, recipe.id);
   });
 
   if (oldKeyToDelete) await deletePhoto(oldKeyToDelete);

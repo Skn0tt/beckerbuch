@@ -9,6 +9,7 @@ import { requireCsrf } from "../auth/csrf";
 import { isSameOrigin } from "../auth/origin";
 import { RecipeForm, parseRecipeFields } from "../components/recipe-form";
 import { storePhoto, validatePhoto } from "../blobs";
+import { updateSearchVector } from "../search";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requireFlatMember(request);
@@ -48,6 +49,7 @@ export async function action({ request }: Route.ActionArgs) {
         item: p.item,
       })),
     );
+    await updateSearchVector(tx, row.id);
     return row.id;
   });
 

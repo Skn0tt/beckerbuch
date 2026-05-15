@@ -199,3 +199,62 @@ test("rejects non-image upload with form error", async ({ page, flat }) => {
 
   await expect(page.getByRole("alert")).toContainText(/JPEG, PNG, or WebP/i);
 });
+
+async function createRecipe(
+  page: import("@playwright/test").Page,
+  opts: { name: string; ingredient?: string; sourceUrl?: string },
+) {
+  await page.getByRole("link", { name: "+ New recipe" }).click();
+  await page.getByLabel("Name").fill(opts.name);
+  await page.getByLabel("Ingredient 1 item").fill(opts.ingredient ?? "water");
+  if (opts.sourceUrl) {
+    await page.getByLabel("Source URL").fill(opts.sourceUrl);
+  }
+  await page.getByRole("button", { name: "Save recipe" }).click();
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
+  await page.getByRole("link", { name: "← Collection" }).click();
+  await expect(page).toHaveURL(/\/(\?.*)?$/);
+}
+
+test("search filters by name + ingredient + source host", async ({ page, flat }) => {
+  await login(page, flat.user);
+
+  await createRecipe(page, { name: "Pasta al limone", ingredient: "spaghetti" });
+  await createRecipe(page, { name: "Chicken curry", ingredient: "chicken" });
+  await createRecipe(page, {
+    name: "Sourdough loaf",
+    ingredient: "flour",
+    sourceUrl: "https://kingarthur.example.com/loaf",
+  });
+
+  const search = page.getByRole("searchbox", { name: "Search recipes" });
+  // Recipe cards link to /recipes/<uuid>; the "+ New recipe" button links to
+  // /recipes/new, which we exclude.
+  const cards = page.locator(
+    'a[href^="/recipes/"]:not([href="/recipes/new"])',
+  );
+
+  // Match by name (with prefix).
+  await search.fill("past");
+  await search.press("Enter");
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText("Pasta al limone");
+
+  // Match by ingredient.
+  await search.fill("chicken");
+  await search.press("Enter");
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText("Chicken curry");
+
+  // Match by source host.
+  await search.fill("kingarthur");
+  await search.press("Enter");
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText("Sourdough loaf");
+
+  // No match → friendly empty state.
+  await search.fill("nothingmatchesthis");
+  await search.press("Enter");
+  await expect(cards).toHaveCount(0);
+  await expect(page.getByText(/No recipes match/)).toBeVisible();
+});
