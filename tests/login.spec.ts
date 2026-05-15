@@ -4,9 +4,7 @@ import { login } from "./login";
 test("happy path: log in lands on home", async ({ page, flat }) => {
   await login(page, flat.user);
   await expect(page).toHaveURL("/");
-  await expect(
-    page.getByRole("button", { name: `Sign out ${flat.user.displayName}` }),
-  ).toBeVisible();
+  await expect(page.getByTestId("current-user")).toHaveText(flat.user.displayName);
 });
 
 test("wrong password shows error and stays on /login", async ({ page, flat }) => {
@@ -46,9 +44,7 @@ test("open-redirect via ?redirect= is rejected", async ({ page, flat }) => {
 
 test("logout returns to /login and home is gated again", async ({ page, flat }) => {
   await login(page, flat.user);
-  await page
-    .getByRole("button", { name: `Sign out ${flat.user.displayName}` })
-    .click();
+  await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login/);
   await page.goto("/");
   await expect(page).toHaveURL(/\/login\?redirect=/);

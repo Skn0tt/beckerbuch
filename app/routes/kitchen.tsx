@@ -12,7 +12,7 @@ import {
   Title,
 } from "@mantine/core";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { Form, useFetcher, useNavigate, useRouteLoaderData } from "react-router";
+import { Form, useFetcher, useNavigate } from "react-router";
 import type { Route } from "./+types/kitchen";
 import { db } from "../db/client";
 import { ingredients, recipeInstances, recipes, flatMembers, users } from "../db/schema";
@@ -21,7 +21,6 @@ import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { csrfFieldName } from "../auth/csrf-shared";
 import { CsrfField } from "../auth/csrf-field";
 import { isSameOrigin } from "../auth/origin";
-import type { loader as appLoader } from "./_app";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -598,31 +597,10 @@ function StockCard({
 export default function Kitchen({ loaderData }: Route.ComponentProps) {
   const { lane, draft, stock, csrfToken, members } = loaderData;
   const navigate = useNavigate();
-  const data = useRouteLoaderData("routes/_app") as
-    | Awaited<ReturnType<typeof appLoader>>
-    | undefined;
   return (
-    <Container size="sm" py="xl">
+    <Container size="sm" py="md">
       <Stack gap="md">
-        <Group justify="space-between" align="center">
-          <Title order={1}>Kitchen</Title>
-          {data && (
-            <Group gap="xs">
-              <Anchor href="/" size="sm">
-                Collection
-              </Anchor>
-              <Anchor href="/flat/settings" size="sm">
-                Flat settings
-              </Anchor>
-              <Form method="post" action="/logout">
-                <CsrfField token={data.csrfToken} />
-                <Button type="submit" variant="subtle" size="xs">
-                  Sign out {data.user.displayName}
-                </Button>
-              </Form>
-            </Group>
-          )}
-        </Group>
+        <Title order={1}>Kitchen</Title>
 
         <SegmentedControl
           value={lane}

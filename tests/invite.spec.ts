@@ -30,7 +30,7 @@ test("happy path: redeem invite → land on home as new member", async ({
   });
 
   await expect(page).toHaveURL("/");
-  await expect(page.getByRole("button", { name: `Sign out ${newName}` })).toBeVisible();
+  await expect(page.getByTestId("current-user")).toHaveText(newName);
 });
 
 test("invalid token → 404", async ({ page }) => {

@@ -1,5 +1,4 @@
 import {
-  Anchor,
   Button,
   Card,
   Container,
@@ -9,11 +8,9 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { Form, Link, useRouteLoaderData } from "react-router";
+import { Form, Link } from "react-router";
 import { and, eq, desc, sql } from "drizzle-orm";
 import type { Route } from "./+types/home";
-import type { loader as appLoader } from "./_app";
-import { CsrfField } from "../auth/csrf-field";
 import { db } from "../db/client";
 import { recipes } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
@@ -66,32 +63,16 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-  const data = useRouteLoaderData("routes/_app") as
-    | Awaited<ReturnType<typeof appLoader>>
-    | undefined;
   const { recipes: list, q } = loaderData;
 
   return (
-    <Container size="sm" py="xl">
+    <Container size="sm" py="md">
       <Stack gap="md">
         <Group justify="space-between" align="center">
-          <Title order={1}>cookbook</Title>
-          {data && (
-            <Group gap="xs">
-              <Anchor href="/kitchen" size="sm">
-                Kitchen
-              </Anchor>
-              <Anchor href="/flat/settings" size="sm">
-                Flat settings
-              </Anchor>
-              <Form method="post" action="/logout">
-                <CsrfField token={data.csrfToken} />
-                <Button type="submit" variant="subtle" size="xs">
-                  Sign out {data.user.displayName}
-                </Button>
-              </Form>
-            </Group>
-          )}
+          <Title order={1}>Recipes</Title>
+          <Button component={Link} to="/recipes/new" variant="default" size="sm">
+            + New recipe
+          </Button>
         </Group>
 
         <Form method="get" role="search">
@@ -124,12 +105,6 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             ))}
           </Stack>
         )}
-
-        <Group>
-          <Button component={Link} to="/recipes/new" variant="default">
-            + New recipe
-          </Button>
-        </Group>
       </Stack>
     </Container>
   );
