@@ -12,6 +12,7 @@
 # Playwright
 /playwright-report/
 /test-results/
+/.playwright-cli/
 
 # Local Netlify folder
 .netlify
