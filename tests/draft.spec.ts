@@ -126,12 +126,7 @@ test("designated cook picker — assign self, then unassign", async ({ page, fla
 
   await expect(setUnassigned).toHaveAttribute("aria-pressed", "true");
 
-  await Promise.all([
-    page.waitForResponse(
-      (r) => r.url().includes("/kitchen") && r.request().method() === "POST",
-    ),
-    setSelf.click(),
-  ]);
+  await setSelf.click();
   await expect(setSelf).toHaveAttribute("aria-pressed", "true");
 
   // Reload — choice persisted.
@@ -141,12 +136,7 @@ test("designated cook picker — assign self, then unassign", async ({ page, fla
   ).toHaveAttribute("aria-pressed", "true");
 
   // Unassign.
-  await Promise.all([
-    page.waitForResponse(
-      (r) => r.url().includes("/kitchen") && r.request().method() === "POST",
-    ),
-    page.getByLabel("Set cook to unassigned for Pasta al limone").click(),
-  ]);
+  await page.getByLabel("Set cook to unassigned for Pasta al limone").click();
   await expect(
     page.getByLabel("Set cook to unassigned for Pasta al limone"),
   ).toHaveAttribute("aria-pressed", "true");

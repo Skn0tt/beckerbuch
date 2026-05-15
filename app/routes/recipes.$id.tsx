@@ -11,7 +11,7 @@ import {
   Title,
 } from "@mantine/core";
 import { and, eq, asc, count, isNull, max, sql } from "drizzle-orm";
-import { Form, data, redirect, useActionData } from "react-router";
+import { Form, data, Link, redirect, useActionData } from "react-router";
 import type { Route } from "./+types/recipes.$id";
 import { db } from "../db/client";
 import { ingredients, recipeInstances, recipes } from "../db/schema";
@@ -130,11 +130,11 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
     <Container size="sm" py="xl">
       <Stack gap="md">
         <Group justify="space-between" align="center">
-          <Anchor href="/">← Collection</Anchor>
+          <Anchor component={Link} to="/">← Collection</Anchor>
           <Group gap="xs">
             <Button
-              component="a"
-              href={`/recipes/${recipe.id}/edit`}
+              component={Link}
+              to={`/recipes/${recipe.id}/edit`}
               variant="default"
               size="xs"
             >
@@ -163,7 +163,7 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
         )}
         {actionData?.added && (
           <Alert color="green" role="status">
-            Added to draft. <Anchor href="/kitchen">Open Kitchen →</Anchor>
+            Added to draft. <Anchor component={Link} to="/kitchen">Open Kitchen →</Anchor>
           </Alert>
         )}
 

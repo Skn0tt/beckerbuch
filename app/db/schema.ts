@@ -111,6 +111,10 @@ export const recipes = pgTable(
     index("recipes_flat_id_idx").on(t.flatId),
     index("recipes_fts").using("gin", t.searchVector),
     index("recipes_name_trgm").using("gin", sql`${t.name} gin_trgm_ops`),
+    check(
+      "recipes_base_quantity_range",
+      sql`${t.baseQuantity} >= 1 and ${t.baseQuantity} <= 1000`,
+    ),
   ],
 );
 
@@ -156,6 +160,12 @@ export const recipeInstances = pgTable(
     check(
       "recipe_instances_cooked_requires_finalised",
       sql`${t.cookedAt} is null or ${t.finalisedAt} is not null`,
+    ),
+    // NOTE: no `position >= 0` check — the move/reorder logic uses
+    // a transient negative sentinel inside its swap transaction.
+    check(
+      "recipe_instances_target_quantity_range",
+      sql`${t.targetQuantity} >= 1 and ${t.targetQuantity} <= 1000`,
     ),
     uniqueIndex("recipe_instances_draft_position")
       .on(t.flatId, t.position)

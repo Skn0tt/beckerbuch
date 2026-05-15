@@ -1,0 +1,3 @@
+ALTER TABLE "invites" ALTER COLUMN "created_by" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "recipe_instances" ADD CONSTRAINT "recipe_instances_target_quantity_range" CHECK ("recipe_instances"."target_quantity" >= 1 and "recipe_instances"."target_quantity" <= 1000);--> statement-breakpoint
+ALTER TABLE "recipes" ADD CONSTRAINT "recipes_base_quantity_range" CHECK ("recipes"."base_quantity" >= 1 and "recipes"."base_quantity" <= 1000);

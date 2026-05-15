@@ -3,7 +3,6 @@ import {
   Box,
   Burger,
   Button,
-  Container,
   Group,
   NavLink,
   Text,
@@ -129,9 +128,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
       </AppShell.Footer>
 
       <AppShell.Main>
-        <Container size="md">
-          <Outlet />
-        </Container>
+        <Outlet />
       </AppShell.Main>
     </AppShell>
   );

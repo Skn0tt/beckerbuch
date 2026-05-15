@@ -1,6 +1,6 @@
 import { Anchor, Container, Group, Stack, Title } from "@mantine/core";
 import { eq, asc } from "drizzle-orm";
-import { data, redirect, useActionData } from "react-router";
+import { data, Link, redirect, useActionData } from "react-router";
 import type { Route } from "./+types/recipes.$id.edit";
 import { db } from "../db/client";
 import { ingredients, recipes } from "../db/schema";
@@ -111,7 +111,7 @@ export default function EditRecipe({ loaderData }: Route.ComponentProps) {
       <Stack gap="md">
         <Group justify="space-between" align="center">
           <Title order={2}>Edit recipe</Title>
-          <Anchor href={`/recipes/${recipe.id}`}>← Cancel</Anchor>
+          <Anchor component={Link} to={`/recipes/${recipe.id}`}>← Cancel</Anchor>
         </Group>
         <RecipeForm
           csrfToken={csrfToken}

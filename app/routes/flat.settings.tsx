@@ -11,13 +11,14 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { Form, redirect } from "react-router";
+import { Form, Link, redirect } from "react-router";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import type { Route } from "./+types/flat.settings";
 import { db } from "../db/client";
 import { flatMembers, invites, users } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
 import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
+import { isSameOrigin } from "../auth/origin";
 import { CsrfField } from "../auth/csrf-field";
 import { generateInviteToken } from "../auth/invite";
 
@@ -69,6 +70,9 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
+  if (!isSameOrigin(request)) {
+    throw new Response("Bad origin.", { status: 403 });
+  }
   const ctx = await requireFlatMember(request);
   await requireCsrf(request, ctx.session.id);
 
@@ -111,7 +115,7 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
       <Stack gap="lg">
         <Group justify="space-between" align="center">
           <Title order={2}>Flat: {flat.name}</Title>
-          <Anchor href="/">← Back</Anchor>
+          <Anchor component={Link} to="/">← Back</Anchor>
         </Group>
 
         <section>

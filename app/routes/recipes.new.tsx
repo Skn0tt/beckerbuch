@@ -1,6 +1,6 @@
 import { Anchor, Container, Group, Stack, Title } from "@mantine/core";
 import { eq } from "drizzle-orm";
-import { redirect, useActionData } from "react-router";
+import { Link, redirect, useActionData } from "react-router";
 import type { Route } from "./+types/recipes.new";
 import { db } from "../db/client";
 import { ingredients, recipes } from "../db/schema";
@@ -71,7 +71,7 @@ export default function NewRecipe({ loaderData }: Route.ComponentProps) {
       <Stack gap="md">
         <Group justify="space-between" align="center">
           <Title order={2}>New recipe</Title>
-          <Anchor href="/">← Cancel</Anchor>
+          <Anchor component={Link} to="/">← Cancel</Anchor>
         </Group>
         <RecipeForm
           csrfToken={loaderData.csrfToken}

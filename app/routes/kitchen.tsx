@@ -12,7 +12,7 @@ import {
   Title,
 } from "@mantine/core";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { Form, useFetcher, useNavigate } from "react-router";
+import { Form, Link, useFetcher, useNavigate } from "react-router";
 import type { Route } from "./+types/kitchen";
 import { db } from "../db/client";
 import { ingredients, recipeInstances, recipes, flatMembers, users } from "../db/schema";
@@ -144,8 +144,8 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "update-quantity") {
     if (!UUID_RE.test(instanceId)) return { error: "Invalid instance." };
     const target = Number.parseInt(String(form.get("targetQuantity") ?? ""), 10);
-    if (!Number.isFinite(target) || target < 1) {
-      return { error: "Portions must be at least 1." };
+    if (!Number.isFinite(target) || target < 1 || target > 1000) {
+      return { error: "Portions must be between 1 and 1000." };
     }
     await db()
       .update(recipeInstances)
@@ -193,35 +193,41 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "promote-to-stock") {
     // Stub for Phase 5 finalise: promote a single draft instance to in-stock.
     if (!UUID_RE.test(instanceId)) return { error: "Invalid instance." };
-    const nextPosRow = await db()
-      .select({
-        next: sql<number>`coalesce(max(${recipeInstances.position}), -1) + 1`,
-      })
-      .from(recipeInstances)
-      .where(
-        and(
-          eq(recipeInstances.flatId, ctx.flat.id),
-          isNotNull(recipeInstances.finalisedAt),
-          isNull(recipeInstances.cookedAt),
-        ),
-      );
-    const nextPos = Number(nextPosRow[0]?.next ?? 0);
-    await db()
-      .update(recipeInstances)
-      .set({ finalisedAt: new Date(), position: nextPos })
-      .where(
-        and(
-          eq(recipeInstances.id, instanceId),
-          eq(recipeInstances.flatId, ctx.flat.id),
-          isNull(recipeInstances.finalisedAt),
-        ),
-      );
+    const updated = await db().transaction(async (tx) => {
+      const nextPosRow = await tx
+        .select({
+          next: sql<number>`coalesce(max(${recipeInstances.position}), -1) + 1`,
+        })
+        .from(recipeInstances)
+        .where(
+          and(
+            eq(recipeInstances.flatId, ctx.flat.id),
+            isNotNull(recipeInstances.finalisedAt),
+            isNull(recipeInstances.cookedAt),
+          ),
+        );
+      const nextPos = Number(nextPosRow[0]?.next ?? 0);
+      return tx
+        .update(recipeInstances)
+        .set({ finalisedAt: new Date(), position: nextPos })
+        .where(
+          and(
+            eq(recipeInstances.id, instanceId),
+            eq(recipeInstances.flatId, ctx.flat.id),
+            isNull(recipeInstances.finalisedAt),
+          ),
+        )
+        .returning({ id: recipeInstances.id });
+    });
+    if (updated.length === 0) {
+      return { error: "Already promoted or not in your draft." };
+    }
     return { ok: true };
   }
 
   if (intent === "mark-cooked") {
     if (!UUID_RE.test(instanceId)) return { error: "Invalid instance." };
-    await db()
+    const updated = await db()
       .update(recipeInstances)
       .set({ cookedAt: new Date(), cookedBy: ctx.user.id })
       .where(
@@ -231,7 +237,11 @@ export async function action({ request }: Route.ActionArgs) {
           isNotNull(recipeInstances.finalisedAt),
           isNull(recipeInstances.cookedAt),
         ),
-      );
+      )
+      .returning({ id: recipeInstances.id });
+    if (updated.length === 0) {
+      return { error: "Already cooked or not in stock." };
+    }
     return { ok: true };
   }
 
@@ -418,6 +428,19 @@ function DraftCard({
   };
 
   const cookFetcher = useFetcher();
+  // Optimistic cook selection while a submit is in flight; otherwise use
+  // server value. Without this the button waits for a full POST +
+  // loader revalidation round-trip before flipping aria-pressed, which
+  // can exceed Playwright's default 5s assertion timeout under load.
+  const pendingCookRaw = cookFetcher.formData?.get("cookId");
+  const pendingCook =
+    typeof pendingCookRaw === "string" ? pendingCookRaw : null;
+  const effectiveCookId =
+    pendingCook === null
+      ? entry.designatedCookId
+      : pendingCook === ""
+        ? null
+        : pendingCook;
   const submitCook = (cookId: string) => {
     const fd = new FormData();
     fd.set("intent", "set-cook");
@@ -438,7 +461,7 @@ function DraftCard({
               isFirst={isFirst}
               isLast={isLast}
             />
-            <Anchor href={`/recipes/${entry.recipeId}`} fw={500}>
+            <Anchor component={Link} to={`/recipes/${entry.recipeId}`} fw={500}>
               {entry.recipeName}
             </Anchor>
           </Group>
@@ -503,22 +526,22 @@ function DraftCard({
           <Text size="sm" c="dimmed">Cook:</Text>
           <Group gap={4} wrap="wrap">
             <Button
-              variant={entry.designatedCookId === null ? "filled" : "default"}
+              variant={effectiveCookId === null ? "filled" : "default"}
               size="xs"
               onClick={() => submitCook("")}
               aria-label={`Set cook to unassigned for ${entry.recipeName}`}
-              aria-pressed={entry.designatedCookId === null}
+              aria-pressed={effectiveCookId === null}
             >
               Unassigned
             </Button>
             {members.map((m) => (
               <Button
                 key={m.id}
-                variant={entry.designatedCookId === m.id ? "filled" : "default"}
+                variant={effectiveCookId === m.id ? "filled" : "default"}
                 size="xs"
                 onClick={() => submitCook(m.id)}
                 aria-label={`Set cook to ${m.displayName} for ${entry.recipeName}`}
-                aria-pressed={entry.designatedCookId === m.id}
+                aria-pressed={effectiveCookId === m.id}
               >
                 {m.displayName}
               </Button>
@@ -560,7 +583,7 @@ function StockCard({
               isFirst={isFirst}
               isLast={isLast}
             />
-            <Anchor href={`/recipes/${entry.recipeId}`} fw={500}>
+            <Anchor component={Link} to={`/recipes/${entry.recipeId}`} fw={500}>
               {entry.recipeName}
             </Anchor>
           </Group>
@@ -616,7 +639,7 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
           draft.length === 0 ? (
             <Text c="dimmed">
               Draft is empty — add recipes from the{" "}
-              <Anchor href="/">collection</Anchor>.
+              <Anchor component={Link} to="/">collection</Anchor>.
             </Text>
           ) : (
             <Stack gap="xs">

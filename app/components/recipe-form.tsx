@@ -227,8 +227,8 @@ export function parseRecipeFields(form: FormData): ParseResult {
   const errors: string[] = [];
   if (!name || name.length > 200) errors.push("Name is required (max 200 chars).");
   const baseQuantity = Number.parseInt(baseQuantityRaw, 10);
-  if (!Number.isFinite(baseQuantity) || baseQuantity <= 0) {
-    errors.push("Base portions must be a positive integer.");
+  if (!Number.isFinite(baseQuantity) || baseQuantity < 1 || baseQuantity > 1000) {
+    errors.push("Base portions must be between 1 and 1000.");
   }
   if (parsed.length === 0) errors.push("Add at least one ingredient.");
 

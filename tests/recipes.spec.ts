@@ -112,9 +112,12 @@ test("edit a recipe — change name + ingredient, see it on view + home", async 
   await expect(page.getByLabel("Name")).toHaveValue("Pasta al limone");
   await expect(page.getByLabel("Ingredient 1 item")).toHaveValue("spaghetti");
 
-  // Tweak.
+  // Tweak. Assert intermediate values to defend against React not having
+  // committed the controlled state by the time we click Save.
   await page.getByLabel("Name").fill("Pasta al limone (better)");
+  await expect(page.getByLabel("Name")).toHaveValue("Pasta al limone (better)");
   await page.getByLabel("Ingredient 1 amount").fill("450");
+  await expect(page.getByLabel("Ingredient 1 amount")).toHaveValue("450");
   await page.getByRole("button", { name: "Save changes" }).click();
 
   await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
