@@ -28,7 +28,7 @@ test("add a recipe to draft twice → both show on /kitchen → remove one leave
   await page.getByRole("link", { name: "Open Kitchen" }).click();
   await expect(page).toHaveURL("/kitchen");
 
-  await expect(page.getByRole("heading", { name: /Draft \(2\)/ })).toBeVisible();
+  await expect(page.getByText(/Draft \(2\)/)).toBeVisible();
   await expect(page.getByRole("link", { name: "Pasta al limone" })).toHaveCount(2);
 
   await page
@@ -36,7 +36,7 @@ test("add a recipe to draft twice → both show on /kitchen → remove one leave
     .first()
     .click();
 
-  await expect(page.getByRole("heading", { name: /Draft \(1\)/ })).toBeVisible();
+  await expect(page.getByText(/Draft \(1\)/)).toBeVisible();
   await expect(page.getByRole("link", { name: "Pasta al limone" })).toHaveCount(1);
 });
 
@@ -154,4 +154,41 @@ test("designated cook picker — assign self, then unassign", async ({ page, fla
   await expect(
     page.getByLabel("Set cook to unassigned for Pasta al limone"),
   ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("promote draft → in-stock lane → mark cooked → empty", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+  await createPasta(page);
+  await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await page.getByRole("link", { name: "Open Kitchen" }).click();
+
+  // Lane defaults to draft.
+  await expect(page.getByText(/Draft \(1\)/)).toBeVisible();
+  await expect(page.getByText(/In stock \(0\)/)).toBeVisible();
+
+  // Promote to in stock.
+  await page
+    .getByRole("button", { name: "Move Pasta al limone to in stock" })
+    .click();
+
+  await expect(page.getByText(/Draft \(0\)/)).toBeVisible();
+  await expect(page.getByText(/In stock \(1\)/)).toBeVisible();
+
+  // Switch to in-stock lane (click the SegmentedControl label).
+  await page.getByText(/^In stock \(1\)$/).click();
+  await expect(page).toHaveURL(/\?lane=stock$/);
+  await expect(page.getByRole("link", { name: "Pasta al limone" })).toBeVisible();
+  await expect(page.getByText(/4 portions/)).toBeVisible();
+  await expect(page.getByText("400 g spaghetti")).toBeVisible();
+
+  // Mark cooked → leaves the lane.
+  await page
+    .getByRole("button", { name: "Mark Pasta al limone as cooked" })
+    .click();
+
+  await expect(page.getByText(/In stock \(0\)/)).toBeVisible();
+  await expect(page.getByText(/Nothing in stock yet/)).toBeVisible();
 });

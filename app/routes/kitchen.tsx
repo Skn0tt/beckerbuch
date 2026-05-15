@@ -6,12 +6,13 @@ import {
   Container,
   Group,
   List,
+  SegmentedControl,
   Stack,
   Text,
   Title,
 } from "@mantine/core";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
-import { Form, useFetcher, useRouteLoaderData } from "react-router";
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { Form, useFetcher, useNavigate, useRouteLoaderData } from "react-router";
 import type { Route } from "./+types/kitchen";
 import { db } from "../db/client";
 import { ingredients, recipeInstances, recipes, flatMembers, users } from "../db/schema";
@@ -34,22 +35,41 @@ type DraftIngredient = {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requireFlatMember(request);
+  const url = new URL(request.url);
+  const laneParam = url.searchParams.get("lane");
+  const lane: "draft" | "stock" = laneParam === "stock" ? "stock" : "draft";
+
+  const baseSelect = {
+    id: recipeInstances.id,
+    targetQuantity: recipeInstances.targetQuantity,
+    position: recipeInstances.position,
+    recipeId: recipes.id,
+    recipeName: recipes.name,
+    baseQuantity: recipes.baseQuantity,
+    designatedCookId: recipeInstances.designatedCookId,
+  };
+
   const draft = await db()
-    .select({
-      id: recipeInstances.id,
-      targetQuantity: recipeInstances.targetQuantity,
-      position: recipeInstances.position,
-      recipeId: recipes.id,
-      recipeName: recipes.name,
-      baseQuantity: recipes.baseQuantity,
-      designatedCookId: recipeInstances.designatedCookId,
-    })
+    .select(baseSelect)
     .from(recipeInstances)
     .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
     .where(
       and(
         eq(recipeInstances.flatId, ctx.flat.id),
         isNull(recipeInstances.finalisedAt),
+      ),
+    )
+    .orderBy(asc(recipeInstances.position));
+
+  const stock = await db()
+    .select(baseSelect)
+    .from(recipeInstances)
+    .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
+    .where(
+      and(
+        eq(recipeInstances.flatId, ctx.flat.id),
+        isNotNull(recipeInstances.finalisedAt),
+        isNull(recipeInstances.cookedAt),
       ),
     )
     .orderBy(asc(recipeInstances.position));
@@ -61,7 +81,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     .where(eq(flatMembers.flatId, ctx.flat.id))
     .orderBy(asc(users.displayName));
 
-  const recipeIds = [...new Set(draft.map((d) => d.recipeId))];
+  const recipeIds = [
+    ...new Set([...draft.map((d) => d.recipeId), ...stock.map((s) => s.recipeId)]),
+  ];
   const ings: DraftIngredient[] =
     recipeIds.length === 0
       ? []
@@ -84,11 +106,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     ingsByRecipe.set(i.recipeId, arr);
   }
 
+  const withIngs = <T extends { recipeId: string }>(rows: T[]) =>
+    rows.map((d) => ({ ...d, ingredients: ingsByRecipe.get(d.recipeId) ?? [] }));
+
   return {
-    draft: draft.map((d) => ({
-      ...d,
-      ingredients: ingsByRecipe.get(d.recipeId) ?? [],
-    })),
+    lane,
+    draft: withIngs(draft),
+    stock: withIngs(stock),
     csrfToken: csrfTokenForSession(ctx.session.id),
     members,
   };
@@ -162,6 +186,51 @@ export async function action({ request }: Route.ActionArgs) {
           eq(recipeInstances.id, instanceId),
           eq(recipeInstances.flatId, ctx.flat.id),
           isNull(recipeInstances.finalisedAt),
+        ),
+      );
+    return { ok: true };
+  }
+
+  if (intent === "promote-to-stock") {
+    // Stub for Phase 5 finalise: promote a single draft instance to in-stock.
+    if (!UUID_RE.test(instanceId)) return { error: "Invalid instance." };
+    const nextPosRow = await db()
+      .select({
+        next: sql<number>`coalesce(max(${recipeInstances.position}), -1) + 1`,
+      })
+      .from(recipeInstances)
+      .where(
+        and(
+          eq(recipeInstances.flatId, ctx.flat.id),
+          isNotNull(recipeInstances.finalisedAt),
+          isNull(recipeInstances.cookedAt),
+        ),
+      );
+    const nextPos = Number(nextPosRow[0]?.next ?? 0);
+    await db()
+      .update(recipeInstances)
+      .set({ finalisedAt: new Date(), position: nextPos })
+      .where(
+        and(
+          eq(recipeInstances.id, instanceId),
+          eq(recipeInstances.flatId, ctx.flat.id),
+          isNull(recipeInstances.finalisedAt),
+        ),
+      );
+    return { ok: true };
+  }
+
+  if (intent === "mark-cooked") {
+    if (!UUID_RE.test(instanceId)) return { error: "Invalid instance." };
+    await db()
+      .update(recipeInstances)
+      .set({ cookedAt: new Date(), cookedBy: ctx.user.id })
+      .where(
+        and(
+          eq(recipeInstances.id, instanceId),
+          eq(recipeInstances.flatId, ctx.flat.id),
+          isNotNull(recipeInstances.finalisedAt),
+          isNull(recipeInstances.cookedAt),
         ),
       );
     return { ok: true };
@@ -275,6 +344,19 @@ function DraftCard({
             </Group>
             <Form method="post">
               <CsrfField token={csrfToken} />
+              <input type="hidden" name="intent" value="promote-to-stock" />
+              <input type="hidden" name="instanceId" value={entry.id} />
+              <Button
+                type="submit"
+                variant="light"
+                size="xs"
+                aria-label={`Move ${entry.recipeName} to in stock`}
+              >
+                → In stock
+              </Button>
+            </Form>
+            <Form method="post">
+              <CsrfField token={csrfToken} />
               <input type="hidden" name="intent" value="remove-from-draft" />
               <input type="hidden" name="instanceId" value={entry.id} />
               <Button
@@ -327,8 +409,55 @@ function DraftCard({
   );
 }
 
+function StockCard({
+  entry,
+  csrfToken,
+}: {
+  entry: DraftEntry;
+  csrfToken: string;
+}) {
+  const factor =
+    entry.baseQuantity > 0 ? entry.targetQuantity / entry.baseQuantity : 1;
+  return (
+    <Card withBorder padding="sm">
+      <Stack gap="xs">
+        <Group justify="space-between" align="center" wrap="nowrap">
+          <Anchor href={`/recipes/${entry.recipeId}`} fw={500}>
+            {entry.recipeName}
+          </Anchor>
+          <Group gap="xs" wrap="nowrap">
+            <Text size="sm" c="dimmed">
+              {entry.targetQuantity} portions
+            </Text>
+            <Form method="post">
+              <CsrfField token={csrfToken} />
+              <input type="hidden" name="intent" value="mark-cooked" />
+              <input type="hidden" name="instanceId" value={entry.id} />
+              <Button
+                type="submit"
+                color="green"
+                variant="light"
+                size="xs"
+                aria-label={`Mark ${entry.recipeName} as cooked`}
+              >
+                ✓ Cooked
+              </Button>
+            </Form>
+          </Group>
+        </Group>
+        <List spacing={2} size="sm" c="dimmed" withPadding>
+          {entry.ingredients.map((i) => (
+            <List.Item key={i.position}>{formatIngredient(i, factor)}</List.Item>
+          ))}
+        </List>
+      </Stack>
+    </Card>
+  );
+}
+
 export default function Kitchen({ loaderData }: Route.ComponentProps) {
-  const { draft, csrfToken, members } = loaderData;
+  const { lane, draft, stock, csrfToken, members } = loaderData;
+  const navigate = useNavigate();
   const data = useRouteLoaderData("routes/_app") as
     | Awaited<ReturnType<typeof appLoader>>
     | undefined;
@@ -355,22 +484,42 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
           )}
         </Group>
 
-        <Title order={3}>Draft ({draft.length})</Title>
+        <SegmentedControl
+          value={lane}
+          onChange={(v) => navigate(v === "stock" ? "?lane=stock" : "?lane=draft")}
+          aria-label="Kitchen lane"
+          data={[
+            { value: "draft", label: `Draft (${draft.length})` },
+            { value: "stock", label: `In stock (${stock.length})` },
+          ]}
+        />
 
-        {draft.length === 0 ? (
+        {lane === "draft" ? (
+          draft.length === 0 ? (
+            <Text c="dimmed">
+              Draft is empty — add recipes from the{" "}
+              <Anchor href="/">collection</Anchor>.
+            </Text>
+          ) : (
+            <Stack gap="xs">
+              {draft.map((d) => (
+                <DraftCard
+                  key={d.id}
+                  entry={d}
+                  csrfToken={csrfToken}
+                  members={members}
+                />
+              ))}
+            </Stack>
+          )
+        ) : stock.length === 0 ? (
           <Text c="dimmed">
-            Draft is empty — add recipes from the{" "}
-            <Anchor href="/">collection</Anchor>.
+            Nothing in stock yet — move a draft entry across to start cooking.
           </Text>
         ) : (
           <Stack gap="xs">
-            {draft.map((d) => (
-              <DraftCard
-                key={d.id}
-                entry={d}
-                csrfToken={csrfToken}
-                members={members}
-              />
+            {stock.map((s) => (
+              <StockCard key={s.id} entry={s} csrfToken={csrfToken} />
             ))}
           </Stack>
         )}
