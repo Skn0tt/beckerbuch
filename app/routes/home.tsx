@@ -78,6 +78,9 @@ export default function Home({ loaderData }: Route.ComponentProps) {
           <Title order={1}>cookbook</Title>
           {data && (
             <Group gap="xs">
+              <Anchor href="/kitchen" size="sm">
+                Kitchen
+              </Anchor>
               <Anchor href="/flat/settings" size="sm">
                 Flat settings
               </Anchor>

@@ -1,0 +1,79 @@
+import { expect, test } from "./fixtures";
+import { login } from "./login";
+
+async function createPasta(page: import("@playwright/test").Page) {
+  await page.getByRole("link", { name: "+ New recipe" }).click();
+  await page.getByLabel("Name").fill("Pasta al limone");
+  await page.getByLabel("Ingredient 1 amount").fill("400");
+  await page.getByLabel("Ingredient 1 unit").fill("g");
+  await page.getByLabel("Ingredient 1 item").fill("spaghetti");
+  await page.getByRole("button", { name: "Save recipe" }).click();
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
+}
+
+test("add a recipe to draft twice → both show on /kitchen → remove one leaves the other", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+  await createPasta(page);
+
+  await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await expect(page.getByText(/Added to draft/)).toBeVisible();
+
+  // Same recipe can be added again.
+  await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await expect(page.getByText(/Added to draft/)).toBeVisible();
+
+  await page.getByRole("link", { name: "Open Kitchen" }).click();
+  await expect(page).toHaveURL("/kitchen");
+
+  await expect(page.getByRole("heading", { name: /Draft \(2\)/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Pasta al limone" })).toHaveCount(2);
+
+  await page
+    .getByRole("button", { name: "Remove Pasta al limone from draft" })
+    .first()
+    .click();
+
+  await expect(page.getByRole("heading", { name: /Draft \(1\)/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Pasta al limone" })).toHaveCount(1);
+});
+
+test("kitchen empty state links back to collection", async ({ page, flat }) => {
+  await login(page, flat.user);
+  await page.getByRole("link", { name: "Kitchen" }).click();
+  await expect(page).toHaveURL("/kitchen");
+  await expect(page.getByText(/Draft is empty/)).toBeVisible();
+});
+
+test("draft is scoped to the flat — other flat's draft is invisible", async ({
+  page,
+  flat,
+  request,
+}) => {
+  // Flat A adds a recipe to its draft.
+  await login(page, flat.user);
+  await createPasta(page);
+  await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await expect(page.getByText(/Added to draft/)).toBeVisible();
+  await page.context().clearCookies();
+
+  // Spin up a fresh flat B.
+  const adminRes = await request.post("/admin/tenants", {
+    data: {},
+    headers: { "X-Admin-Token": "test-admin-token" },
+  });
+  const { inviteUrl } = (await adminRes.json()) as { inviteUrl: string };
+  await page.goto(inviteUrl);
+  await page.getByLabel("Email").fill(`other-${Date.now()}@cookbook.test`);
+  await page.getByLabel("Display name").fill("Other Cook");
+  await page
+    .getByRole("textbox", { name: "Password" })
+    .fill("cookbook-other-password");
+  await page.getByRole("button", { name: "Create account & join" }).click();
+  await page.waitForURL("/");
+
+  await page.getByRole("link", { name: "Kitchen" }).click();
+  await expect(page.getByText(/Draft is empty/)).toBeVisible();
+});

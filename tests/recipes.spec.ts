@@ -144,6 +144,24 @@ test("delete a recipe — back on home, recipe gone", async ({ page, flat }) => 
   await expect(page.getByText("No recipes yet")).toBeVisible();
 });
 
+test("deleting a recipe that's in the draft is blocked", async ({ page, flat }) => {
+  await login(page, flat.user);
+  await createPasta(page);
+  const recipeUrl = page.url();
+
+  await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await expect(page.getByText(/Added to draft/)).toBeVisible();
+
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Delete" }).click();
+
+  await expect(
+    page.getByText(/in your draft, in stock, or cooked history/),
+  ).toBeVisible();
+  // Still on the recipe page, not deleted.
+  await expect(page).toHaveURL(recipeUrl);
+});
+
 // 1×1 transparent PNG.
 const TINY_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",

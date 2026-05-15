@@ -10,7 +10,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { eq, asc, count } from "drizzle-orm";
+import { and, eq, asc, count, isNull, max, sql } from "drizzle-orm";
 import { Form, data, redirect, useActionData } from "react-router";
 import type { Route } from "./+types/recipes.$id";
 import { db } from "../db/client";
@@ -64,6 +64,39 @@ export async function action({ request, params }: Route.ActionArgs) {
   await requireCsrf(request, ctx.session.id);
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
+
+  if (intent === "add-to-draft") {
+    const flatId = ctx.flat.id;
+    // Retry on partial-unique-index collision (concurrent add).
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const [{ value: nextPos }] = await db()
+          .select({
+            value: sql<number>`coalesce(${max(recipeInstances.position)}, -1) + 1`,
+          })
+          .from(recipeInstances)
+          .where(
+            and(
+              eq(recipeInstances.flatId, flatId),
+              isNull(recipeInstances.finalisedAt),
+            ),
+          );
+        await db().insert(recipeInstances).values({
+          flatId,
+          recipeId: recipe.id,
+          targetQuantity: recipe.baseQuantity,
+          position: nextPos,
+        });
+        return { added: true as const };
+      } catch (err: unknown) {
+        const code = (err as { code?: string }).code;
+        if (code === "23505" && attempt < 2) continue; // unique_violation, retry
+        throw err;
+      }
+    }
+    return { error: "Couldn't add to draft. Please try again." };
+  }
+
   if (intent !== "delete") return { error: "Unknown action." };
 
   const [{ value: usageCount }] = await db()
@@ -92,7 +125,7 @@ function formatIngredient(ing: { amount: string | null; unit: string | null; ite
 
 export default function RecipeView({ loaderData }: Route.ComponentProps) {
   const { recipe, ingredients: ings, sessionId } = loaderData;
-  const actionData = useActionData<{ error?: string } | undefined>();
+  const actionData = useActionData<{ added?: true; error?: string } | undefined>();
   return (
     <Container size="sm" py="xl">
       <Stack gap="md">
@@ -128,6 +161,11 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
             {actionData.error}
           </Alert>
         )}
+        {actionData?.added && (
+          <Alert color="green" role="status">
+            Added to draft. <Anchor href="/kitchen">Open Kitchen →</Anchor>
+          </Alert>
+        )}
 
         <Title order={1}>{recipe.name}</Title>
 
@@ -142,6 +180,12 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
         )}
 
         <Text c="dimmed">Base: {recipe.baseQuantity} portions</Text>
+
+        <Form method="post">
+          <CsrfField sessionId={sessionId} />
+          <input type="hidden" name="intent" value="add-to-draft" />
+          <Button type="submit">+ Add to draft</Button>
+        </Form>
 
         <section>
           <Title order={4} mb="xs">

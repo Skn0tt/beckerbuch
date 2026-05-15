@@ -5,6 +5,7 @@ export default [
     index("routes/home.tsx"),
     route("logout", "routes/logout.tsx"),
     route("flat/settings", "routes/flat.settings.tsx"),
+    route("kitchen", "routes/kitchen.tsx"),
     route("recipes/new", "routes/recipes.new.tsx"),
     route("recipes/:id", "routes/recipes.$id.tsx"),
     route("recipes/:id/edit", "routes/recipes.$id.edit.tsx"),
