@@ -14,5 +14,8 @@
 /test-results/
 /.playwright-cli/
 
+# Test rig handoff
+
 # Local Netlify folder
 .netlify
+/.cookbook-test-db-url

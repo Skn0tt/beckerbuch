@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { db } from "./db";
 import { flatMembers, flats, users } from "../app/db/schema";
 
-export const TEST_PASSWORD = "cookbook";
+export const TEST_PASSWORD = "cookbook-test-password";
 
 // argon2 is ~100ms; hash once and reuse — the salt is embedded in the
 // returned string so every test that uses TEST_PASSWORD can share it.
