@@ -1,8 +1,21 @@
-import { Anchor, Button, Container, Group, Stack, Text, Title } from "@mantine/core";
-import { Form, useRouteLoaderData } from "react-router";
+import {
+  Anchor,
+  Button,
+  Card,
+  Container,
+  Group,
+  Stack,
+  Text,
+  Title,
+} from "@mantine/core";
+import { Form, Link, useRouteLoaderData } from "react-router";
+import { eq, desc } from "drizzle-orm";
 import type { Route } from "./+types/home";
 import type { loader as appLoader } from "./_app";
 import { CsrfField } from "../auth/csrf-field";
+import { db } from "../db/client";
+import { recipes } from "../db/schema";
+import { requireFlatMember } from "../auth/require";
 
 export function meta(_: Route.MetaArgs) {
   return [
@@ -11,10 +24,27 @@ export function meta(_: Route.MetaArgs) {
   ];
 }
 
-export default function Home() {
+export async function loader({ request }: Route.LoaderArgs) {
+  const ctx = await requireFlatMember(request);
+  const list = await db()
+    .select({
+      id: recipes.id,
+      name: recipes.name,
+      baseQuantity: recipes.baseQuantity,
+      baseQuantityUnit: recipes.baseQuantityUnit,
+      updatedAt: recipes.updatedAt,
+    })
+    .from(recipes)
+    .where(eq(recipes.flatId, ctx.flat.id))
+    .orderBy(desc(recipes.updatedAt));
+  return { recipes: list };
+}
+
+export default function Home({ loaderData }: Route.ComponentProps) {
   const data = useRouteLoaderData("routes/_app") as
     | Awaited<ReturnType<typeof appLoader>>
     | undefined;
+  const { recipes: list } = loaderData;
 
   return (
     <Container size="sm" py="xl">
@@ -35,7 +65,33 @@ export default function Home() {
             </Group>
           )}
         </Group>
-        <Text c="dimmed">No recipes yet</Text>
+
+        {list.length === 0 ? (
+          <Text c="dimmed">No recipes yet</Text>
+        ) : (
+          <Stack gap="xs">
+            {list.map((r) => (
+              <Card
+                key={r.id}
+                withBorder
+                padding="sm"
+                component={Link}
+                to={`/recipes/${r.id}`}
+              >
+                <Text fw={500}>{r.name}</Text>
+                <Text size="sm" c="dimmed">
+                  Base: {r.baseQuantity} {r.baseQuantityUnit}
+                </Text>
+              </Card>
+            ))}
+          </Stack>
+        )}
+
+        <Group>
+          <Button component={Link} to="/recipes/new" variant="default">
+            + New recipe
+          </Button>
+        </Group>
       </Stack>
     </Container>
   );
