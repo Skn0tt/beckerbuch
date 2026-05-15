@@ -14,7 +14,7 @@ import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { Form, useFetcher, useRouteLoaderData } from "react-router";
 import type { Route } from "./+types/kitchen";
 import { db } from "../db/client";
-import { ingredients, recipeInstances, recipes } from "../db/schema";
+import { ingredients, recipeInstances, recipes, flatMembers, users } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
 import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { csrfFieldName } from "../auth/csrf-shared";
@@ -42,6 +42,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       recipeId: recipes.id,
       recipeName: recipes.name,
       baseQuantity: recipes.baseQuantity,
+      designatedCookId: recipeInstances.designatedCookId,
     })
     .from(recipeInstances)
     .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
@@ -52,6 +53,13 @@ export async function loader({ request }: Route.LoaderArgs) {
       ),
     )
     .orderBy(asc(recipeInstances.position));
+
+  const members = await db()
+    .select({ id: users.id, displayName: users.displayName })
+    .from(flatMembers)
+    .innerJoin(users, eq(users.id, flatMembers.userId))
+    .where(eq(flatMembers.flatId, ctx.flat.id))
+    .orderBy(asc(users.displayName));
 
   const recipeIds = [...new Set(draft.map((d) => d.recipeId))];
   const ings: DraftIngredient[] =
@@ -82,6 +90,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       ingredients: ingsByRecipe.get(d.recipeId) ?? [],
     })),
     csrfToken: csrfTokenForSession(ctx.session.id),
+    members,
   };
 }
 
@@ -128,6 +137,36 @@ export async function action({ request }: Route.ActionArgs) {
     return { ok: true };
   }
 
+  if (intent === "set-cook") {
+    if (!UUID_RE.test(instanceId)) return { error: "Invalid instance." };
+    const raw = String(form.get("cookId") ?? "");
+    let cookId: string | null = null;
+    if (raw !== "") {
+      if (!UUID_RE.test(raw)) return { error: "Invalid cook." };
+      // Validate cook is a member of this flat.
+      const member = await db()
+        .select({ userId: flatMembers.userId })
+        .from(flatMembers)
+        .where(
+          and(eq(flatMembers.flatId, ctx.flat.id), eq(flatMembers.userId, raw)),
+        )
+        .limit(1);
+      if (member.length === 0) return { error: "Cook is not in this flat." };
+      cookId = raw;
+    }
+    await db()
+      .update(recipeInstances)
+      .set({ designatedCookId: cookId })
+      .where(
+        and(
+          eq(recipeInstances.id, instanceId),
+          eq(recipeInstances.flatId, ctx.flat.id),
+          isNull(recipeInstances.finalisedAt),
+        ),
+      );
+    return { ok: true };
+  }
+
   return { error: "Unknown action." };
 }
 
@@ -164,9 +203,11 @@ type DraftEntry = Awaited<ReturnType<typeof loader>>["draft"][number];
 function DraftCard({
   entry,
   csrfToken,
+  members,
 }: {
   entry: DraftEntry;
   csrfToken: string;
+  members: { id: string; displayName: string }[];
 }) {
   const fetcher = useFetcher();
   // Optimistic target while a submit is in flight; otherwise use server value.
@@ -186,6 +227,16 @@ function DraftCard({
     fd.set("targetQuantity", String(next));
     fd.set(csrfFieldName(), csrfToken);
     fetcher.submit(fd, { method: "post" });
+  };
+
+  const cookFetcher = useFetcher();
+  const submitCook = (cookId: string) => {
+    const fd = new FormData();
+    fd.set("intent", "set-cook");
+    fd.set("instanceId", entry.id);
+    fd.set("cookId", cookId);
+    fd.set(csrfFieldName(), csrfToken);
+    cookFetcher.submit(fd, { method: "post" });
   };
 
   return (
@@ -239,6 +290,33 @@ function DraftCard({
           </Group>
         </Group>
 
+        <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
+          <Text size="sm" c="dimmed">Cook:</Text>
+          <Group gap={4} wrap="wrap">
+            <Button
+              variant={entry.designatedCookId === null ? "filled" : "default"}
+              size="xs"
+              onClick={() => submitCook("")}
+              aria-label={`Set cook to unassigned for ${entry.recipeName}`}
+              aria-pressed={entry.designatedCookId === null}
+            >
+              Unassigned
+            </Button>
+            {members.map((m) => (
+              <Button
+                key={m.id}
+                variant={entry.designatedCookId === m.id ? "filled" : "default"}
+                size="xs"
+                onClick={() => submitCook(m.id)}
+                aria-label={`Set cook to ${m.displayName} for ${entry.recipeName}`}
+                aria-pressed={entry.designatedCookId === m.id}
+              >
+                {m.displayName}
+              </Button>
+            ))}
+          </Group>
+        </Group>
+
         <List spacing={2} size="sm" c="dimmed" withPadding>
           {entry.ingredients.map((i) => (
             <List.Item key={i.position}>{formatIngredient(i, factor)}</List.Item>
@@ -250,7 +328,7 @@ function DraftCard({
 }
 
 export default function Kitchen({ loaderData }: Route.ComponentProps) {
-  const { draft, csrfToken } = loaderData;
+  const { draft, csrfToken, members } = loaderData;
   const data = useRouteLoaderData("routes/_app") as
     | Awaited<ReturnType<typeof appLoader>>
     | undefined;
@@ -291,6 +369,7 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
                 key={d.id}
                 entry={d}
                 csrfToken={csrfToken}
+                members={members}
               />
             ))}
           </Stack>

@@ -110,3 +110,48 @@ test("change target portions → ingredients re-scale", async ({ page, flat }) =
     .click();
   await expect(page.getByText("100 g spaghetti")).toBeVisible();
 });
+
+test("designated cook picker — assign self, then unassign", async ({ page, flat }) => {
+  await login(page, flat.user);
+  await createPasta(page);
+  await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await page.getByRole("link", { name: "Open Kitchen" }).click();
+
+  const setSelf = page.getByLabel(
+    `Set cook to ${flat.user.displayName} for Pasta al limone`,
+  );
+  const setUnassigned = page.getByLabel(
+    "Set cook to unassigned for Pasta al limone",
+  );
+
+  await expect(setUnassigned).toHaveAttribute("aria-pressed", "true");
+
+  await Promise.all([
+    page.waitForResponse(
+      (r) => r.url().includes("/kitchen") && r.request().method() === "POST",
+    ),
+    setSelf.click(),
+  ]);
+  await expect(setSelf).toHaveAttribute("aria-pressed", "true");
+
+  // Reload — choice persisted.
+  await page.reload();
+  await expect(
+    page.getByLabel(`Set cook to ${flat.user.displayName} for Pasta al limone`),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  // Unassign.
+  await Promise.all([
+    page.waitForResponse(
+      (r) => r.url().includes("/kitchen") && r.request().method() === "POST",
+    ),
+    page.getByLabel("Set cook to unassigned for Pasta al limone").click(),
+  ]);
+  await expect(
+    page.getByLabel("Set cook to unassigned for Pasta al limone"),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.reload();
+  await expect(
+    page.getByLabel("Set cook to unassigned for Pasta al limone"),
+  ).toHaveAttribute("aria-pressed", "true");
+});
