@@ -578,12 +578,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "base_quantity_unit": {
-          "name": "base_quantity_unit",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "source_url": {
           "name": "source_url",
           "type": "text",

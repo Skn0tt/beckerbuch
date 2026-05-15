@@ -8,8 +8,7 @@ test("create a recipe → see it on home → open detail view", async ({ page, f
   await expect(page).toHaveURL("/recipes/new");
 
   await page.getByLabel("Name").fill("Pasta al limone");
-  await page.getByLabel("Base unit").fill("servings");
-  // Base quantity is pre-filled with 4.
+  // Base portions is pre-filled with 4.
 
   await page.getByLabel("Source URL").fill("https://smittenkitchen.com/pasta");
 

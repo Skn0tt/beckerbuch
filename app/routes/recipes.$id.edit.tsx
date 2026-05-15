@@ -120,7 +120,6 @@ export default function EditRecipe({ loaderData }: Route.ComponentProps) {
           initial={{
             name: recipe.name,
             baseQuantity: recipe.baseQuantity,
-            baseQuantityUnit: recipe.baseQuantityUnit,
             sourceUrl: recipe.sourceUrl ?? "",
             steps: recipe.steps,
             ingredients: ings,

@@ -95,7 +95,6 @@ export const recipes = pgTable(
       .references(() => flats.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     baseQuantity: integer("base_quantity").notNull(),
-    baseQuantityUnit: text("base_quantity_unit").notNull(),
     sourceUrl: text("source_url"),
     sourceHost: text("source_host"),
     photoBlobKey: text("photo_blob_key"),

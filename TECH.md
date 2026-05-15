@@ -129,8 +129,7 @@ recipes
   id                  uuid pk
   flat_id             uuid fk → flats(id) on delete cascade
   name                text not null
-  base_quantity       integer not null
-  base_quantity_unit  text not null          -- e.g. 'servings', 'portions'
+  base_quantity       integer not null      -- in portions; the unit is fixed
   source_url          text                   -- nullable
   source_host         text                   -- denormalised, computed in app
   photo_blob_key      text                   -- nullable; key into Netlify Blobs

@@ -49,7 +49,6 @@ CREATE TABLE "recipes" (
 	"flat_id" uuid NOT NULL,
 	"name" text NOT NULL,
 	"base_quantity" integer NOT NULL,
-	"base_quantity_unit" text NOT NULL,
 	"source_url" text,
 	"source_host" text,
 	"photo_blob_key" text,

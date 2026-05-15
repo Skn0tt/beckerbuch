@@ -141,13 +141,11 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
           />
         )}
 
-        <Text c="dimmed">
-          Base: {recipe.baseQuantity} {recipe.baseQuantityUnit}
-        </Text>
+        <Text c="dimmed">Base: {recipe.baseQuantity} portions</Text>
 
         <section>
           <Title order={4} mb="xs">
-            Ingredients ({recipe.baseQuantity} {recipe.baseQuantityUnit})
+            Ingredients ({recipe.baseQuantity} portions)
           </Title>
           <List spacing={2}>
             {ings.map((i) => (

@@ -39,7 +39,6 @@ export async function loader({ request }: Route.LoaderArgs) {
         id: recipes.id,
         name: recipes.name,
         baseQuantity: recipes.baseQuantity,
-        baseQuantityUnit: recipes.baseQuantityUnit,
         updatedAt: recipes.updatedAt,
       })
       .from(recipes)
@@ -58,7 +57,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       id: recipes.id,
       name: recipes.name,
       baseQuantity: recipes.baseQuantity,
-      baseQuantityUnit: recipes.baseQuantityUnit,
       updatedAt: recipes.updatedAt,
     })
     .from(recipes)
@@ -117,7 +115,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               >
                 <Text fw={500}>{r.name}</Text>
                 <Text size="sm" c="dimmed">
-                  Base: {r.baseQuantity} {r.baseQuantityUnit}
+                  Base: {r.baseQuantity} portions
                 </Text>
               </Card>
             ))}

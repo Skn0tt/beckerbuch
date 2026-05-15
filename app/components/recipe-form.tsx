@@ -21,7 +21,6 @@ export type IngredientRow = { amount: string; unit: string; item: string };
 export type RecipeFormInitial = {
   name?: string;
   baseQuantity?: number;
-  baseQuantityUnit?: string;
   sourceUrl?: string;
   steps?: string;
   ingredients?: IngredientRow[];
@@ -63,23 +62,14 @@ export function RecipeForm({ sessionId, initial, error, submitLabel }: Props) {
           defaultValue={initial?.name ?? ""}
         />
 
-        <Group grow>
-          <NumberInput
-            name="baseQuantity"
-            label="Base quantity"
-            min={1}
-            defaultValue={initial?.baseQuantity ?? 4}
-            required
-            allowDecimal={false}
-          />
-          <TextInput
-            name="baseQuantityUnit"
-            label="Base unit"
-            placeholder="servings"
-            defaultValue={initial?.baseQuantityUnit ?? "servings"}
-            required
-          />
-        </Group>
+        <NumberInput
+          name="baseQuantity"
+          label="Base portions"
+          min={1}
+          defaultValue={initial?.baseQuantity ?? 4}
+          required
+          allowDecimal={false}
+        />
 
         <TextInput
           name="sourceUrl"
@@ -218,7 +208,6 @@ export function parseIngredientsFromForm(form: FormData): ParsedIngredient[] {
 export type RecipeFields = {
   name: string;
   baseQuantity: number;
-  baseQuantityUnit: string;
   sourceUrl: string | null;
   sourceHost: string | null;
   steps: string;
@@ -231,7 +220,6 @@ export type ParseResult =
 export function parseRecipeFields(form: FormData): ParseResult {
   const name = String(form.get("name") ?? "").trim();
   const baseQuantityRaw = String(form.get("baseQuantity") ?? "").trim();
-  const baseQuantityUnit = String(form.get("baseQuantityUnit") ?? "").trim();
   const sourceUrl = String(form.get("sourceUrl") ?? "").trim();
   const steps = String(form.get("steps") ?? "");
   const parsed = parseIngredientsFromForm(form);
@@ -240,9 +228,8 @@ export function parseRecipeFields(form: FormData): ParseResult {
   if (!name || name.length > 200) errors.push("Name is required (max 200 chars).");
   const baseQuantity = Number.parseInt(baseQuantityRaw, 10);
   if (!Number.isFinite(baseQuantity) || baseQuantity <= 0) {
-    errors.push("Base quantity must be a positive integer.");
+    errors.push("Base portions must be a positive integer.");
   }
-  if (!baseQuantityUnit) errors.push("Base unit is required (e.g. 'servings').");
   if (parsed.length === 0) errors.push("Add at least one ingredient.");
 
   let sourceHost: string | null = null;
@@ -260,7 +247,6 @@ export function parseRecipeFields(form: FormData): ParseResult {
     fields: {
       name,
       baseQuantity,
-      baseQuantityUnit,
       sourceUrl: sourceUrl || null,
       sourceHost,
       steps,
