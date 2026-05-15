@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { test as base, type Page } from "@playwright/test";
+import { test as base, expect, type Page } from "@playwright/test";
 import { login } from "./login";
 
 const ADMIN_TOKEN = "test-admin-token";
@@ -67,7 +67,7 @@ export const test = base.extend<Fixtures>({
   },
 });
 
-export { expect } from "@playwright/test";
+export { expect };
 
 /**
  * Drive the flat-settings UI to mint a fresh invite link as `user`. The
@@ -76,8 +76,8 @@ export { expect } from "@playwright/test";
  */
 export async function generateInvite(page: Page, user: TestUser): Promise<string> {
   await login(page, user);
-  await page.goto("/flat/settings");
+  await page.getByRole("link", { name: "Flat settings" }).click();
   await page.getByRole("button", { name: /generate/i }).click();
-  await page.waitForURL("/flat/settings");
+  await expect(page.getByLabel("Invite link")).toBeVisible();
   return page.getByLabel("Invite link").inputValue();
 }

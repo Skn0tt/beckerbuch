@@ -6,7 +6,7 @@ test("settings shows flat name, current user as member, and a generate button", 
   flat,
 }) => {
   await login(page, flat.user);
-  await page.goto("/flat/settings");
+  await page.getByRole("link", { name: "Flat settings" }).click();
 
   await expect(page.getByRole("heading", { name: `Flat: ${flat.name}` })).toBeVisible();
   await expect(page.getByText(flat.user.displayName)).toBeVisible();
@@ -34,9 +34,9 @@ test("generate new link rotates the previous one", async ({ page, flat }) => {
 
   // Click Generate again — rotates to a fresh token.
   await page.getByRole("button", { name: /generate/i }).click();
-  await page.waitForURL("/flat/settings");
-  const newUrl = await page.getByLabel("Invite link").inputValue();
-  expect(newUrl).not.toBe(oldUrl);
+  await expect
+    .poll(() => page.getByLabel("Invite link").inputValue())
+    .not.toBe(oldUrl);
 
   // Old URL now 404s.
   const fresh = await page.context().browser()!.newContext();
