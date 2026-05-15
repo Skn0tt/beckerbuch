@@ -30,13 +30,13 @@ export type RecipeFormInitial = {
 const blankRow = (): IngredientRow => ({ amount: "", unit: "", item: "" });
 
 type Props = {
-  sessionId: string;
+  csrfToken: string;
   initial?: RecipeFormInitial;
   error?: string;
   submitLabel: string;
 };
 
-export function RecipeForm({ sessionId, initial, error, submitLabel }: Props) {
+export function RecipeForm({ csrfToken, initial, error, submitLabel }: Props) {
   const initialRows =
     initial?.ingredients && initial.ingredients.length > 0
       ? initial.ingredients
@@ -53,7 +53,7 @@ export function RecipeForm({ sessionId, initial, error, submitLabel }: Props) {
 
   return (
     <Form method="post" encType="multipart/form-data">
-      <CsrfField sessionId={sessionId} />
+      <CsrfField token={csrfToken} />
       <Stack gap="sm">
         <TextInput
           name="name"

@@ -5,7 +5,7 @@ import type { Route } from "./+types/recipes.new";
 import { db } from "../db/client";
 import { ingredients, recipes } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
-import { requireCsrf } from "../auth/csrf";
+import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { isSameOrigin } from "../auth/origin";
 import { RecipeForm, parseRecipeFields } from "../components/recipe-form";
 import { storePhoto, validatePhoto } from "../blobs";
@@ -13,7 +13,7 @@ import { updateSearchVector } from "../search";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requireFlatMember(request);
-  return { sessionId: ctx.session.id };
+  return { csrfToken: csrfTokenForSession(ctx.session.id) };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -74,7 +74,7 @@ export default function NewRecipe({ loaderData }: Route.ComponentProps) {
           <Anchor href="/">← Cancel</Anchor>
         </Group>
         <RecipeForm
-          sessionId={loaderData.sessionId}
+          csrfToken={loaderData.csrfToken}
           error={actionData?.error}
           submitLabel="Save recipe"
         />

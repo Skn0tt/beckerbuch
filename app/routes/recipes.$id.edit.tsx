@@ -5,7 +5,7 @@ import type { Route } from "./+types/recipes.$id.edit";
 import { db } from "../db/client";
 import { ingredients, recipes } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
-import { requireCsrf } from "../auth/csrf";
+import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { isSameOrigin } from "../auth/origin";
 import { RecipeForm, parseRecipeFields } from "../components/recipe-form";
 import { deletePhoto, storePhoto, validatePhoto } from "../blobs";
@@ -35,7 +35,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     .where(eq(ingredients.recipeId, recipe.id))
     .orderBy(asc(ingredients.position));
   return {
-    sessionId: ctx.session.id,
+    csrfToken: csrfTokenForSession(ctx.session.id),
     recipe,
     photoUrl: recipe.photoBlobKey ? `/recipes/${recipe.id}/photo` : null,
     ingredients: ings.map((i) => ({
@@ -105,7 +105,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export default function EditRecipe({ loaderData }: Route.ComponentProps) {
   const actionData = useActionData<{ error?: string } | undefined>();
-  const { recipe, ingredients: ings, sessionId, photoUrl } = loaderData;
+  const { recipe, ingredients: ings, csrfToken, photoUrl } = loaderData;
   return (
     <Container size="sm" py="xl">
       <Stack gap="md">
@@ -114,7 +114,7 @@ export default function EditRecipe({ loaderData }: Route.ComponentProps) {
           <Anchor href={`/recipes/${recipe.id}`}>← Cancel</Anchor>
         </Group>
         <RecipeForm
-          sessionId={sessionId}
+          csrfToken={csrfToken}
           error={actionData?.error}
           submitLabel="Save changes"
           initial={{

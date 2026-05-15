@@ -1,6 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { CSRF_FIELD_NAME, csrfFieldName } from "./csrf-shared";
 
-const CSRF_FIELD_NAME = "_csrf";
+export { csrfFieldName };
+
 const CSRF_DOMAIN = "csrf:";
 
 function getSecret(): string {
@@ -20,10 +22,6 @@ export function csrfTokenForSession(sessionId: string): string {
   return createHmac("sha256", getSecret())
     .update(CSRF_DOMAIN + sessionId)
     .digest("base64url");
-}
-
-export function csrfFieldName(): string {
-  return CSRF_FIELD_NAME;
 }
 
 export async function requireCsrf(

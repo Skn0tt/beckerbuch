@@ -1,11 +1,5 @@
-import { csrfFieldName, csrfTokenForSession } from "./csrf";
+import { CSRF_FIELD_NAME } from "./csrf-shared";
 
-export function CsrfField({ sessionId }: { sessionId: string }) {
-  return (
-    <input
-      type="hidden"
-      name={csrfFieldName()}
-      value={csrfTokenForSession(sessionId)}
-    />
-  );
+export function CsrfField({ token }: { token: string }) {
+  return <input type="hidden" name={CSRF_FIELD_NAME} value={token} />;
 }

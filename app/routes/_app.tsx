@@ -1,6 +1,7 @@
 import { Outlet, redirect } from "react-router";
 import type { Route } from "./+types/_app";
 import { tryGetAuthedContext } from "../auth/require";
+import { csrfTokenForSession } from "../auth/csrf.server";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await tryGetAuthedContext(request);
@@ -12,7 +13,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     user: ctx.user,
     flat: ctx.flat,
-    sessionId: ctx.session.id,
+    csrfToken: csrfTokenForSession(ctx.session.id),
   };
 }
 

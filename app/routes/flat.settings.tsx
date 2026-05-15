@@ -17,7 +17,7 @@ import type { Route } from "./+types/flat.settings";
 import { db } from "../db/client";
 import { flatMembers, invites, users } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
-import { requireCsrf } from "../auth/csrf";
+import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { CsrfField } from "../auth/csrf-field";
 import { generateInviteToken } from "../auth/invite";
 
@@ -61,7 +61,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   ]);
   return {
     flat: ctx.flat,
-    sessionId: ctx.session.id,
+    csrfToken: csrfTokenForSession(ctx.session.id),
     members,
     currentInvite,
     origin: new URL(request.url).origin,
@@ -101,7 +101,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function FlatSettings({ loaderData }: Route.ComponentProps) {
-  const { flat, members, currentInvite, origin, sessionId } = loaderData;
+  const { flat, members, currentInvite, origin, csrfToken } = loaderData;
   const inviteUrl = currentInvite
     ? `${origin}/invite/${currentInvite.token}`
     : null;
@@ -171,7 +171,7 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
             </Text>
           )}
           <Form method="post" style={{ marginTop: "var(--mantine-spacing-sm)" }}>
-            <CsrfField sessionId={sessionId} />
+            <CsrfField token={csrfToken} />
             <input type="hidden" name="intent" value="rotate-invite" />
             <Button type="submit" variant="default">
               {inviteUrl ? "Generate new link" : "Generate link"}

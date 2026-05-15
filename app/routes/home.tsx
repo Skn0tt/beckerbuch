@@ -85,7 +85,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                 Flat settings
               </Anchor>
               <Form method="post" action="/logout">
-                <CsrfField sessionId={data.sessionId} />
+                <CsrfField token={data.csrfToken} />
                 <Button type="submit" variant="subtle" size="xs">
                   Sign out {data.user.displayName}
                 </Button>

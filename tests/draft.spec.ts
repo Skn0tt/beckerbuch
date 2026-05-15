@@ -77,3 +77,36 @@ test("draft is scoped to the flat — other flat's draft is invisible", async ({
   await page.getByRole("link", { name: "Kitchen" }).click();
   await expect(page.getByText(/Draft is empty/)).toBeVisible();
 });
+
+test("change target portions → ingredients re-scale", async ({ page, flat }) => {
+  await login(page, flat.user);
+  await createPasta(page);
+  await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await page.getByRole("link", { name: "Open Kitchen" }).click();
+
+  // Base is 4 portions, 400 g spaghetti. Initially target = 4.
+  await expect(page.getByText("400 g spaghetti")).toBeVisible();
+
+  // Bump to 6 portions — 400 * 6/4 = 600.
+  await page
+    .getByRole("button", { name: "Increase Pasta al limone portions" })
+    .click();
+  await page
+    .getByRole("button", { name: "Increase Pasta al limone portions" })
+    .click();
+  await expect(page.getByText("600 g spaghetti")).toBeVisible();
+
+  // Decrease to 2 portions — 200 g.
+  for (let i = 0; i < 4; i++) {
+    await page
+      .getByRole("button", { name: "Decrease Pasta al limone portions" })
+      .click();
+  }
+  await expect(page.getByText("200 g spaghetti")).toBeVisible();
+
+  // Floor at 1 portion: try to decrease past 1 — stays at 1.
+  await page
+    .getByRole("button", { name: "Decrease Pasta al limone portions" })
+    .click();
+  await expect(page.getByText("100 g spaghetti")).toBeVisible();
+});

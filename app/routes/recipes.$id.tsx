@@ -16,7 +16,7 @@ import type { Route } from "./+types/recipes.$id";
 import { db } from "../db/client";
 import { ingredients, recipeInstances, recipes } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
-import { requireCsrf } from "../auth/csrf";
+import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { CsrfField } from "../auth/csrf-field";
 import { isSameOrigin } from "../auth/origin";
 import { deletePhoto } from "../blobs";
@@ -41,7 +41,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     .from(ingredients)
     .where(eq(ingredients.recipeId, recipe.id))
     .orderBy(asc(ingredients.position));
-  return { recipe, ingredients: ings, sessionId: ctx.session.id };
+  return { recipe, ingredients: ings, csrfToken: csrfTokenForSession(ctx.session.id) };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -124,7 +124,7 @@ function formatIngredient(ing: { amount: string | null; unit: string | null; ite
 }
 
 export default function RecipeView({ loaderData }: Route.ComponentProps) {
-  const { recipe, ingredients: ings, sessionId } = loaderData;
+  const { recipe, ingredients: ings, csrfToken } = loaderData;
   const actionData = useActionData<{ added?: true; error?: string } | undefined>();
   return (
     <Container size="sm" py="xl">
@@ -147,7 +147,7 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
               }}
               style={{ display: "inline" }}
             >
-              <CsrfField sessionId={sessionId} />
+              <CsrfField token={csrfToken} />
               <input type="hidden" name="intent" value="delete" />
               <Button type="submit" color="red" variant="subtle" size="xs">
                 Delete
@@ -182,7 +182,7 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
         <Text c="dimmed">Base: {recipe.baseQuantity} portions</Text>
 
         <Form method="post">
-          <CsrfField sessionId={sessionId} />
+          <CsrfField token={csrfToken} />
           <input type="hidden" name="intent" value="add-to-draft" />
           <Button type="submit">+ Add to draft</Button>
         </Form>

@@ -4,7 +4,7 @@ import type { Route } from "./+types/logout";
 import { db } from "../db/client";
 import { sessions } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
-import { requireCsrf } from "../auth/csrf";
+import { requireCsrf } from "../auth/csrf.server";
 import { buildClearSessionCookie } from "../auth/session";
 
 export async function action({ request }: Route.ActionArgs) {
