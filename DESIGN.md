@@ -38,7 +38,7 @@ Everything in v1 sits behind login. There is no public surface.
 | **User**           | A person. Belongs to exactly one flat in v1.                               |
 | **Recipe**         | A reusable definition: name, ingredients at a base quantity, steps.        |
 | **Draft**          | The single in-progress shopping list for the flat.                         |
-| **Shopping list**  | A finalised draft. Immutable; it's what got sent to Bring!.                |
+| **Shopping list**  | The set of recipes that just went into Bring! when a draft was finalised.  |
 | **In stock**       | Recipes the flat currently has the ingredients for. The "ready to cook" board. |
 | **Cooked history** | A log of what got cooked, when, and by whom.                               |
 
@@ -127,8 +127,6 @@ Finalising:
 3. Moves every recipe in the draft into **In stock** (carrying its target
    quantity and assigned cook, if any).
 4. Empties the draft so the next planning cycle can start clean.
-5. Records the finalised list as an immutable shopping-list entry (for
-   reference / "what did we buy last week?").
 
 ### 4.4 Bring! handoff
 

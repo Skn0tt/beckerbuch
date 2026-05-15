@@ -17,7 +17,7 @@
 | Framework            | **React Router v7** (Remix successor), TypeScript, SSR                 |
 | Hosting              | **Netlify** (`@netlify/plugin-react-router`)                           |
 | Styling / components | **Mantine** (component library + hooks: `@mantine/core`, `@mantine/form`, `@mantine/notifications`, `@mantine/dnd`) |
-| Database             | **Netlify DB** (managed Neon Postgres), pinned to Postgres 16          |
+| Database             | **Neon Postgres** (Netlify DB) in production; **Testcontainers** (`postgres:16`) in tests. Pinned to Postgres 16. |
 | ORM / migrations     | **Drizzle ORM** + `drizzle-kit`                                        |
 | DB driver            | **`pg`** (standard node-postgres). *Not* `@neondatabase/serverless`    |
 | Auth                 | Hand-rolled: argon2id passwords, signed cookie sessions, invite tokens |
@@ -25,7 +25,8 @@
 | Search               | Postgres FTS (`tsvector` + weights) + `pg_trgm` for fuzzy              |
 | Bring! integration   | Server-rendered routes emitting schema.org Recipe JSON-LD              |
 | Tests                | **Playwright** end-to-end (only — no unit tests in v1)                 |
-| CI                   | GitHub Actions: lint + typecheck + Playwright on every PR              |
+| Test runtime         | **Testcontainers** launches Postgres in Playwright `globalSetup`; the test process owns the DB lifecycle. No `docker-compose.yml`. |
+| CI                   | GitHub Actions: `lint` (eslint + `tsc --noEmit`) + Playwright on every PR |
 | Package manager      | **npm**                                                                |
 | Repo layout          | Single React Router app — no monorepo, no separate API                 |
 
@@ -478,123 +479,145 @@ on it — if scaling were wrong, the "scale a recipe in the draft"
 spec would fail. Adding unit tests later is cheap; we defer until a
 specific bug genuinely needs the smaller scope.
 
-Real app, real Postgres, real session cookies. Each spec resets DB
-state via a fixture (`truncate table … cascade` over a known set,
-plus a tiny seed).
+### 10.1 Real app, real Postgres, real session cookies
 
-Coverage targets for v1:
+The test process owns the database lifecycle end-to-end:
+
+- **Postgres** is launched by Playwright `globalSetup` via
+  Testcontainers (`@testcontainers/postgresql`, image pinned to
+  `postgres:16`). No `docker-compose.yml`, no orchestration script,
+  no `.env.development`. The container's connection string is
+  written into `process.env.DATABASE_URL` before the web server
+  boots. `globalTeardown` stops the container.
+- **Schema** is applied with `drizzle-kit push` immediately after
+  the container is ready.
+- **App** runs through `netlify dev` (Playwright `webServer` config),
+  pointing at the container. Same code, same Function runtime as
+  production.
+- Locally, `TESTCONTAINERS_REUSE_ENABLE=true` is honoured for fast
+  iteration; CI always cold-starts.
+
+### 10.2 No test-only code in the app
+
+The app itself has zero awareness that it's running under tests.
+Specifically:
+
+- **No `/_test/*` routes**, no test-only endpoints, no `loginAs`
+  shortcut, no `mintSession` import.
+- **No `storageState`** machinery. Every spec starts unauthenticated.
+- Tests act like real users. The `tests/login.ts` helper is a thin
+  convenience that fills the real form:
+
+  ```ts
+  await page.goto('/login');
+  await page.fill('[name=email]', email);
+  await page.fill('[name=password]', password);
+  await page.click('button[type=submit]');
+  await page.waitForURL('/');
+  ```
+
+  It does exactly what a user would. `tests/login.spec.ts` doesn't
+  use it — it tests the form directly.
+- Test-only setup that *can't* be done through the UI (DB reset,
+  bulk seeding) goes through **direct Drizzle access** from the test
+  process. The test process imports `app/db/schema.ts` and opens its
+  own `pg` pool. This keeps production builds free of any test
+  shape.
+
+### 10.3 Fixtures
+
+Two Playwright fixtures live in `tests/fixtures.ts`:
+
+- **`resetDb` (auto)** — runs before every test. `TRUNCATE … CASCADE`
+  over all app tables, then re-inserts a default flat + a default
+  user (`demo@cookbook.local` / `cookbook`). Returns the IDs.
+- **`seed(payload)`** — typed Drizzle inserts for additional users,
+  recipes, ingredients, and recipe_instances. Returns IDs the spec
+  can use.
+
+`fullyParallel: false` in v1 — one shared container, specs run
+serially. ~30-50 specs is fast enough; if it ever bites, switch to
+container-per-worker (Testcontainers makes this trivial).
+
+### 10.4 Coverage targets for v1
 
 - Login + invite redemption (happy path, used token, wrong password)
 - Recipe CRUD (create, edit, photo upload, delete with live state warning)
 - Search (name match, ingredient match, typo via trigram, weighting order, highlight)
 - Drafting (add to draft, scale target quantity, assign cook, remove)
-- Finalise → handoff (transaction succeeds, handoff URL renders both views, JSON-LD scales with `?q`)
-- Mark cooked (writes to history, removes from in-stock)
+- Finalise → handoff (single UPDATE succeeds, handoff URL renders both views, JSON-LD scales with `?q`)
+- Mark cooked (recipe_instance gets `cooked_at`; in-stock view no longer shows it)
 - Multi-user: two browser contexts in the same flat, edits visible after refresh
 
-### CI
+### 10.5 CI
 
 GitHub Actions workflow on every PR:
 
 1. Checkout, Node 22, `npm ci`
-2. `npm run lint` (eslint), `npm run typecheck` (`tsc --noEmit`)
-3. Spin up an ephemeral Neon branch via the Neon API (`neon branches create`),
-   apply migrations against it
-4. `npm run dev` against that DB; `npx playwright test`
-5. On finish: `neon branches delete`
+2. `npm run lint` (eslint + `tsc --noEmit`)
+3. `npx playwright install --with-deps chromium`
+4. `npm test` — Playwright `globalSetup` boots Postgres via
+   Testcontainers inside the runner and runs the suite against it.
 
-This is the parity safety net (§11): every PR tests against real
-Neon, not just local Postgres.
+No Postgres `services:` block in the workflow — Testcontainers
+handles it. The runner needs a Docker daemon, which GitHub-hosted
+Linux runners ship with.
+
+**Neon-branch-per-PR parity** (running the suite against a real
+ephemeral Neon branch) is deferred to Phase 6 — see §13.
 
 ---
 
-## 11. Local dev
+## 11. Local development = the E2E loop
 
-> **Goal: setup is a non-issue.** A new contributor — or you, six
-> months from now on a fresh laptop — should be running the app with
-> three commands.
+> **There is no `npm run dev` in v1.** The primary developer
+> interaction with the app is writing and running Playwright tests.
+> The test rig already boots the app, the database, and seeds
+> realistic state — that's the inner loop.
 
 ```bash
 git clone …
 npm install
-npm run dev
+npm test
 ```
 
-That's it. `npm run dev` does **everything**: starts Postgres, runs
-migrations, seeds dev data on first run, launches the app, and tells
-you the URL. No `.env` to copy, no `docker compose` to remember, no
-`db:push` to chain manually.
+That's it. `npm test` is `playwright test`, which:
 
-### 11.1 What `npm run dev` actually does
+1. Runs `tests/global-setup.ts` — boots a `postgres:16` container
+   via Testcontainers, applies the schema with `drizzle-kit push`,
+   exports `DATABASE_URL`.
+2. Starts the web server (`netlify dev`) via Playwright's `webServer`
+   config — same React Router app, same Function runtime as
+   production, pointed at the container.
+3. Runs the suite. Each test gets a fresh DB via the `resetDb`
+   fixture (§10.3) and logs in via the real form using the `login()`
+   helper.
+4. Runs `tests/global-teardown.ts` — stops the container.
 
-`npm run dev` runs `node scripts/dev.mjs`, a small orchestrator:
+Local Postgres ↔ production parity is enforced the same way it is
+in CI (§11.2): same `pg` driver, same extensions, pinned major.
 
-1. **Check Docker is running.** If not, print a clear "please start
-   Docker Desktop" message and exit non-zero.
-2. **Start Postgres** via `docker compose up -d --wait` against the
-   committed `docker-compose.yml` (one service, `postgres:16`,
-   healthcheck-gated). Idempotent — a no-op on subsequent runs.
-3. **Apply migrations** via `drizzle-kit push` against the local DB.
-   Also idempotent.
-4. **Seed dev data** if the `users` table is empty — creates a flat
-   "Wohnung Demo" with two users (`anna@example.com` /
-   `tom@example.com`, both password `cookbook`) and three sample
-   recipes. Skipped on subsequent runs.
-5. **Exec into `netlify dev`**, which boots React Router on
-   `http://localhost:8888` with the Netlify edge / functions / blobs
-   runtime emulated locally. Hot reload via Vite.
+### 11.1 Visual exploration
 
-The script logs each step concisely. On `Ctrl+C` it stops the dev
-server but **leaves Postgres running** (so the next `npm run dev` is
-instant). `npm run dev:stop` halts the Postgres container if you
-want a clean shutdown.
+When you want to *see* the app rather than just run specs:
 
-### 11.2 No `.env` ceremony
+| Need                                       | Use                          |
+| ------------------------------------------ | ---------------------------- |
+| Step through a single spec interactively   | `npx playwright test --debug some.spec.ts` |
+| Time-travel any past test run              | `npx playwright test --ui`   |
+| Pause mid-spec, click around the live app  | `await page.pause()` in the spec — Playwright opens an inspector and the app + container stay alive until you resume |
+| Run with a visible browser                 | `npx playwright test --headed` |
 
-Local-only defaults are committed in `.env.development` (loaded
-automatically by Vite):
+This covers every reason you'd previously want a "dev mode": the
+app is running, the DB has whatever the spec seeded, you can poke
+at the UI freely. No second context to spin up.
 
-```
-DATABASE_URL=postgres://cookbook:cookbook@localhost:5432/cookbook
-SESSION_SECRET=dev-only-not-a-secret
-```
-
-These are not real secrets — they only work against the local Docker
-Postgres. Production env vars live in Netlify's UI and override
-these.
-
-### 11.3 The other npm scripts
-
-You will rarely need these, but they exist:
-
-| Script             | What it does                                             |
-| ------------------ | -------------------------------------------------------- |
-| `npm run dev`      | The one command. Postgres + migrations + seed + app.    |
-| `npm run dev:stop` | Stops the local Postgres container.                      |
-| `npm run dev:reset`| Drops + recreates the local DB. Re-seeds on next `dev`. |
-| `npm run db:generate` | Drizzle: diff schema → SQL migration file in `drizzle/`. |
-| `npm run db:push`  | Apply current schema to whatever `DATABASE_URL` points at. |
-| `npm run test`     | Playwright (assumes `npm run dev` is running, or starts it via the Playwright web-server config). |
-| `npm run build`    | Production build (used by Netlify).                      |
-| `npm run lint` / `typecheck` | What CI runs.                                  |
-
-### 11.4 What needs internet / Netlify auth
-
-- `npm install` (the registry) and `git push` → Netlify deploy.
-  That's it.
-- Optional: `netlify link` + `netlify env:pull` to sync env vars from
-  the deployed site, or `netlify deploy --build` for a manual deploy.
-  Neither is required for normal feature work.
-- Optional: pointing `DATABASE_URL` at a real Neon dev branch if you
-  want to reproduce Neon-specific behaviour. Standard dev uses local
-  Postgres.
-
-### 11.5 Local Postgres ↔ Neon parity
+### 11.2 Local Postgres ↔ Neon parity
 
 Designed in, not hoped for:
 
-- **Pinned major version.** Docker uses `postgres:16` to match Neon's
-  default major. Bumped in lockstep.
+- **Pinned major version.** Testcontainers uses `postgres:16` to
+  match Neon's default major. Bumped in lockstep.
 - **Standard `pg` driver everywhere.** Not
   `@neondatabase/serverless`. The standard driver works against both
   raw Postgres and Neon's PgBouncer-backed pooler URL — keeps code
@@ -603,13 +626,43 @@ Designed in, not hoped for:
   `pgcrypto`. Built-in FTS (`tsvector`/`tsquery`) is core Postgres,
   identical on both. Any new extension is gated on Neon's supported
   list.
-- **Real safety net:** CI runs the full Playwright suite against an
-  ephemeral Neon branch per PR (Neon branching API). Drift between
-  local Postgres and real Neon shows up there before it hits main.
+- **Real safety net (Phase 6):** add a CI job that runs the
+  Playwright suite against an ephemeral Neon branch per PR (Neon
+  branching API). Drift between local Postgres and real Neon shows
+  up there before it hits main. Until that lands, the
+  Testcontainers run is the only safety net.
 - **Known divergences we accept:**
   - Neon's auto-suspend / cold starts (perf, not correctness).
   - PgBouncer transaction-pooling has session-state caveats — we
     avoid relying on cross-request session state anyway.
+
+### 11.3 npm scripts
+
+Only four:
+
+| Script              | What it does                                            |
+| ------------------- | ------------------------------------------------------- |
+| `npm test`          | The whole loop — Playwright + Testcontainers + app.     |
+| `npm run db:generate` | Drizzle: diff schema → SQL migration file in `drizzle/`. |
+| `npm run lint`      | eslint + `tsc --noEmit`.                                |
+| `npm run build`     | Production build (used by Netlify).                     |
+
+No `db:push` (globalSetup applies the schema), no `db:reset`
+(`resetDb` fixture handles it per-test), no `dev:*` (no dev mode),
+no separate `typecheck` (folded into `lint`).
+
+For Playwright variants (`--debug`, `--ui`, `--headed`), invoke the
+CLI directly — see §11.1.
+
+### 11.4 What needs internet / Netlify auth
+
+- `npm install` (the registry) and `git push` → Netlify deploy.
+  That's it.
+- Local runs need a working **Docker daemon** (Testcontainers
+  requirement). That's the only system dependency beyond Node.
+- Optional: `netlify link` + `netlify env:pull` to sync env vars
+  from the deployed site, or `netlify deploy --build` for a manual
+  deploy. Neither is required for normal feature work.
 
 ---
 
@@ -628,15 +681,21 @@ Designed in, not hoped for:
   - `DATABASE_URL` — Neon pooled connection string
   - `SESSION_SECRET` — 32-byte random, rotated by force-logout
   - `BLOBS_*` — provided automatically by Netlify
-- **Preview DB** per PR: ephemeral Neon branch created in the
-  Playwright CI job (§10.3) is *separate* from preview deploy DBs.
-  Preview deploys (Netlify) point at the production DB read replica
+- **Preview deploys** per PR point at the production DB read replica
   for v1 — we'll reconsider once we have data worth corrupting.
+  (Phase 6 adds an ephemeral Neon branch per PR for the Playwright
+  parity run; that branch is *not* what preview deploys connect to.)
 
 ---
 
 ## 13. Open questions / deferred to v2
 
+- **Neon-branch-per-PR parity run.** v1 CI runs the Playwright
+  suite against Testcontainers Postgres only (§10.5). Phase 6 adds
+  a second CI job that creates an ephemeral Neon branch via the
+  Neon API, applies migrations, and runs the suite against it —
+  catches any drift between local Postgres and real Neon before it
+  hits main.
 - **Email sending for invites.** v1: invite link is shown in the UI;
   the inviting member shares it via whatever channel they like. v2:
   add an SMTP provider (Resend / Postmark) and email the link.

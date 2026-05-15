@@ -19,7 +19,7 @@ DESIGN.md, UI.md, TECH.md are committed. This file plans the build.
    `mintSession` shortcut, no `storageState` machinery.
 
 These constraints simplify the surface drastically. TECH.md §1,
-§10, §11, §11.5 will need a follow-up rewrite to match — captured
+§10, §11, §11.2 will need a follow-up rewrite to match — captured
 as Phase 1.10.
 
 ## Stack reminder
@@ -146,13 +146,24 @@ Four total — that's it.
 
 ### 1.10 Update TECH.md
 
-- §1 stack: DB row mentions "Testcontainers (test) / Neon (prod)";
-  add a "Test runtime" row.
-- §10 (Testing): document Testcontainers + direct-DB fixtures +
-  per-test real-form login. No storageState, no test routes, no
-  shortcuts.
-- §11 ("Local dev"): rewrite as "Local development = E2E loop".
-- §11.5 (parity): mechanism update only; argument unchanged.
+✅ **Already done** in the cross-doc drift-resolution pass that
+preceded Phase 1 implementation. Specifically:
+
+- §1 stack table: DB row split (Neon prod / Testcontainers test);
+  added "Test runtime" row; CI row reads "lint (eslint + tsc) +
+  Playwright".
+- §10 Testing rewritten end-to-end (Testcontainers + direct-DB
+  fixtures + real-form `login()` helper; no storageState, no test
+  routes, no shortcuts; coverage targets fixed).
+- §11 rewritten as "Local development = the E2E loop" — no dev
+  mode, four scripts only, Playwright CLI for visual exploration.
+- §11.2 (parity) now points at Testcontainers as the local
+  mechanism; Neon-branch parity is documented as the Phase 6 add.
+- §13 carries the Phase 6 deferral entry for the Neon-branch CI
+  job.
+
+If new drift creeps in during Phase 1 implementation, fix it as
+part of the relevant task rather than batching here.
 
 ### 1.11 Docs
 

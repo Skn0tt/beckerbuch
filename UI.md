@@ -358,7 +358,7 @@ DESKTOP (modal)                                       MOBILE (sheet)
 phone, so this whole step is fundamentally a phone job — desktop's role
 is to get the URL onto your phone in one move.
 
-There is **one URL per finalised list** (e.g. `cookbook.app/h/8f3a-…`).
+There is **one URL per flat** (e.g. `cookbook.app/h/<flat-id>`).
 It's a single shareable page with two responsive renderings:
 
 - **On desktop:** a "send this to your phone" card (QR + Copy link).
@@ -376,7 +376,7 @@ DESKTOP — handoff URL rendered as modal              MOBILE — same URL, mobi
 │ page on your phone to share each recipe in.  │     │ Bring!.                          │
 │ ┌────────────────┬─────────────────────────┐ │     │                                  │
 │ │                │                         │ │     │ ┌──────────────────────────────┐ │
-│ │                │ cookbook.app/h/8f3a-…   │ │     │ │ Pasta al limone (serves 4)   │ │
+│ │                │ cookbook.app/h/<flat-id>│ │     │ │ Pasta al limone (serves 4)   │ │
 │ │     [ QR ]     │                         │ │     │ │ [   Share into Bring! →  ]   │ │
 │ │                │ [ Copy link ]           │ │     │ │ [ Done ]                     │ │
 │ │                │                         │ │     │ └──────────────────────────────┘ │
@@ -399,7 +399,7 @@ DESKTOP — handoff URL rendered as modal              MOBILE — same URL, mobi
 - Pick whichever cross-device transfer is easiest on the day: scan the QR, AirDrop the URL from the Copy button, paste from clipboard sync, etc.
 - Each per-recipe `[ Share into Bring! → ]` opens the OS share sheet; Bring! registers as a share target and scrapes the per-recipe page (schema.org Recipe JSON-LD scaled to the chosen quantity, DESIGN.md §4.4).
 - "Done" greys out a row so you can keep track during shopping prep. Closing with un-Done rows is fine; this UI is non-blocking.
-- The handoff URL doesn't expire — the page just keeps resolving for that finalised list, which means you can re-open it later from your messages/clipboard if shopping spills into another day. No "resume handoff" flow needed.
+- The handoff URL is stable for the life of the flat — it always shows the flat's current in-stock lane. You can keep it bookmarked, re-open it from your messages later, etc. After the next finalise, the same URL just shows the new contents. No "resume handoff" flow needed.
 
 ---
 
