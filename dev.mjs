@@ -2,15 +2,12 @@
 // Dev orchestrator for the test rig (also usable for local dev):
 //   1. Start (or reuse) a Postgres Testcontainer
 //   2. Apply the Drizzle schema
-//   3. Write the resulting DATABASE_URL to .cookbook-test-db-url so test
-//      workers (which run in their own processes) can pick it up
-//   4. Spawn `netlify dev` with DATABASE_URL injected into its environment
+//   3. Spawn `netlify dev` with DATABASE_URL injected into its environment
 //
 // Playwright's webServer config points at this script. There is no separate
 // globalSetup — everything ordering-sensitive happens here, in one place.
 
 import { execSync, spawn } from "node:child_process";
-import { writeFileSync } from "node:fs";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 
 if (process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE) {
@@ -26,7 +23,6 @@ const container = await new PostgreSqlContainer("postgres:16")
   .start();
 
 const databaseUrl = container.getConnectionUri();
-writeFileSync(".cookbook-test-db-url", databaseUrl);
 console.log(`[dev] DATABASE_URL=${databaseUrl}`);
 
 console.log("[dev] Enabling extensions…");

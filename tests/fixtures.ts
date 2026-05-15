@@ -4,10 +4,8 @@ import { login } from "./login";
 
 const ADMIN_TOKEN = "test-admin-token";
 
-// A long, NIST-friendly password used by every provisioned flat. Real
-// passwords would never be reused like this, but the test rig owns the
-// flat and the password is shared by the test process anyway.
-export const TEST_PASSWORD = "cookbook-test-password";
+// A long, NIST-friendly password reused by every provisioned test user.
+const TEST_PASSWORD = "cookbook-test-password";
 
 export type TestUser = {
   email: string;
@@ -58,10 +56,10 @@ export const test = base.extend<Fixtures>({
     };
 
     await page.goto(body.inviteUrl);
-    await page.fill("[name=email]", user.email);
-    await page.fill("[name=displayName]", user.displayName);
-    await page.fill("[name=password]", user.password);
-    await page.click("button[type=submit]");
+    await page.getByLabel("Email").fill(user.email);
+    await page.getByLabel("Display name").fill(user.displayName);
+    await page.getByRole("textbox", { name: "Password" }).fill(user.password);
+    await page.getByRole("button", { name: "Create account & join" }).click();
     await page.waitForURL("/");
     await page.context().clearCookies();
 
@@ -79,7 +77,7 @@ export { expect } from "@playwright/test";
 export async function generateInvite(page: Page, user: TestUser): Promise<string> {
   await login(page, user);
   await page.goto("/flat/settings");
-  await page.click("button[type=submit]");
+  await page.getByRole("button", { name: /generate/i }).click();
   await page.waitForURL("/flat/settings");
   return page.getByLabel("Invite link").inputValue();
 }

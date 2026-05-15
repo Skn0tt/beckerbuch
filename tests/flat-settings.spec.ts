@@ -33,7 +33,7 @@ test("generate new link rotates the previous one", async ({ page, flat }) => {
   const oldUrl = await generateInvite(page, flat.user);
 
   // Click Generate again — rotates to a fresh token.
-  await page.click("button[type=submit]");
+  await page.getByRole("button", { name: /generate/i }).click();
   await page.waitForURL("/flat/settings");
   const newUrl = await page.getByLabel("Invite link").inputValue();
   expect(newUrl).not.toBe(oldUrl);
