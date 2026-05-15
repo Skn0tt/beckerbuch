@@ -166,7 +166,10 @@ target quantity. Used for:
 - "What have we been eating lately?"
 - Eventually: surfacing repeat-favourites when drafting.
 
-No edits, no ratings, no comments in v1.
+No edits, no ratings, no comments in v1. **No UI surface in v1 either** —
+the data is recorded so we can query it manually (and so future features
+like repeat-favourites have history to draw on), but there's no in-app
+view of it yet.
 
 ## 5. Users & access
 
