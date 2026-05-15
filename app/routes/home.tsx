@@ -1,4 +1,4 @@
-import { Button, Container, Group, Stack, Text, Title } from "@mantine/core";
+import { Anchor, Button, Container, Group, Stack, Text, Title } from "@mantine/core";
 import { Form, useRouteLoaderData } from "react-router";
 import type { Route } from "./+types/home";
 import type { loader as appLoader } from "./_app";
@@ -22,12 +22,17 @@ export default function Home() {
         <Group justify="space-between" align="center">
           <Title order={1}>cookbook</Title>
           {data && (
-            <Form method="post" action="/logout">
-              <CsrfField sessionId={data.sessionId} />
-              <Button type="submit" variant="subtle" size="xs">
-                Sign out {data.user.displayName}
-              </Button>
-            </Form>
+            <Group gap="xs">
+              <Anchor href="/flat/settings" size="sm">
+                Flat settings
+              </Anchor>
+              <Form method="post" action="/logout">
+                <CsrfField sessionId={data.sessionId} />
+                <Button type="submit" variant="subtle" size="xs">
+                  Sign out {data.user.displayName}
+                </Button>
+              </Form>
+            </Group>
           )}
         </Group>
         <Text c="dimmed">No recipes yet</Text>

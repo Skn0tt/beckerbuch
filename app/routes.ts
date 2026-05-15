@@ -4,6 +4,7 @@ export default [
   layout("routes/_app.tsx", [
     index("routes/home.tsx"),
     route("logout", "routes/logout.tsx"),
+    route("flat/settings", "routes/flat.settings.tsx"),
   ]),
   route("login", "routes/login.tsx"),
   route("invite/:token", "routes/invite.$token.tsx"),
