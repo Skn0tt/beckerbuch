@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import type { TestUser } from "./tenant";
+import type { TestUser } from "./fixtures";
 
 export async function login(page: Page, user: Pick<TestUser, "email" | "password">) {
   await page.goto("/login");

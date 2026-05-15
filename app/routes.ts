@@ -8,5 +8,6 @@ export default [
   ]),
   route("login", "routes/login.tsx"),
   route("invite/:token", "routes/invite.$token.tsx"),
+  route("admin/tenants", "routes/admin.tenants.tsx"),
 ] satisfies RouteConfig;
 

@@ -77,9 +77,7 @@ export const invites = pgTable("invites", {
   flatId: uuid("flat_id")
     .notNull()
     .references(() => flats.id, { onDelete: "cascade" }),
-  createdBy: uuid("created_by")
-    .notNull()
-    .references(() => users.id),
+  createdBy: uuid("created_by").references(() => users.id),
   usedBy: uuid("used_by").references(() => users.id),
   usedAt: timestamp("used_at", { withTimezone: true }),
   expiresAt: timestamp("expires_at", { withTimezone: true }),

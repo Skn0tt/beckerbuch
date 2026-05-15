@@ -1,16 +1,85 @@
-import { test as base } from "@playwright/test";
-import { createTenant, type Tenant } from "./tenant";
+import { randomUUID } from "node:crypto";
+import { test as base, type Page } from "@playwright/test";
+import { login } from "./login";
+
+const ADMIN_TOKEN = "test-admin-token";
+
+// A long, NIST-friendly password used by every provisioned flat. Real
+// passwords would never be reused like this, but the test rig owns the
+// flat and the password is shared by the test process anyway.
+export const TEST_PASSWORD = "cookbook-test-password";
+
+export type TestUser = {
+  email: string;
+  password: string;
+  displayName: string;
+};
+
+export type Flat = {
+  id: string;
+  name: string;
+  user: TestUser;
+};
 
 export type Fixtures = {
-  tenant: Tenant;
+  flat: Flat;
 };
 
 export const test = base.extend<Fixtures>({
-  tenant: async ({}, use) => {
-    const tenant = await createTenant();
-    await use(tenant);
+  /**
+   * Provision a fresh flat plus a real first user. Talks to the admin
+   * endpoint via Playwright's `request` fixture (so it shares the test
+   * runner's HTTP plumbing), then drives the public invite-redemption
+   * form via `page` — the same path a real founder would walk.
+   *
+   * After redemption the page would be logged in as the new user, but
+   * we clear cookies so each test decides for itself when (and as
+   * whom) to log in.
+   */
+  flat: async ({ request, page }, use) => {
+    const slug = randomUUID();
+
+    const res = await request.post("/admin/tenants", {
+      data: {},
+      headers: { "X-Admin-Token": ADMIN_TOKEN },
+    });
+    if (!res.ok()) {
+      throw new Error(`POST /admin/tenants failed (${res.status()}): ${await res.text()}`);
+    }
+    const body = (await res.json()) as {
+      flat: { id: string; name: string };
+      inviteUrl: string;
+    };
+
+    const user: TestUser = {
+      email: `test-${slug}@cookbook.test`,
+      password: TEST_PASSWORD,
+      displayName: `Test Cook ${slug.slice(0, 8)}`,
+    };
+
+    await page.goto(body.inviteUrl);
+    await page.fill("[name=email]", user.email);
+    await page.fill("[name=displayName]", user.displayName);
+    await page.fill("[name=password]", user.password);
+    await page.click("button[type=submit]");
+    await page.waitForURL("/");
+    await page.context().clearCookies();
+
+    await use({ id: body.flat.id, name: body.flat.name, user });
   },
 });
 
 export { expect } from "@playwright/test";
 
+/**
+ * Drive the flat-settings UI to mint a fresh invite link as `user`. The
+ * page is left logged in and on `/flat/settings`; callers that want to
+ * redeem the invite anonymously should `clearCookies()` afterwards.
+ */
+export async function generateInvite(page: Page, user: TestUser): Promise<string> {
+  await login(page, user);
+  await page.goto("/flat/settings");
+  await page.click("button[type=submit]");
+  await page.waitForURL("/flat/settings");
+  return page.getByLabel("Invite link").inputValue();
+}

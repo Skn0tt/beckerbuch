@@ -26,7 +26,7 @@ live behind the **⚙** icon in the top bar — same on both form factors.
 ```
 DESKTOP                                       MOBILE
 ┌─────────────────────────────────────────┐   ┌──────────────────┐
-│ top bar                              ⚙ │   │ top bar       ⚙ │
+│ top bar                              ⚙  │   │ top bar       ⚙  │
 ├──────────────────────────────┬──────────┤   │                  │
 │                              │ Draft    │   │ tab content      │
 │ collection list              │ ──────── │   │                  │

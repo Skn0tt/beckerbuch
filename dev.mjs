@@ -56,6 +56,7 @@ const child = spawn("npx", ["netlify", "dev", "--port", "8888", "--no-open"], {
     NODE_ENV: process.env.NODE_ENV ?? "test",
     SESSION_SECRET:
       process.env.SESSION_SECRET ?? "test-only-not-a-secret-but-long-enough",
+    ADMIN_TOKEN: process.env.ADMIN_TOKEN ?? "test-admin-token",
   },
 });
 
