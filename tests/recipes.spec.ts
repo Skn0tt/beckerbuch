@@ -87,3 +87,60 @@ test("recipes are scoped to the flat — other flat's recipe → 404", async ({
   const res = await page.goto(recipeUrl);
   expect(res?.status()).toBe(404);
 });
+
+async function createPasta(page: import("@playwright/test").Page) {
+  await page.getByRole("link", { name: "+ New recipe" }).click();
+  await page.getByLabel("Name").fill("Pasta al limone");
+  await page.getByLabel("Ingredient 1 amount").fill("400");
+  await page.getByLabel("Ingredient 1 unit").fill("g");
+  await page.getByLabel("Ingredient 1 item").fill("spaghetti");
+  await page.getByLabel("Ingredient 2 item").fill("lemons");
+  await page.getByRole("button", { name: "Save recipe" }).click();
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
+}
+
+test("edit a recipe — change name + ingredient, see it on view + home", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+  await createPasta(page);
+
+  await page.getByRole("link", { name: "Edit" }).click();
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}\/edit$/);
+
+  // Pre-filled values are present.
+  await expect(page.getByLabel("Name")).toHaveValue("Pasta al limone");
+  await expect(page.getByLabel("Ingredient 1 item")).toHaveValue("spaghetti");
+
+  // Tweak.
+  await page.getByLabel("Name").fill("Pasta al limone (better)");
+  await page.getByLabel("Ingredient 1 amount").fill("450");
+  await page.getByRole("button", { name: "Save changes" }).click();
+
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
+  await expect(
+    page.getByRole("heading", { name: "Pasta al limone (better)" }),
+  ).toBeVisible();
+  await expect(page.getByText("450 g spaghetti")).toBeVisible();
+
+  await page.getByRole("link", { name: "← Collection" }).click();
+  await expect(
+    page.getByRole("link", { name: /Pasta al limone \(better\)/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Pasta al limone", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("delete a recipe — back on home, recipe gone", async ({ page, flat }) => {
+  await login(page, flat.user);
+  await createPasta(page);
+
+  // Auto-accept the confirm() dialog the Delete button raises.
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Delete" }).click();
+
+  await expect(page).toHaveURL("/");
+  await expect(page.getByText("No recipes yet")).toBeVisible();
+});
