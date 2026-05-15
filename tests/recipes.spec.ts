@@ -144,3 +144,58 @@ test("delete a recipe — back on home, recipe gone", async ({ page, flat }) => 
   await expect(page).toHaveURL("/");
   await expect(page.getByText("No recipes yet")).toBeVisible();
 });
+
+// 1×1 transparent PNG.
+const TINY_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+  "base64",
+);
+
+test("upload a photo on create → see it on view; remove it on edit", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+
+  await page.getByRole("link", { name: "+ New recipe" }).click();
+  await page.getByLabel("Name").fill("Photo recipe");
+  await page.getByLabel("Ingredient 1 item").fill("water");
+  await page
+    .locator('input[type="file"]')
+    .setInputFiles({ name: "tiny.png", mimeType: "image/png", buffer: TINY_PNG });
+  await page.getByRole("button", { name: "Save recipe" }).click();
+
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
+  const photoImg = page.getByRole("img", { name: "Photo recipe" });
+  await expect(photoImg).toBeVisible();
+  // Image actually loads (browser parsed it).
+  await expect
+    .poll(async () => await photoImg.evaluate((el: HTMLImageElement) => el.naturalWidth))
+    .toBeGreaterThan(0);
+
+  // Edit → tick "Remove current photo" → save → photo gone.
+  await page.getByRole("link", { name: "Edit" }).click();
+  await expect(page.getByAltText("Current photo")).toBeVisible();
+  await page.getByLabel("Remove current photo").check();
+  await page.getByRole("button", { name: "Save changes" }).click();
+
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole("img", { name: "Photo recipe" })).toHaveCount(0);
+});
+
+test("rejects non-image upload with form error", async ({ page, flat }) => {
+  await login(page, flat.user);
+  await page.getByRole("link", { name: "+ New recipe" }).click();
+  await page.getByLabel("Name").fill("Bad upload");
+  await page.getByLabel("Ingredient 1 item").fill("water");
+  await page
+    .locator('input[type="file"]')
+    .setInputFiles({
+      name: "evil.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("not an image"),
+    });
+  await page.getByRole("button", { name: "Save recipe" }).click();
+
+  await expect(page.getByRole("alert")).toContainText(/JPEG, PNG, or WebP/i);
+});

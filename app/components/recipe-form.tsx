@@ -2,7 +2,10 @@ import {
   ActionIcon,
   Alert,
   Button,
+  Checkbox,
+  FileInput,
   Group,
+  Image,
   NumberInput,
   Stack,
   TextInput,
@@ -22,6 +25,7 @@ export type RecipeFormInitial = {
   sourceUrl?: string;
   steps?: string;
   ingredients?: IngredientRow[];
+  photoUrl?: string | null;
 };
 
 const blankRow = (): IngredientRow => ({ amount: "", unit: "", item: "" });
@@ -49,7 +53,7 @@ export function RecipeForm({ sessionId, initial, error, submitLabel }: Props) {
   const addRow = () => setRows((rs) => [...rs, blankRow()]);
 
   return (
-    <Form method="post">
+    <Form method="post" encType="multipart/form-data">
       <CsrfField sessionId={sessionId} />
       <Stack gap="sm">
         <TextInput
@@ -84,6 +88,33 @@ export function RecipeForm({ sessionId, initial, error, submitLabel }: Props) {
           placeholder="https://…"
           defaultValue={initial?.sourceUrl ?? ""}
         />
+
+        <Stack gap="xs">
+          {initial?.photoUrl && (
+            <Stack gap={4}>
+              <Image
+                src={initial.photoUrl}
+                alt="Current photo"
+                radius="sm"
+                fit="cover"
+                h={160}
+                w="auto"
+              />
+              <Checkbox
+                name="removePhoto"
+                value="1"
+                label="Remove current photo"
+              />
+            </Stack>
+          )}
+          <FileInput
+            name="photo"
+            label={initial?.photoUrl ? "Replace photo" : "Photo"}
+            accept="image/jpeg,image/png,image/webp"
+            placeholder="Choose an image…"
+            clearable
+          />
+        </Stack>
 
         <Stack gap={4}>
           <Title order={5}>Ingredients</Title>

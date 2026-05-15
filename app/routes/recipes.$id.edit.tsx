@@ -8,6 +8,7 @@ import { requireFlatMember } from "../auth/require";
 import { requireCsrf } from "../auth/csrf";
 import { isSameOrigin } from "../auth/origin";
 import { RecipeForm, parseRecipeFields } from "../components/recipe-form";
+import { deletePhoto, storePhoto, validatePhoto } from "../blobs";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -35,6 +36,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
     sessionId: ctx.session.id,
     recipe,
+    photoUrl: recipe.photoBlobKey ? `/recipes/${recipe.id}/photo` : null,
     ingredients: ings.map((i) => ({
       amount: i.amount ?? "",
       unit: i.unit ?? "",
@@ -54,10 +56,33 @@ export async function action({ request, params }: Route.ActionArgs) {
   const parsed = parseRecipeFields(form);
   if (!parsed.ok) return { error: parsed.error };
 
+  const photoFile = form.get("photo");
+  const removePhoto = form.get("removePhoto") === "1";
+  let newPhotoContentType: string | null = null;
+  if (photoFile instanceof File && photoFile.size > 0) {
+    const v = validatePhoto(photoFile);
+    if (!v.ok) return { error: v.error };
+    newPhotoContentType = v.contentType;
+  }
+
+  let nextPhotoKey: string | null | undefined = undefined;
+  let oldKeyToDelete: string | null = null;
+  if (newPhotoContentType && photoFile instanceof File) {
+    nextPhotoKey = await storePhoto(recipe.id, photoFile, newPhotoContentType);
+    oldKeyToDelete = recipe.photoBlobKey;
+  } else if (removePhoto && recipe.photoBlobKey) {
+    nextPhotoKey = null;
+    oldKeyToDelete = recipe.photoBlobKey;
+  }
+
   await db().transaction(async (tx) => {
     await tx
       .update(recipes)
-      .set({ ...parsed.fields, updatedAt: new Date() })
+      .set({
+        ...parsed.fields,
+        ...(nextPhotoKey !== undefined ? { photoBlobKey: nextPhotoKey } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(recipes.id, recipe.id));
     await tx.delete(ingredients).where(eq(ingredients.recipeId, recipe.id));
     await tx.insert(ingredients).values(
@@ -71,12 +96,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     );
   });
 
+  if (oldKeyToDelete) await deletePhoto(oldKeyToDelete);
+
   return redirect(`/recipes/${recipe.id}`);
 }
 
 export default function EditRecipe({ loaderData }: Route.ComponentProps) {
   const actionData = useActionData<{ error?: string } | undefined>();
-  const { recipe, ingredients: ings, sessionId } = loaderData;
+  const { recipe, ingredients: ings, sessionId, photoUrl } = loaderData;
   return (
     <Container size="sm" py="xl">
       <Stack gap="md">
@@ -95,6 +122,7 @@ export default function EditRecipe({ loaderData }: Route.ComponentProps) {
             sourceUrl: recipe.sourceUrl ?? "",
             steps: recipe.steps,
             ingredients: ings,
+            photoUrl,
           }}
         />
       </Stack>

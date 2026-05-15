@@ -4,6 +4,7 @@ import {
   Button,
   Container,
   Group,
+  Image,
   List,
   Stack,
   Text,
@@ -18,6 +19,7 @@ import { requireFlatMember } from "../auth/require";
 import { requireCsrf } from "../auth/csrf";
 import { CsrfField } from "../auth/csrf-field";
 import { isSameOrigin } from "../auth/origin";
+import { deletePhoto } from "../blobs";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -76,6 +78,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   await db().delete(recipes).where(eq(recipes.id, recipe.id));
+  if (recipe.photoBlobKey) await deletePhoto(recipe.photoBlobKey);
   return redirect("/");
 }
 
@@ -127,6 +130,16 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
         )}
 
         <Title order={1}>{recipe.name}</Title>
+
+        {recipe.photoBlobKey && (
+          <Image
+            src={`/recipes/${recipe.id}/photo`}
+            alt={recipe.name}
+            radius="sm"
+            fit="cover"
+            mah={360}
+          />
+        )}
 
         <Text c="dimmed">
           Base: {recipe.baseQuantity} {recipe.baseQuantityUnit}

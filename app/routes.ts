@@ -8,6 +8,7 @@ export default [
     route("recipes/new", "routes/recipes.new.tsx"),
     route("recipes/:id", "routes/recipes.$id.tsx"),
     route("recipes/:id/edit", "routes/recipes.$id.edit.tsx"),
+    route("recipes/:id/photo", "routes/recipes.$id.photo.tsx"),
   ]),
   route("login", "routes/login.tsx"),
   route("invite/:token", "routes/invite.$token.tsx"),
