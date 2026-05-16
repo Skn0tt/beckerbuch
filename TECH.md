@@ -205,10 +205,11 @@ Notes:
   before going shopping, it disappears from the handoff URL too —
   desired ("changed my mind, drop it"). After shopping, you'd
   rarely revisit the URL.
-- **Position carries through.** On finalise we don't rewrite
-  `position`; values flow from draft into the in-stock lane as-is and
-  the user can re-drag them once they start thinking about cook
-  order.
+- **Position renumbers on finalise.** Draft positions don't necessarily
+  match in-stock positions (the partial unique indexes are independent),
+  so finalise appends each draft row after the current in-stock max,
+  preserving draft order. Once in the in-stock lane the user can
+  re-drag them to a cook order.
 - **`recipe_id ON DELETE RESTRICT`**: deleting a recipe that has any
   live or historical instances must be an explicit decision (the
   UI's `…` "Delete recipe" surface warns). Cooked rows are an
@@ -407,26 +408,49 @@ is currently in-stock; there is no per-finalise URL.
 ## 7. The Finalise transaction
 
 The single most important state transition in the app
-(DESIGN.md §4.3). With Option B (§3.3), it's a single statement —
-no transaction strictly required, but cheap to wrap for safety:
+(DESIGN.md §4.3). Wrapped in a transaction because we touch every
+draft row and need to renumber positions to dodge the in-stock
+partial unique index:
 
 ```sql
-UPDATE recipe_instances
-   SET finalised_at = now()
- WHERE flat_id = $flat_id
-   AND finalised_at IS NULL;
+-- Conceptually:
+WITH stock_max AS (
+  SELECT coalesce(max(position), -1) AS m
+    FROM recipe_instances
+   WHERE flat_id = $flat_id
+     AND finalised_at IS NOT NULL
+     AND cooked_at IS NULL
+),
+ranked AS (
+  SELECT id, row_number() OVER (ORDER BY position) - 1 AS rn
+    FROM recipe_instances
+   WHERE flat_id = $flat_id
+     AND finalised_at IS NULL
+)
+UPDATE recipe_instances ri
+   SET finalised_at = now(),
+       position = (SELECT m FROM stock_max) + 1 + r.rn
+  FROM ranked r
+ WHERE ri.id = r.id
+   AND ri.finalised_at IS NULL;
 ```
 
-That's it. No token to mint, no snapshot to copy. Marking a stock
-entry as cooked is the symmetric one-liner:
+Marking a stock entry as cooked is the symmetric one-liner:
 `UPDATE recipe_instances SET cooked_at = now(), cooked_by = $user WHERE id = $id`.
 
-- Wrapped in `db.transaction(async tx => …)` (Drizzle) for future-proofing.
+- Drizzle implementation iterates draft rows inside
+  `db.transaction(...)` rather than emitting the CTE — same effect,
+  simpler typing.
+- Each per-row `UPDATE` re-asserts `finalised_at IS NULL` so a
+  concurrent finaliser's just-finalised rows are skipped instead of
+  overwritten.
 - The action returns `redirect("/h/" + flat_id)` on success;
   the desktop client opens it as a modal, mobile as a page.
-- Concurrency: two members hitting Finalise simultaneously both
-  succeed and both UPDATE the same set of rows to the same
-  `finalised_at` (within milliseconds). Last-writer-wins is fine.
+- Concurrency: two members hitting Finalise simultaneously each
+  finalise whatever was still in draft when their transaction
+  started. The second tx may find an empty draft (no-op) or a
+  partial overlap (only the not-yet-finalised rows get touched).
+  Either way the final state is "no draft, all rows finalised".
 
 ---
 

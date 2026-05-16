@@ -146,7 +146,7 @@ test("designated cook picker — assign self, then unassign", async ({ page, fla
   ).toHaveAttribute("aria-pressed", "true");
 });
 
-test("promote draft → in-stock lane → mark cooked → empty", async ({
+test("finalise draft → in-stock lane → mark cooked → empty", async ({
   page,
   flat,
 }) => {
@@ -159,11 +159,15 @@ test("promote draft → in-stock lane → mark cooked → empty", async ({
   await expect(page.getByText(/Draft \(1\)/)).toBeVisible();
   await expect(page.getByText(/In stock \(0\)/)).toBeVisible();
 
-  // Promote to in stock.
+  // Finalise the draft → redirects to handoff page.
+  await page.getByRole("button", { name: "Finalise draft" }).click();
   await page
-    .getByRole("button", { name: "Move Pasta al limone to in stock" })
+    .getByRole("button", { name: "Confirm finalise draft" })
     .click();
+  await expect(page).toHaveURL(/\/h\/[0-9a-f-]{36}$/);
 
+  // Back to kitchen — draft is empty, stock has 1.
+  await page.goto("/kitchen");
   await expect(page.getByText(/Draft \(0\)/)).toBeVisible();
   await expect(page.getByText(/In stock \(1\)/)).toBeVisible();
 

@@ -14,5 +14,8 @@ export default [
   route("login", "routes/login.tsx"),
   route("invite/:token", "routes/invite.$token.tsx"),
   route("admin/tenants", "routes/admin.tenants.tsx"),
+  route("r/:id", "routes/r.$id.tsx"),
+  route("r/:id/photo", "routes/r.$id.photo.tsx"),
+  route("h/:flatId", "routes/h.$flatId.tsx"),
 ] satisfies RouteConfig;
 

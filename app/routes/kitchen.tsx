@@ -6,13 +6,15 @@ import {
   Container,
   Group,
   List,
+  Modal,
   SegmentedControl,
   Stack,
   Text,
   Title,
 } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { Form, Link, useFetcher, useNavigate } from "react-router";
+import { Form, Link, redirect, useFetcher, useNavigate } from "react-router";
 import type { Route } from "./+types/kitchen";
 import { db } from "../db/client";
 import { ingredients, recipeInstances, recipes, flatMembers, users } from "../db/schema";
@@ -21,6 +23,7 @@ import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { csrfFieldName } from "../auth/csrf-shared";
 import { CsrfField } from "../auth/csrf-field";
 import { isSameOrigin } from "../auth/origin";
+import { formatIngredient as fmtIngredient } from "../lib/scale";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -190,13 +193,14 @@ export async function action({ request }: Route.ActionArgs) {
     return { ok: true };
   }
 
-  if (intent === "promote-to-stock") {
-    // Stub for Phase 5 finalise: promote a single draft instance to in-stock.
-    if (!UUID_RE.test(instanceId)) return { error: "Invalid instance." };
-    const updated = await db().transaction(async (tx) => {
-      const nextPosRow = await tx
+  if (intent === "finalise") {
+    // Bulk: move every draft row to in-stock. Renumber positions to
+    // append after current in-stock max — preserves draft order, dodges
+    // the partial unique index on (flat_id, position) WHERE in-stock.
+    await db().transaction(async (tx) => {
+      const maxRow = await tx
         .select({
-          next: sql<number>`coalesce(max(${recipeInstances.position}), -1) + 1`,
+          m: sql<number>`coalesce(max(${recipeInstances.position}), -1)`,
         })
         .from(recipeInstances)
         .where(
@@ -206,23 +210,32 @@ export async function action({ request }: Route.ActionArgs) {
             isNull(recipeInstances.cookedAt),
           ),
         );
-      const nextPos = Number(nextPosRow[0]?.next ?? 0);
-      return tx
-        .update(recipeInstances)
-        .set({ finalisedAt: new Date(), position: nextPos })
+      const baseM = Number(maxRow[0]?.m ?? -1);
+      const drafts = await tx
+        .select({ id: recipeInstances.id })
+        .from(recipeInstances)
         .where(
           and(
-            eq(recipeInstances.id, instanceId),
             eq(recipeInstances.flatId, ctx.flat.id),
             isNull(recipeInstances.finalisedAt),
           ),
         )
-        .returning({ id: recipeInstances.id });
+        .orderBy(asc(recipeInstances.position));
+      const now = new Date();
+      for (let i = 0; i < drafts.length; i++) {
+        await tx
+          .update(recipeInstances)
+          .set({ finalisedAt: now, position: baseM + 1 + i })
+          .where(
+            and(
+              eq(recipeInstances.id, drafts[i].id),
+              eq(recipeInstances.flatId, ctx.flat.id),
+              isNull(recipeInstances.finalisedAt),
+            ),
+          );
+      }
     });
-    if (updated.length === 0) {
-      return { error: "Already promoted or not in your draft." };
-    }
-    return { ok: true };
+    return redirect(`/h/${ctx.flat.id}`);
   }
 
   if (intent === "mark-cooked") {
@@ -317,32 +330,8 @@ export async function action({ request }: Route.ActionArgs) {
   return { error: "Unknown action." };
 }
 
-function scaleAmount(amount: string | null, factor: number): string | null {
-  if (amount === null) return null;
-  const trimmed = amount.trim();
-  let n: number | null = null;
-  const fracMatch = trimmed.match(/^(\d+)\s*\/\s*(\d+)$/);
-  if (fracMatch) {
-    const a = Number(fracMatch[1]);
-    const b = Number(fracMatch[2]);
-    if (b !== 0) n = a / b;
-  } else {
-    const parsed = Number(trimmed.replace(",", "."));
-    if (Number.isFinite(parsed)) n = parsed;
-  }
-  if (n === null) return amount;
-  const scaled = n * factor;
-  if (Number.isInteger(scaled)) return String(scaled);
-  return Number(scaled.toFixed(2)).toString();
-}
-
 function formatIngredient(ing: DraftIngredient, factor: number): string {
-  const parts: string[] = [];
-  const scaled = scaleAmount(ing.amount, factor);
-  if (scaled) parts.push(scaled);
-  if (ing.unit) parts.push(ing.unit);
-  parts.push(ing.item);
-  return parts.join(" ");
+  return fmtIngredient(ing, factor);
 }
 
 type DraftEntry = Awaited<ReturnType<typeof loader>>["draft"][number];
@@ -494,19 +483,6 @@ function DraftCard({
             </Group>
             <Form method="post">
               <CsrfField token={csrfToken} />
-              <input type="hidden" name="intent" value="promote-to-stock" />
-              <input type="hidden" name="instanceId" value={entry.id} />
-              <Button
-                type="submit"
-                variant="light"
-                size="xs"
-                aria-label={`Move ${entry.recipeName} to in stock`}
-              >
-                → In stock
-              </Button>
-            </Form>
-            <Form method="post">
-              <CsrfField token={csrfToken} />
               <input type="hidden" name="intent" value="remove-from-draft" />
               <input type="hidden" name="instanceId" value={entry.id} />
               <Button
@@ -653,11 +629,16 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
                   isLast={i === draft.length - 1}
                 />
               ))}
+              <FinaliseButton
+                csrfToken={csrfToken}
+                draft={draft}
+                stockCount={stock.length}
+              />
             </Stack>
           )
         ) : stock.length === 0 ? (
           <Text c="dimmed">
-            Nothing in stock yet — move a draft entry across to start cooking.
+            Nothing in stock yet — finalise the draft to start cooking.
           </Text>
         ) : (
           <Stack gap="xs">
@@ -674,5 +655,65 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
         )}
       </Stack>
     </Container>
+  );
+}
+
+function FinaliseButton({
+  csrfToken,
+  draft,
+  stockCount,
+}: {
+  csrfToken: string;
+  draft: DraftEntry[];
+  stockCount: number;
+}) {
+  const [opened, { open, close }] = useDisclosure(false);
+  return (
+    <>
+      <Group justify="flex-end" mt="sm">
+        <Button onClick={open} aria-label="Finalise draft">
+          Finalise →
+        </Button>
+      </Group>
+      <Modal opened={opened} onClose={close} title="Finalise this draft?">
+        <Stack gap="sm">
+          <Text size="sm">This will:</Text>
+          <List size="sm" withPadding>
+            <List.Item>Move {draft.length} recipe(s) to In stock</List.Item>
+            <List.Item>Empty the draft</List.Item>
+            {stockCount > 0 ? (
+              <List.Item>
+                Send all {stockCount + draft.length} in-stock recipe(s) to the
+                handoff page — including {stockCount} already there
+              </List.Item>
+            ) : (
+              <List.Item>Open the Bring! handoff page</List.Item>
+            )}
+          </List>
+          <Text size="sm" fw={500}>
+            Recipes:
+          </Text>
+          <List size="sm" withPadding>
+            {draft.map((d) => (
+              <List.Item key={d.id}>
+                {d.recipeName} (serves {d.targetQuantity})
+              </List.Item>
+            ))}
+          </List>
+          <Group justify="flex-end" gap="sm">
+            <Button variant="default" onClick={close}>
+              Cancel
+            </Button>
+            <Form method="post">
+              <CsrfField token={csrfToken} />
+              <input type="hidden" name="intent" value="finalise" />
+              <Button type="submit" aria-label="Confirm finalise draft">
+                Finalise →
+              </Button>
+            </Form>
+          </Group>
+        </Stack>
+      </Modal>
+    </>
   );
 }

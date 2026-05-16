@@ -332,10 +332,9 @@ DESKTOP (modal)                                       MOBILE (sheet)
 │ Finalise this draft?                     ✕   │     │ ✕   Finalise draft               │
 ├──────────────────────────────────────────────┤     ├──────────────────────────────────┤
 │ This will:                                   │     │ This will:                       │
-│  • Generate a Bring!-ready import for        │     │  • Generate a Bring! import for  │
-│    23 ingredient lines                       │     │    23 ingredient lines           │
 │  • Move 4 recipes to In stock                │     │  • Move 4 recipes to In stock    │
 │  • Empty the draft                           │     │  • Empty the draft               │
+│  • Open the Bring! handoff page              │     │  • Open the Bring! handoff page  │
 │                                              │     │                                  │
 │ Recipes:                                     │     │ Recipes:                         │
 │  · Pasta al limone (serves 4)                │     │  · Pasta al limone (serves 4)    │
