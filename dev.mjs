@@ -14,34 +14,44 @@ if (process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE) {
   delete process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE;
 }
 
-console.log("[dev] Starting Postgres container…");
-const container = await new PostgreSqlContainer("postgres:16")
-  .withDatabase("cookbook_test")
-  .withUsername("cookbook")
-  .withPassword("cookbook")
-  .withReuse()
-  .start();
+let databaseUrl;
 
-const databaseUrl = container.getConnectionUri();
-console.log(`[dev] DATABASE_URL=${databaseUrl}`);
+if (process.env.SKIP_TESTCONTAINER === "1" && process.env.DATABASE_URL) {
+  // Neon parity CI: an external Postgres URL is already set (an
+  // ephemeral Neon branch) and migrations have already been applied
+  // outside this script. Skip container + schema push.
+  databaseUrl = process.env.DATABASE_URL;
+  console.log(`[dev] SKIP_TESTCONTAINER=1, reusing DATABASE_URL=${databaseUrl}`);
+} else {
+  console.log("[dev] Starting Postgres container…");
+  const container = await new PostgreSqlContainer("postgres:16")
+    .withDatabase("cookbook_test")
+    .withUsername("cookbook")
+    .withPassword("cookbook")
+    .withReuse()
+    .start();
 
-console.log("[dev] Enabling extensions…");
-const { Client } = await import("pg");
-const client = new Client({ connectionString: databaseUrl });
-await client.connect();
-await client.query(`
-  CREATE EXTENSION IF NOT EXISTS pgcrypto;
-  CREATE EXTENSION IF NOT EXISTS citext;
-  CREATE EXTENSION IF NOT EXISTS pg_trgm;
-  CREATE EXTENSION IF NOT EXISTS unaccent;
-`);
-await client.end();
+  databaseUrl = container.getConnectionUri();
+  console.log(`[dev] DATABASE_URL=${databaseUrl}`);
 
-console.log("[dev] Applying schema (drizzle-kit push)…");
-execSync("npx drizzle-kit push --force", {
-  stdio: "inherit",
-  env: { ...process.env, DATABASE_URL: databaseUrl },
-});
+  console.log("[dev] Enabling extensions…");
+  const { Client } = await import("pg");
+  const client = new Client({ connectionString: databaseUrl });
+  await client.connect();
+  await client.query(`
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+    CREATE EXTENSION IF NOT EXISTS citext;
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+    CREATE EXTENSION IF NOT EXISTS unaccent;
+  `);
+  await client.end();
+
+  console.log("[dev] Applying schema (drizzle-kit push)…");
+  execSync("npx drizzle-kit push --force", {
+    stdio: "inherit",
+    env: { ...process.env, DATABASE_URL: databaseUrl },
+  });
+}
 
 console.log("[dev] Spawning netlify dev…");
 const child = spawn("npx", ["netlify", "dev", "--port", "8888", "--no-open"], {

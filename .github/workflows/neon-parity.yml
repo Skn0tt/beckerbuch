@@ -1,0 +1,62 @@
+name: Neon parity
+
+# Phase 6 parity safety net (TECH.md §10.5, §11.2).
+# Per PR: spin up an ephemeral Neon branch, apply migrations against
+# it, run the full Playwright suite pointed at the branch URL, then
+# delete the branch. Catches drift between local Postgres (testcontainers)
+# and real Neon — auto-suspend, PgBouncer behaviour, extension availability —
+# before it hits main.
+#
+# Requires repo secrets:
+#   NEON_API_KEY       — Neon personal API key
+#   NEON_PROJECT_ID    — target Neon project id
+#
+# If either secret is absent the job is skipped (no-op for forks).
+
+on:
+  pull_request:
+
+jobs:
+  neon-parity:
+    runs-on: ubuntu-latest
+    if: ${{ vars.NEON_PROJECT_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Create Neon branch
+        id: branch
+        uses: neondatabase/create-branch-action@v5
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch_name: ci-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+
+      - run: npm ci
+
+      - name: Apply migrations to Neon branch
+        run: npx drizzle-kit migrate
+        env:
+          DATABASE_URL: ${{ steps.branch.outputs.db_url_pooled }}
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright against Neon branch
+        run: npm test
+        env:
+          CI: "true"
+          # Point dev.mjs / globalSetup at this URL instead of spawning
+          # a testcontainer. See tests/global-setup.ts.
+          DATABASE_URL: ${{ steps.branch.outputs.db_url_pooled }}
+          SKIP_TESTCONTAINER: "1"
+
+      - name: Delete Neon branch
+        if: always()
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch: ci-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}
+          api_key: ${{ secrets.NEON_API_KEY }}

@@ -1,11 +1,19 @@
 import {
+  Button,
+  Code,
   ColorSchemeScript,
+  Container,
+  Group,
   MantineProvider,
   mantineHtmlProps,
+  Stack,
+  Text,
+  Title,
 } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import {
   isRouteErrorResponse,
+  Link,
   Links,
   Meta,
   Outlet,
@@ -45,30 +53,46 @@ export default function App() {
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
-  let message = "Oops!";
-  let details = "An unexpected error occurred.";
-  let stack: string | undefined;
+  const is404 = isRouteErrorResponse(error) && error.status === 404;
+  const isRouteError = isRouteErrorResponse(error);
 
-  if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? "404" : "Error";
-    details =
-      error.status === 404
-        ? "The requested page could not be found."
-        : error.statusText || details;
-  } else if (import.meta.env.DEV && error && error instanceof Error) {
-    details = error.message;
-    stack = error.stack;
+  let title = "Something went wrong";
+  let body = "An unexpected error occurred. Try going back home.";
+
+  if (is404) {
+    title = "404 — page not found";
+    body = "We couldn't find what you were looking for.";
+  } else if (isRouteError) {
+    title = `${error.status} — ${error.statusText || "Error"}`;
+    body =
+      typeof error.data === "string" && error.data.length < 200
+        ? error.data
+        : body;
   }
 
+  const stack =
+    !isRouteError &&
+    import.meta.env.DEV &&
+    error instanceof Error
+      ? error.stack
+      : undefined;
+
   return (
-    <main className="pt-16 p-4 container mx-auto">
-      <h1>{message}</h1>
-      <p>{details}</p>
-      {stack && (
-        <pre className="w-full p-4 overflow-x-auto">
-          <code>{stack}</code>
-        </pre>
-      )}
-    </main>
+    <Container size="sm" py="xl">
+      <Stack gap="md">
+        <Title order={1}>{title}</Title>
+        <Text c="dimmed">{body}</Text>
+        <Group>
+          <Button component={Link} to="/" variant="filled">
+            Back to home
+          </Button>
+        </Group>
+        {stack && (
+          <Code block style={{ whiteSpace: "pre-wrap" }}>
+            {stack}
+          </Code>
+        )}
+      </Stack>
+    </Container>
   );
 }

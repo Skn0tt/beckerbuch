@@ -179,6 +179,7 @@ recipe_instances
   finalised_at          timestamptz                 -- draft → in stock
   cooked_at             timestamptz                 -- in stock → cooked
   cooked_by             uuid fk → users(id)         -- nullable
+  note                  text                        -- nullable; short kitchen-only annotation ("cook this on Friday"); editable in draft + in-stock; never exposed on public /h/:flatId
   check (cooked_at is null or finalised_at is not null)
 
 -- Partial unique indexes keep position unique per "lane":
@@ -593,8 +594,13 @@ No Postgres `services:` block in the workflow — Testcontainers
 handles it. The runner needs a Docker daemon, which GitHub-hosted
 Linux runners ship with.
 
-**Neon-branch-per-PR parity** (running the suite against a real
-ephemeral Neon branch) is deferred to Phase 6 — see §13.
+**Neon-branch-per-PR parity** runs as a separate workflow
+(`.github/workflows/neon-parity.yml`): per PR it creates an ephemeral
+Neon branch, applies migrations against it, and runs the full
+Playwright suite pointed at the branch URL (via `SKIP_TESTCONTAINER=1`
+in `dev.mjs`). Requires repo vars `NEON_PROJECT_ID` and secret
+`NEON_API_KEY`; the job is skipped if they're not set, so forks still
+get a green CI signal from the main workflow.
 
 ---
 
@@ -703,10 +709,11 @@ CLI directly — see §11.1.
 - **Build:** `npm run build` (React Router → `build/` server bundle +
   `build/client/` assets). The `@netlify/vite-plugin-react-router`
   Netlify plugin wraps the server bundle as a Function automatically.
-- **Migrations:** a `npm run db:migrate` step in the Netlify build
-  command applies pending Drizzle migrations against the production
-  DB before the new code goes live. Roll-forward only — schema
-  changes are reviewed for backwards compat in PR.
+- **Migrations:** the Netlify build command applies pending Drizzle
+  migrations against `$DATABASE_URL` before building:
+  `npx drizzle-kit migrate && npm run build`. Roll-forward only —
+  schema changes are reviewed for backwards compat in PR. (No `db:migrate`
+  npm script — we keep the four-script rule from §11.3.)
 - **Env vars** (set in Netlify UI):
   - `DATABASE_URL` — Neon pooled connection string
   - `SESSION_SECRET` — 32-byte random, rotated by force-logout
