@@ -10,10 +10,12 @@ import {
   SegmentedControl,
   Stack,
   Text,
+  TextInput,
   Title,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { useEffect, useRef, useState } from "react";
 import { Form, Link, redirect, useFetcher, useNavigate } from "react-router";
 import type { Route } from "./+types/kitchen";
 import { db } from "../db/client";
@@ -49,6 +51,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     recipeName: recipes.name,
     baseQuantity: recipes.baseQuantity,
     designatedCookId: recipeInstances.designatedCookId,
+    note: recipeInstances.note,
   };
 
   const draft = await db()
@@ -188,6 +191,25 @@ export async function action({ request }: Route.ActionArgs) {
           eq(recipeInstances.id, instanceId),
           eq(recipeInstances.flatId, ctx.flat.id),
           isNull(recipeInstances.finalisedAt),
+        ),
+      );
+    return { ok: true };
+  }
+
+  if (intent === "set-note") {
+    if (!UUID_RE.test(instanceId)) return { error: "Invalid instance." };
+    const raw = String(form.get("note") ?? "");
+    const trimmed = raw.trim();
+    const value: string | null = trimmed.length === 0 ? null : trimmed;
+    // Notes are editable in BOTH draft and in-stock (not after cooking).
+    await db()
+      .update(recipeInstances)
+      .set({ note: value })
+      .where(
+        and(
+          eq(recipeInstances.id, instanceId),
+          eq(recipeInstances.flatId, ctx.flat.id),
+          isNull(recipeInstances.cookedAt),
         ),
       );
     return { ok: true };
@@ -335,6 +357,133 @@ function formatIngredient(ing: DraftIngredient, factor: number): string {
 }
 
 type DraftEntry = Awaited<ReturnType<typeof loader>>["draft"][number];
+
+function NoteEditor({
+  entry,
+  csrfToken,
+}: {
+  entry: DraftEntry;
+  csrfToken: string;
+}) {
+  const fetcher = useFetcher({ key: `note-${entry.id}` });
+  // Optimistic: submitting form data wins over server data.
+  const submittedNote = fetcher.formData?.get("note");
+  const optimistic =
+    submittedNote != null ? String(submittedNote).trim() : null;
+  const persisted = entry.note ?? null;
+  const current =
+    submittedNote != null
+      ? optimistic && optimistic.length > 0
+        ? optimistic
+        : null
+      : persisted;
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(current ?? "");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Focus the input the moment we enter edit mode.
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  const startEditing = () => {
+    setDraft(current ?? "");
+    setEditing(true);
+  };
+
+  const submit = (value: string) => {
+    const fd = new FormData();
+    fd.set(csrfFieldName(), csrfToken);
+    fd.set("intent", "set-note");
+    fd.set("instanceId", entry.id);
+    fd.set("note", value);
+    fetcher.submit(fd, { method: "post" });
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <Group gap="xs" wrap="nowrap">
+        <TextInput
+          ref={inputRef}
+          size="xs"
+          value={draft}
+          onChange={(e) => setDraft(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit(draft);
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setEditing(false);
+            }
+          }}
+          placeholder="e.g. cook this on Friday"
+          aria-label={`Note for ${entry.recipeName}`}
+          style={{ flex: 1 }}
+          data-testid="note-input"
+        />
+        <Button
+          type="button"
+          size="xs"
+          variant="light"
+          onClick={() => submit(draft)}
+        >
+          Save
+        </Button>
+        {current && (
+          <Button
+            type="button"
+            size="xs"
+            variant="subtle"
+            color="red"
+            onClick={() => submit("")}
+            aria-label={`Clear note for ${entry.recipeName}`}
+          >
+            Clear
+          </Button>
+        )}
+      </Group>
+    );
+  }
+
+  if (current) {
+    return (
+      <Group gap="xs" wrap="nowrap" align="center">
+        <Text size="sm" fs="italic" c="dimmed" style={{ flex: 1 }} data-testid="note-text">
+          📝 {current}
+        </Text>
+        <Button
+          type="button"
+          size="compact-xs"
+          variant="subtle"
+          onClick={startEditing}
+          aria-label={`Edit note for ${entry.recipeName}`}
+        >
+          Edit
+        </Button>
+      </Group>
+    );
+  }
+
+  return (
+    <Button
+      type="button"
+      size="compact-xs"
+      variant="subtle"
+      c="dimmed"
+      onClick={startEditing}
+      aria-label={`Add note for ${entry.recipeName}`}
+      style={{ alignSelf: "flex-start" }}
+    >
+      + Note
+    </Button>
+  );
+}
 
 function MoveButtons({
   entry,
@@ -525,6 +674,8 @@ function DraftCard({
           </Group>
         </Group>
 
+        <NoteEditor entry={entry} csrfToken={csrfToken} />
+
         <List spacing={2} size="sm" c="dimmed" withPadding>
           {entry.ingredients.map((i) => (
             <List.Item key={i.position}>{formatIngredient(i, factor)}</List.Item>
@@ -583,6 +734,7 @@ function StockCard({
             </Form>
           </Group>
         </Group>
+        <NoteEditor entry={entry} csrfToken={csrfToken} />
         <List spacing={2} size="sm" c="dimmed" withPadding>
           {entry.ingredients.map((i) => (
             <List.Item key={i.position}>{formatIngredient(i, factor)}</List.Item>

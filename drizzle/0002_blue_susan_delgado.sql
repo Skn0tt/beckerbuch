@@ -1,0 +1,1 @@
+ALTER TABLE "recipe_instances" ADD COLUMN "note" text;

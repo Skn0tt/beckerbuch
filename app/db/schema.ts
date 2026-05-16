@@ -155,6 +155,7 @@ export const recipeInstances = pgTable(
     finalisedAt: timestamp("finalised_at", { withTimezone: true }),
     cookedAt: timestamp("cooked_at", { withTimezone: true }),
     cookedBy: uuid("cooked_by").references(() => users.id),
+    note: text("note"),
   },
   (t) => [
     check(

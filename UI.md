@@ -316,6 +316,7 @@ MOBILE — Draft                                       MOBILE — In stock
 
 - Tapping a recipe card → **Recipe detail** (§5).
 - Tapping `👤` opens a sheet to assign/clear the designated cook.
+- Per-card **"+ Note"** affordance: tap → inline single-line input ("e.g. cook this on Friday"). Once set, the note shows under the recipe header with a small Edit button. Notes are kitchen-only — they do not appear on the public handoff page.
 - "Finalise →" opens **Finalise confirmation** (§7) as a sheet.
 - In stock: `[ ✓ Cooked ]` is a deliberately big tap target (kitchen-with-greasy-hands ergonomics). Tap → "Marked cooked. **Undo**" toast for ~5s before writing to history.
 - Empty draft: shows a friendly empty state with `[ Browse recipes → ]` jumping to the Recipes tab.
