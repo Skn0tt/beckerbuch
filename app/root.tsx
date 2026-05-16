@@ -4,7 +4,6 @@ import {
   mantineHtmlProps,
 } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
-import { useEffect } from "react";
 import {
   isRouteErrorResponse,
   Links,
@@ -42,13 +41,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  // Sentinel so E2E tests can wait for client hydration before sending
-  // input. Without it, fast tests under workers:2 occasionally fire a
-  // click against the SSR'd-but-not-yet-hydrated DOM, the React onClick
-  // never runs, and the assertion that follows times out.
-  useEffect(() => {
-    document.documentElement.dataset.hydrated = "1";
-  }, []);
   return <Outlet />;
 }
 

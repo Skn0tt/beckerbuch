@@ -11,7 +11,7 @@ import {
   Title,
 } from "@mantine/core";
 import { and, eq, asc, count, isNull, max, sql } from "drizzle-orm";
-import { Form, data, Link, redirect, useActionData } from "react-router";
+import { Form, data, Link, redirect, useActionData, useFetcher } from "react-router";
 import type { Route } from "./+types/recipes.$id";
 import { db } from "../db/client";
 import { ingredients, recipeInstances, recipes } from "../db/schema";
@@ -125,7 +125,13 @@ function formatIngredient(ing: { amount: string | null; unit: string | null; ite
 
 export default function RecipeView({ loaderData }: Route.ComponentProps) {
   const { recipe, ingredients: ings, csrfToken } = loaderData;
-  const actionData = useActionData<{ added?: true; error?: string } | undefined>();
+  const actionData = useActionData<{ error?: string } | undefined>();
+  // Add-to-draft uses a fetcher rather than the navigation Form so that
+  // rapid double-clicks (legitimate: "I want two of these in the
+  // draft") don't supersede each other. RR7's <Form> aborts in-flight
+  // submissions on a new submit, which would silently drop the first
+  // insert.
+  const addFetcher = useFetcher<{ added?: true; error?: string }>();
   return (
     <Container size="sm" py="xl">
       <Stack gap="md">
@@ -161,7 +167,12 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
             {actionData.error}
           </Alert>
         )}
-        {actionData?.added && (
+        {addFetcher.data?.error && (
+          <Alert color="red" role="alert">
+            {addFetcher.data.error}
+          </Alert>
+        )}
+        {addFetcher.data?.added && (
           <Alert color="green" role="status">
             Added to draft. <Anchor component={Link} to="/kitchen">Open Kitchen →</Anchor>
           </Alert>
@@ -181,11 +192,11 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
 
         <Text c="dimmed">Base: {recipe.baseQuantity} portions</Text>
 
-        <Form method="post">
+        <addFetcher.Form method="post">
           <CsrfField token={csrfToken} />
           <input type="hidden" name="intent" value="add-to-draft" />
           <Button type="submit">+ Add to draft</Button>
-        </Form>
+        </addFetcher.Form>
 
         <section>
           <Title order={4} mb="xs">

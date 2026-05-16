@@ -28,15 +28,10 @@ owns the Postgres testcontainer and the schema.
   brand-new flat with no founder yet) lives behind `/admin/*`
   endpoints, guarded by `ADMIN_TOKEN`. Tests hit those via Playwright's
   `request` fixture — never via direct DB writes.
-- `fullyParallel: true, workers: 2, retries: 1` — per-test flats make
-  data isolation safe by construction. Two workers is the sweet spot:
-  ~25 % faster than serial without overwhelming the single shared
-  `netlify dev` proxy or Vite's on-demand SSR pipeline. Bumping to 3+
-  surfaces real fetcher races and proxy timeouts. The single retry
-  absorbs occasional dev-server contention (a request may briefly
-  exceed Playwright's 5s default when Vite is mid-transform); a
-  genuinely broken test fails on every retry, so retries don't mask
-  regressions.
+- `fullyParallel: true` — per-test flats make data isolation safe by
+  construction. Playwright picks the worker count automatically
+  (typically 6 on a modern laptop), giving roughly a 2× speedup over
+  serial. No `retries`: if a test fails it's a real bug, not a flake.
 
 ## Running
 
