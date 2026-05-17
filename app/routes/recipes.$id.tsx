@@ -285,8 +285,8 @@ function CookedButton({
   const [opened, { open, close }] = useDisclosure(false);
   return (
     <>
-      <Button color="green" variant="light" onClick={open}>
-        ✓ Cooked
+      <Button variant="outline" color="green" onClick={open}>
+        Mark as cooked
       </Button>
       <Modal opened={opened} onClose={close} title="Mark as cooked?" size="sm">
         <Stack gap="sm">

@@ -540,13 +540,13 @@ export function StockCard({
             />
             <Button
               type="button"
+              variant="outline"
               color="green"
-              variant="light"
               size="xs"
               onClick={openCookedConfirm}
               aria-label={`Mark ${entry.recipeName} as cooked`}
             >
-              ✓ Cooked
+              Mark as cooked
             </Button>
           </Group>
         </Group>
