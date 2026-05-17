@@ -16,6 +16,7 @@
     "@mantine/notifications": "^9.2.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@netlify/blobs": "^10.7.7",
+    "@netlify/database": "^1.0.0",
     "@react-router/node": "7.15.1",
     "@react-router/serve": "7.15.1",
     "@types/qrcode": "^1.5.6",

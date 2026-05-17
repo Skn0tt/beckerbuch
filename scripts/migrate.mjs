@@ -1,16 +1,13 @@
 #!/usr/bin/env node
-// Runs pending Drizzle migrations against $DATABASE_URL / $NETLIFY_DB_URL.
-// Used by netlify.toml's build command so we get full error output on failure
-// (drizzle-kit's CLI swallows errors in some environments).
+// Runs pending Drizzle migrations against the configured database.
+// Used by netlify.toml's build command. Resolves the URL via
+// @netlify/database (which reads NETLIFY_DB_URL) with a DATABASE_URL fallback.
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
+import { getConnectionString } from "@netlify/database";
 
-const url = process.env.DATABASE_URL ?? process.env.NETLIFY_DB_URL;
-if (!url) {
-  console.error("DATABASE_URL or NETLIFY_DB_URL must be set");
-  process.exit(1);
-}
+const url = process.env.DATABASE_URL ?? getConnectionString();
 
 console.log("Connecting to database...");
 const pool = new Pool({
