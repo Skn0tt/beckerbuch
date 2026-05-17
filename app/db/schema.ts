@@ -30,6 +30,7 @@ export const users = pgTable("users", {
   email: citext("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   displayName: text("display_name").notNull(),
+  avatarBlobKey: text("avatar_blob_key"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

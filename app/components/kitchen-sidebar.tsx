@@ -1,11 +1,13 @@
 import {
   ActionIcon,
   Anchor,
+  Avatar,
   Button,
   Card,
   Group,
   List,
   Modal,
+  Popover,
   Stack,
   Text,
   TextInput,
@@ -16,6 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import { Form, Link, useFetcher } from "react-router";
 import { csrfFieldName } from "../auth/csrf-shared";
 import { CsrfField } from "../auth/csrf-field";
+import { UserAvatar } from "./user-avatar";
 import { formatIngredient as fmtIngredient } from "../lib/scale";
 import type { KitchenEntry, KitchenMember } from "../lib/kitchen-data";
 
@@ -202,6 +205,104 @@ function MoveButtons({
   );
 }
 
+function UnassignedAvatar({ size = "sm" }: { size?: number | string }) {
+  return (
+    <Avatar
+      radius="xl"
+      variant="default"
+      size={size}
+      style={{ borderStyle: "dashed" }}
+    >
+      ?
+    </Avatar>
+  );
+}
+
+function CookPicker({
+  entry,
+  members,
+  effectiveCookId,
+  submitCook,
+}: {
+  entry: KitchenEntry;
+  members: KitchenMember[];
+  effectiveCookId: string | null;
+  submitCook: (cookId: string) => void;
+}) {
+  const [opened, setOpened] = useState(false);
+  const selectedMember =
+    effectiveCookId === null
+      ? null
+      : (members.find((m) => m.id === effectiveCookId) ?? null);
+  return (
+    <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
+      <Text size="sm" c="dimmed">
+        Cook:
+      </Text>
+      <Popover
+        opened={opened}
+        onChange={setOpened}
+        width={240}
+        position="bottom-end"
+        withArrow
+      >
+        <Popover.Target>
+          <Button
+            variant="default"
+            size="compact-sm"
+            px={6}
+            aria-label={`Choose cook for ${entry.recipeName}`}
+            onClick={() => setOpened((v) => !v)}
+          >
+            {selectedMember ? (
+              <UserAvatar user={selectedMember} size="sm" />
+            ) : (
+              <UnassignedAvatar size="sm" />
+            )}
+          </Button>
+        </Popover.Target>
+        <Popover.Dropdown p={6}>
+          <Stack gap={4}>
+            <Button
+              fullWidth
+              variant={effectiveCookId === null ? "light" : "subtle"}
+              justify="flex-start"
+              leftSection={<UnassignedAvatar size="sm" />}
+              size="xs"
+              onClick={() => {
+                submitCook("");
+                setOpened(false);
+              }}
+              aria-label={`Set cook to unassigned for ${entry.recipeName}`}
+              aria-pressed={effectiveCookId === null}
+            >
+              Unassigned
+            </Button>
+            {members.map((m) => (
+              <Button
+                key={m.id}
+                fullWidth
+                justify="flex-start"
+                variant={effectiveCookId === m.id ? "light" : "subtle"}
+                leftSection={<UserAvatar user={m} size="sm" />}
+                size="xs"
+                onClick={() => {
+                  submitCook(m.id);
+                  setOpened(false);
+                }}
+                aria-label={`Set cook to ${m.displayName} for ${entry.recipeName}`}
+                aria-pressed={effectiveCookId === m.id}
+              >
+                {m.displayName}
+              </Button>
+            ))}
+          </Stack>
+        </Popover.Dropdown>
+      </Popover>
+    </Group>
+  );
+}
+
 export function DraftCard({
   entry,
   csrfToken,
@@ -315,32 +416,12 @@ export function DraftCard({
           </Group>
         </Group>
 
-        <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
-          <Text size="sm" c="dimmed">Cook:</Text>
-          <Group gap={4} wrap="wrap">
-            <Button
-              variant={effectiveCookId === null ? "filled" : "default"}
-              size="xs"
-              onClick={() => submitCook("")}
-              aria-label={`Set cook to unassigned for ${entry.recipeName}`}
-              aria-pressed={effectiveCookId === null}
-            >
-              Unassigned
-            </Button>
-            {members.map((m) => (
-              <Button
-                key={m.id}
-                variant={effectiveCookId === m.id ? "filled" : "default"}
-                size="xs"
-                onClick={() => submitCook(m.id)}
-                aria-label={`Set cook to ${m.displayName} for ${entry.recipeName}`}
-                aria-pressed={effectiveCookId === m.id}
-              >
-                {m.displayName}
-              </Button>
-            ))}
-          </Group>
-        </Group>
+        <CookPicker
+          entry={entry}
+          members={members}
+          effectiveCookId={effectiveCookId}
+          submitCook={submitCook}
+        />
 
         <NoteEditor entry={entry} csrfToken={csrfToken} formAction={formAction} />
 
@@ -357,18 +438,38 @@ export function DraftCard({
 export function StockCard({
   entry,
   csrfToken,
+  members,
   isFirst,
   isLast,
   formAction,
 }: {
   entry: KitchenEntry;
   csrfToken: string;
+  members: KitchenMember[];
   isFirst: boolean;
   isLast: boolean;
   formAction?: string;
 }) {
   const factor =
     entry.baseQuantity > 0 ? entry.targetQuantity / entry.baseQuantity : 1;
+  const cookFetcher = useFetcher();
+  const pendingCookRaw = cookFetcher.formData?.get("cookId");
+  const pendingCook =
+    typeof pendingCookRaw === "string" ? pendingCookRaw : null;
+  const effectiveCookId =
+    pendingCook === null
+      ? entry.designatedCookId
+      : pendingCook === ""
+        ? null
+        : pendingCook;
+  const submitCook = (cookId: string) => {
+    const fd = new FormData();
+    fd.set("intent", "set-cook");
+    fd.set("instanceId", entry.id);
+    fd.set("cookId", cookId);
+    fd.set(csrfFieldName(), csrfToken);
+    cookFetcher.submit(fd, { method: "post", ...(formAction ? { action: formAction } : {}) });
+  };
   return (
     <Card withBorder padding="sm">
       <Stack gap="xs">
@@ -405,6 +506,12 @@ export function StockCard({
             </Form>
           </Group>
         </Group>
+        <CookPicker
+          entry={entry}
+          members={members}
+          effectiveCookId={effectiveCookId}
+          submitCook={submitCook}
+        />
         <NoteEditor entry={entry} csrfToken={csrfToken} formAction={formAction} />
         <List spacing={2} size="sm" c="dimmed" withPadding>
           {entry.ingredients.map((i) => (
@@ -541,13 +648,14 @@ export function KitchenSidebar({
       ) : (
         <Stack gap="xs">
           {stock.map((s, i) => (
-            <StockCard
-              key={s.id}
-              entry={s}
-              csrfToken={csrfToken}
-              isFirst={i === 0}
-              isLast={i === stock.length - 1}
-              formAction={formAction}
+              <StockCard
+                key={s.id}
+                entry={s}
+                csrfToken={csrfToken}
+                members={members}
+                isFirst={i === 0}
+                isLast={i === stock.length - 1}
+                formAction={formAction}
             />
           ))}
         </Stack>

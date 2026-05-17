@@ -14,6 +14,7 @@ export default [
   route("login", "routes/login.tsx"),
   route("invite/:token", "routes/invite.$token.tsx"),
   route("admin/tenants", "routes/admin.tenants.tsx"),
+  route("u/:id/avatar/:token", "routes/u.$id.avatar.$token.tsx"),
   route("r/:id", "routes/r.$id.tsx"),
   route("r/:id/photo", "routes/r.$id.photo.tsx"),
   route("h/:flatId", "routes/h.$flatId.tsx"),
@@ -28,4 +29,3 @@ export default [
   route("oauth/token", "routes/oauth.token.ts"),
   route("mcp", "routes/mcp.ts"),
 ] satisfies RouteConfig;
-

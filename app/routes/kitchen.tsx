@@ -104,7 +104,7 @@ export async function action({ request }: Route.ActionArgs) {
         and(
           eq(recipeInstances.id, instanceId),
           eq(recipeInstances.flatId, ctx.flat.id),
-          isNull(recipeInstances.finalisedAt),
+          isNull(recipeInstances.cookedAt),
         ),
       );
     return { ok: true };
@@ -316,6 +316,7 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
                 key={s.id}
                 entry={s}
                 csrfToken={csrfToken}
+                members={members}
                 isFirst={i === 0}
                 isLast={i === stock.length - 1}
               />

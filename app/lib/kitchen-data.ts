@@ -22,7 +22,7 @@ export type KitchenEntry = {
   ingredients: KitchenIngredient[];
 };
 
-export type KitchenMember = { id: string; displayName: string };
+export type KitchenMember = { id: string; displayName: string; avatarKey: string | null };
 
 export type KitchenData = {
   draft: KitchenEntry[];
@@ -72,7 +72,11 @@ export async function loadKitchen(flatId: string): Promise<KitchenData> {
     .orderBy(asc(recipeInstances.position));
 
   const members = await db()
-    .select({ id: users.id, displayName: users.displayName })
+    .select({
+      id: users.id,
+      displayName: users.displayName,
+      avatarKey: users.avatarBlobKey,
+    })
     .from(flatMembers)
     .innerJoin(users, eq(users.id, flatMembers.userId))
     .where(eq(flatMembers.flatId, flatId))
