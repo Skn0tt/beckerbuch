@@ -7,3 +7,7 @@ body,
 #__react-root {
   height: 100%;
 }
+
+html {
+  overscroll-behavior-y: none;
+}

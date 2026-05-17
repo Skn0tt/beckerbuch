@@ -44,7 +44,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
   return (
     <AppShell
       header={{ height: 56 }}
-      footer={{ height: 60 }}
+      footer={{ height: 60, collapsed: { desktop: true } }}
       padding={0}
     >
       <AppShell.Header>

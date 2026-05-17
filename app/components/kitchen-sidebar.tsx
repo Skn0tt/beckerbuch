@@ -822,9 +822,9 @@ export function KitchenSidebar({
       aria-label="Kitchen"
       style={{
         position: "sticky",
-        top: "var(--app-shell-header-height, 56px)",
+        top: "calc(var(--app-shell-header-height, 56px) + var(--mantine-spacing-md))",
         height:
-          "calc(100vh - var(--app-shell-header-height, 56px) - var(--mantine-spacing-md))",
+          "calc(100vh - var(--app-shell-header-height, 56px) - 2 * var(--mantine-spacing-md))",
       }}
     >
       <Stack gap="xs" style={{ flex: `${draftGrow} 1 0`, minHeight: 0 }}>
