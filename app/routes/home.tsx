@@ -9,14 +9,11 @@ import {
   TextInput,
 } from "@mantine/core";
 import { Form, Link } from "react-router";
-import { and, eq, desc, sql } from "drizzle-orm";
 import type { Route } from "./+types/home";
-import { db } from "../db/client";
-import { recipes } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
 import { csrfTokenForSession } from "../auth/csrf.server";
-import { buildTsQuery } from "../search";
 import { loadKitchen } from "../lib/kitchen-data";
+import { searchRecipes } from "../lib/recipes";
 import { KitchenSidebar } from "../components/kitchen-sidebar";
 
 export function meta(_: Route.MetaArgs) {
@@ -30,42 +27,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requireFlatMember(request);
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") ?? "").trim();
-  const tsq = buildTsQuery(q);
 
   const kitchen = await loadKitchen(ctx.flat.id);
   const csrfToken = csrfTokenForSession(ctx.session.id);
-
-  if (tsq) {
-    const rankExpr = sql<number>`ts_rank_cd(${recipes.searchVector}, to_tsquery('simple', ${tsq}))`;
-    const rows = await db()
-      .select({
-        id: recipes.id,
-        name: recipes.name,
-        baseQuantity: recipes.baseQuantity,
-        updatedAt: recipes.updatedAt,
-      })
-      .from(recipes)
-      .where(
-        and(
-          eq(recipes.flatId, ctx.flat.id),
-          sql`${recipes.searchVector} @@ to_tsquery('simple', ${tsq})`,
-        ),
-      )
-      .orderBy(desc(rankExpr), desc(recipes.updatedAt));
-    return { recipes: rows, q, kitchen, csrfToken };
-  }
-
-  const list = await db()
-    .select({
-      id: recipes.id,
-      name: recipes.name,
-      baseQuantity: recipes.baseQuantity,
-      updatedAt: recipes.updatedAt,
-    })
-    .from(recipes)
-    .where(eq(recipes.flatId, ctx.flat.id))
-    .orderBy(desc(recipes.updatedAt));
-  return { recipes: list, q: "", kitchen, csrfToken };
+  const list = await searchRecipes({ flatId: ctx.flat.id, query: q });
+  return { recipes: list, q, kitchen, csrfToken };
 }
 
 // The sidebar POSTs to /kitchen, whose action runs on a sibling route
