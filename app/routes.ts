@@ -2,12 +2,14 @@ import { type RouteConfig, index, layout, route } from "@react-router/dev/routes
 
 export default [
   layout("routes/_app.tsx", [
-    index("routes/home.tsx"),
+    layout("routes/_workspace.tsx", [
+      index("routes/home.tsx"),
+      route("recipes/:id", "routes/recipes.$id.tsx"),
+    ]),
     route("logout", "routes/logout.tsx"),
     route("flat/settings", "routes/flat.settings.tsx"),
     route("kitchen", "routes/kitchen.tsx"),
     route("recipes/new", "routes/recipes.new.tsx"),
-    route("recipes/:id", "routes/recipes.$id.tsx"),
     route("recipes/:id/edit", "routes/recipes.$id.edit.tsx"),
     route("recipes/:id/photo", "routes/recipes.$id.photo.tsx"),
   ]),
@@ -28,4 +30,3 @@ export default [
   route("oauth/token", "routes/oauth.token.ts"),
   route("mcp", "routes/mcp.ts"),
 ] satisfies RouteConfig;
-
