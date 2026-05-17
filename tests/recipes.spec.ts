@@ -27,6 +27,7 @@ test("create a recipe → see it on home → open detail view", async ({ page, f
   await page.getByRole("button", { name: "Save recipe" }).click();
 
   await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole("heading", { name: /Draft \(\d+\)/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Pasta al limone" })).toBeVisible();
   await expect(page.getByText("400 g spaghetti")).toBeVisible();
   await expect(page.getByText("2 lemons")).toBeVisible();
@@ -34,8 +35,9 @@ test("create a recipe → see it on home → open detail view", async ({ page, f
   await expect(page.getByText(/Boil salted water/)).toBeVisible();
   await expect(page.getByRole("link", { name: /smittenkitchen\.com/ })).toBeVisible();
 
-  await page.getByRole("link", { name: "← Collection" }).click();
+  await page.getByLabel("Back to collection").click();
   await expect(page).toHaveURL("/");
+  await expect(page.getByRole("heading", { name: /Draft \(\d+\)/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /Pasta al limone/ })).toBeVisible();
 });
 
@@ -126,7 +128,7 @@ test("edit a recipe — change name + ingredient, see it on view + home", async 
   ).toBeVisible();
   await expect(page.getByText("450 g spaghetti")).toBeVisible();
 
-  await page.getByRole("link", { name: "← Collection" }).click();
+  await page.getByLabel("Back to collection").click();
   await expect(
     page.getByRole("link", { name: /Pasta al limone \(better\)/ }),
   ).toBeVisible();
@@ -232,7 +234,7 @@ async function createRecipe(
   }
   await page.getByRole("button", { name: "Save recipe" }).click();
   await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
-  await page.getByRole("link", { name: "← Collection" }).click();
+  await page.getByLabel("Back to collection").click();
   await expect(page).toHaveURL(/\/(\?.*)?$/);
 }
 

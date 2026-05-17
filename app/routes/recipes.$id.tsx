@@ -2,7 +2,6 @@ import {
   Alert,
   Anchor,
   Button,
-  Container,
   Group,
   Image,
   List,
@@ -133,100 +132,97 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
   // insert.
   const addFetcher = useFetcher<{ added?: true; error?: string }>();
   return (
-    <Container size="sm" py="xl">
-      <Stack gap="md">
-        <Group justify="space-between" align="center">
-          <Anchor component={Link} to="/">← Collection</Anchor>
-          <Group gap="xs">
-            <Button
-              component={Link}
-              to={`/recipes/${recipe.id}/edit`}
-              variant="default"
-              size="xs"
-            >
-              Edit
+    <Stack gap="md">
+      <Group justify="space-between" align="center">
+        <Group gap="xs">
+          <Button
+            component={Link}
+            to={`/recipes/${recipe.id}/edit`}
+            variant="default"
+            size="xs"
+          >
+            Edit
+          </Button>
+          <Form
+            method="post"
+            onSubmit={(e) => {
+              if (!confirm("Delete this recipe?")) e.preventDefault();
+            }}
+            style={{ display: "inline" }}
+          >
+            <CsrfField token={csrfToken} />
+            <input type="hidden" name="intent" value="delete" />
+            <Button type="submit" color="red" variant="subtle" size="xs">
+              Delete
             </Button>
-            <Form
-              method="post"
-              onSubmit={(e) => {
-                if (!confirm("Delete this recipe?")) e.preventDefault();
-              }}
-              style={{ display: "inline" }}
-            >
-              <CsrfField token={csrfToken} />
-              <input type="hidden" name="intent" value="delete" />
-              <Button type="submit" color="red" variant="subtle" size="xs">
-                Delete
-              </Button>
-            </Form>
-          </Group>
+          </Form>
         </Group>
+      </Group>
 
-        {actionData?.error && (
-          <Alert color="red" role="alert">
-            {actionData.error}
-          </Alert>
-        )}
-        {addFetcher.data?.error && (
-          <Alert color="red" role="alert">
-            {addFetcher.data.error}
-          </Alert>
-        )}
-        {addFetcher.data?.added && (
-          <Alert color="green" role="status">
-            Added to draft. <Anchor component={Link} to="/kitchen">Open Kitchen →</Anchor>
-          </Alert>
-        )}
+      {actionData?.error && (
+        <Alert color="red" role="alert">
+          {actionData.error}
+        </Alert>
+      )}
+      {addFetcher.data?.error && (
+        <Alert color="red" role="alert">
+          {addFetcher.data.error}
+        </Alert>
+      )}
+      {addFetcher.data?.added && (
+        <Alert color="green" role="status">
+          Added to draft. <Anchor component={Link} to="/kitchen">Open Kitchen →</Anchor>
+        </Alert>
+      )}
 
-        <Title order={1}>{recipe.name}</Title>
+      <Title order={1}>{recipe.name}</Title>
 
-        {recipe.photoBlobKey && (
-          <Image
-            src={`/recipes/${recipe.id}/photo`}
-            alt={recipe.name}
-            radius="sm"
-            fit="cover"
-            mah={360}
-          />
-        )}
+      {recipe.photoBlobKey && (
+        <Image
+          src={`/recipes/${recipe.id}/photo`}
+          alt={recipe.name}
+          radius="sm"
+          fit="cover"
+          mah={360}
+        />
+      )}
 
-        <Text c="dimmed">Base: {recipe.baseQuantity} portions</Text>
+      <Text c="dimmed">Base: {recipe.baseQuantity} portions</Text>
 
-        <addFetcher.Form method="post">
-          <CsrfField token={csrfToken} />
-          <input type="hidden" name="intent" value="add-to-draft" />
-          <Button type="submit">+ Add to draft</Button>
-        </addFetcher.Form>
+      <addFetcher.Form method="post">
+        <CsrfField token={csrfToken} />
+        <input type="hidden" name="intent" value="add-to-draft" />
+        <Button type="submit">+ Add to draft</Button>
+      </addFetcher.Form>
 
+      <section>
+        <Title order={4} mb="xs">
+          Ingredients ({recipe.baseQuantity} portions)
+        </Title>
+        <List spacing={2}>
+          {ings.map((i) => (
+            <List.Item key={i.id}>{formatIngredient(i)}</List.Item>
+          ))}
+        </List>
+      </section>
+
+      {recipe.steps.trim() && (
         <section>
           <Title order={4} mb="xs">
-            Ingredients ({recipe.baseQuantity} portions)
+            Steps
           </Title>
-          <List spacing={2}>
-            {ings.map((i) => (
-              <List.Item key={i.id}>{formatIngredient(i)}</List.Item>
-            ))}
-          </List>
+          <Text style={{ whiteSpace: "pre-wrap" }}>{recipe.steps}</Text>
         </section>
+      )}
 
-        {recipe.steps.trim() && (
-          <section>
-            <Title order={4} mb="xs">
-              Steps
-            </Title>
-            <Text style={{ whiteSpace: "pre-wrap" }}>{recipe.steps}</Text>
-          </section>
-        )}
-
-        {recipe.sourceUrl && (
-          <Text size="sm">
-            Source:{" "}
-            <Anchor href={recipe.sourceUrl} target="_blank" rel="noreferrer">
-              {recipe.sourceHost ?? recipe.sourceUrl} ↗
-            </Anchor>
-          </Text>
-        )}
-      </Stack>
-    </Container>
+      {recipe.sourceUrl && (
+        <Text size="sm">
+          Source:{" "}
+          <Anchor href={recipe.sourceUrl} target="_blank" rel="noreferrer">
+            {recipe.sourceHost ?? recipe.sourceUrl} ↗
+          </Anchor>
+        </Text>
+      )}
+    </Stack>
   );
 }

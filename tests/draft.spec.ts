@@ -192,7 +192,7 @@ test("reorder draft entries with up/down buttons", async ({ page, flat }) => {
   // Create two distinct recipes.
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await page.getByRole("link", { name: "← Collection" }).click();
+  await page.getByLabel("Back to collection").click();
 
   await page.getByRole("link", { name: "+ New recipe" }).click();
   await page.getByLabel("Name").fill("Risotto");
