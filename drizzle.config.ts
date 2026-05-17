@@ -5,6 +5,6 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? process.env.NETLIFY_DATABASE_URL ?? "postgres://invalid",
+    url: process.env.DATABASE_URL ?? process.env.NETLIFY_DB_URL ?? "postgres://invalid",
   },
 });
