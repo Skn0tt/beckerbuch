@@ -25,7 +25,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 
   return (
     <Stack gap="md">
-      <Form method="get" action="/" role="search">
+      <Form method="get" role="search">
         <Group gap="sm" wrap="nowrap" align="stretch">
           <TextInput
             name="q"
