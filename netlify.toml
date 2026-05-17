@@ -2,5 +2,5 @@
   # Apply pending Drizzle migrations against $DATABASE_URL, then build.
   # Roll-forward only; PRs review schema changes for backwards-compat
   # before merge. See TECH.md §12.
-  command = "npx drizzle-kit migrate && npm run build"
+  command = "node scripts/migrate.mjs && npm run build"
   publish = "build/client"
