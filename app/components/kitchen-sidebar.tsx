@@ -747,6 +747,7 @@ export function SortableLane({
 
   return (
     <DndContext
+      id={`dnd-${lane}`}
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragEnd={onDragEnd}
