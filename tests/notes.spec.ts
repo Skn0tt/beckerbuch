@@ -16,8 +16,10 @@ async function addPastaToDraftAndOpenKitchen(
 ) {
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await expect(page.getByText(/Added to draft/)).toBeVisible();
-  await page.getByRole("link", { name: "Open Kitchen" }).click();
+  await expect(
+    page.getByRole("button", { name: "✓ In draft" }),
+  ).toBeVisible();
+  await page.goto("/kitchen");
   await expect(page).toHaveURL("/kitchen");
 }
 
@@ -88,9 +90,9 @@ test("note: clearing an existing note returns the + Note button", async ({
   await page
     .getByRole("button", { name: "Edit note for Pasta al limone" })
     .click();
-  await page
-    .getByRole("button", { name: "Clear note for Pasta al limone" })
-    .click();
+  const input = page.getByTestId("note-input");
+  await input.fill("");
+  await input.press("Enter");
 
   await expect(page.getByTestId("note-text")).toHaveCount(0);
   await expect(

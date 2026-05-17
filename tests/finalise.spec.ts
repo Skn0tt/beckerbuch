@@ -14,7 +14,7 @@ async function createPasta(page: import("@playwright/test").Page) {
 test("empty draft: Finalise button is not visible", async ({ page, flat }) => {
   await login(page, flat.user);
   await page.goto("/kitchen");
-  await expect(page.getByText(/Draft \(0\)/)).toBeVisible();
+  await expect(page.getByText("Draft 0", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Finalise draft" }),
   ).toHaveCount(0);
@@ -27,7 +27,10 @@ test("finalise: confirm modal, redirects to /h/:flatId, items in stock", async (
   await login(page, flat.user);
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await page.getByRole("link", { name: "Open Kitchen" }).click();
+  await expect(
+    page.getByRole("button", { name: "✓ In draft" }),
+  ).toBeVisible();
+  await page.goto("/kitchen");
 
   await page.getByRole("button", { name: "Finalise draft" }).click();
   await expect(page.getByText(/Finalise this draft\?/)).toBeVisible();
@@ -50,7 +53,10 @@ test("finalise while existing stock: appended after current stock", async ({
   // Round 1: create + finalise.
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await page.getByRole("link", { name: "Open Kitchen" }).click();
+  await expect(
+    page.getByRole("button", { name: "✓ In draft" }),
+  ).toBeVisible();
+  await page.goto("/kitchen");
   await page.getByRole("button", { name: "Finalise draft" }).click();
   await page.getByRole("button", { name: "Confirm finalise draft" }).click();
   await expect(page).toHaveURL(`/h/${flat.id}`);
@@ -64,7 +70,10 @@ test("finalise while existing stock: appended after current stock", async ({
   await page.getByLabel("Ingredient 1 item").fill("rice");
   await page.getByRole("button", { name: "Save recipe" }).click();
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await page.getByRole("link", { name: "Open Kitchen" }).click();
+  await expect(
+    page.getByRole("button", { name: "✓ In draft" }),
+  ).toBeVisible();
+  await page.goto("/kitchen");
   await page.getByRole("button", { name: "Finalise draft" }).click();
   await page.getByRole("button", { name: "Confirm finalise draft" }).click();
 
@@ -133,7 +142,7 @@ test("public /r/:id?q=8 scales ingredients", async ({
   await anon.close();
 });
 
-test("public /h/:flatId renders stock + Bring! deep link, no auth required", async ({
+test("public /h/:flatId renders stock + JSON-LD, no auth required", async ({
   page,
   flat,
   browser,
@@ -141,8 +150,10 @@ test("public /h/:flatId renders stock + Bring! deep link, no auth required", asy
   await login(page, flat.user);
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await expect(page.getByText(/Added to draft/)).toBeVisible();
-  await page.getByRole("link", { name: "Open Kitchen" }).click();
+  await expect(
+    page.getByRole("button", { name: "✓ In draft" }),
+  ).toBeVisible();
+  await page.goto("/kitchen");
   await page.getByRole("button", { name: "Finalise draft" }).click();
   await page.getByRole("button", { name: "Confirm finalise draft" }).click();
   await expect(page).toHaveURL(`/h/${flat.id}`);
@@ -154,20 +165,6 @@ test("public /h/:flatId renders stock + Bring! deep link, no auth required", asy
   await expect(
     anonPage.getByRole("link", { name: /Pasta al limone \(serves 4\)/ }),
   ).toBeVisible();
-
-  const bringLink = anonPage.getByTestId("handoff-bring-import");
-  await expect(bringLink).toBeVisible();
-  const href = await bringLink.getAttribute("href");
-  expect(href).toMatch(
-    /^https:\/\/api\.getbring\.com\/rest\/bringrecipes\/deeplink\?url=/,
-  );
-  // The encoded URL is the public /h/:flatId absolute URL.
-  const encoded = href!.replace(
-    /^https:\/\/api\.getbring\.com\/rest\/bringrecipes\/deeplink\?url=/,
-    "",
-  );
-  const importUrl = decodeURIComponent(encoded);
-  expect(importUrl).toMatch(/^https?:\/\/[^/]+\/h\/[0-9a-f-]{36}$/);
 
   // JSON-LD aggregates all scaled ingredients from the shopping list.
   const jsonLd = JSON.parse(

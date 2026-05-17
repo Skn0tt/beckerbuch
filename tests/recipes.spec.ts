@@ -27,7 +27,7 @@ test("create a recipe → see it on home → open detail view", async ({ page, f
   await page.getByRole("button", { name: "Save recipe" }).click();
 
   await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
-  await expect(page.getByRole("heading", { name: /Draft \(\d+\)/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Draft" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Pasta al limone" })).toBeVisible();
   await expect(page.getByText("400 g spaghetti")).toBeVisible();
   await expect(page.getByText("2 lemons")).toBeVisible();
@@ -35,10 +35,10 @@ test("create a recipe → see it on home → open detail view", async ({ page, f
   await expect(page.getByText(/Boil salted water/)).toBeVisible();
   await expect(page.getByRole("link", { name: /smittenkitchen\.com/ })).toBeVisible();
 
-  await page.getByLabel("Back to collection").click();
+  await page.goto("/");
   await expect(page).toHaveURL("/");
-  await expect(page.getByRole("heading", { name: /Draft \(\d+\)/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /Pasta al limone/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Draft" })).toBeVisible();
 });
 
 test("recipe form rejects empty name and missing ingredients", async ({ page, flat }) => {
@@ -107,7 +107,7 @@ test("edit a recipe — change name + ingredient, see it on view + home", async 
   await login(page, flat.user);
   await createPasta(page);
 
-  await page.getByRole("link", { name: "Edit" }).click();
+  await page.getByRole("link", { name: "Edit recipe" }).click();
   await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}\/edit$/);
 
   // Pre-filled values are present.
@@ -128,7 +128,7 @@ test("edit a recipe — change name + ingredient, see it on view + home", async 
   ).toBeVisible();
   await expect(page.getByText("450 g spaghetti")).toBeVisible();
 
-  await page.getByLabel("Back to collection").click();
+  await page.goto("/");
   await expect(
     page.getByRole("link", { name: /Pasta al limone \(better\)/ }),
   ).toBeVisible();
@@ -141,9 +141,12 @@ test("delete a recipe — back on home, recipe gone", async ({ page, flat }) => 
   await login(page, flat.user);
   await createPasta(page);
 
+  await page.getByRole("link", { name: "Edit recipe" }).click();
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}\/edit$/);
+
   // Auto-accept the confirm() dialog the Delete button raises.
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("button", { name: "Delete recipe" }).click();
 
   await expect(page).toHaveURL("/");
   await expect(page.getByText("No recipes yet")).toBeVisible();
@@ -155,16 +158,23 @@ test("deleting a recipe that's in the draft is blocked", async ({ page, flat }) 
   const recipeUrl = page.url();
 
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await expect(page.getByText(/Added to draft/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
+
+  await page.getByRole("link", { name: "Edit recipe" }).click();
+  const editUrl = page.url();
 
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("button", { name: "Delete recipe" }).click();
 
   await expect(
     page.getByText(/in your draft, in stock, or cooked history/),
   ).toBeVisible();
-  // Still on the recipe page, not deleted.
-  await expect(page).toHaveURL(recipeUrl);
+  // Still on the edit page, not deleted.
+  await expect(page).toHaveURL(editUrl);
+
+  // And the recipe is still reachable.
+  await page.goto(recipeUrl);
+  await expect(page.getByRole("heading", { name: "Pasta al limone" })).toBeVisible();
 });
 
 // 1×1 transparent PNG.
@@ -196,7 +206,7 @@ test("upload a photo on create → see it on view; remove it on edit", async ({
     .toBeGreaterThan(0);
 
   // Edit → tick "Remove current photo" → save → photo gone.
-  await page.getByRole("link", { name: "Edit" }).click();
+  await page.getByRole("link", { name: "Edit recipe" }).click();
   await expect(page.getByAltText("Current photo")).toBeVisible();
   await page.getByLabel("Remove current photo").check();
   await page.getByRole("button", { name: "Save changes" }).click();
@@ -234,7 +244,7 @@ async function createRecipe(
   }
   await page.getByRole("button", { name: "Save recipe" }).click();
   await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
-  await page.getByLabel("Back to collection").click();
+  await page.goto("/");
   await expect(page).toHaveURL(/\/(\?.*)?$/);
 }
 

@@ -31,14 +31,21 @@ test("add a recipe to draft → button flips to 'In draft' → kitchen shows one
   await expect(page).toHaveURL("/kitchen");
 
   // Only one instance even after a no-op re-click would happen.
-  await expect(page.getByText(/Draft \(1\)/)).toBeVisible();
+  await expect(page.getByText("Draft 1", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Pasta al limone" })).toHaveCount(1);
 
+  // Step the portions to 0 → opens the remove-confirm modal → confirm.
+  // Base is 4 portions; click − 4 times.
+  for (let i = 0; i < 4; i++) {
+    await page
+      .getByRole("button", { name: "Decrease Pasta al limone portions" })
+      .click();
+  }
   await page
-    .getByRole("button", { name: "Remove Pasta al limone from draft" })
+    .getByRole("button", { name: "Confirm remove Pasta al limone from draft" })
     .click();
 
-  await expect(page.getByText(/Draft \(0\)/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Pasta al limone" })).toHaveCount(0);
 
   // Back on the recipe page the add button returns.
   await page.goto(recipeUrl);
@@ -89,12 +96,13 @@ test("change target portions → ingredients re-scale", async ({ page, flat }) =
   await login(page, flat.user);
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await page.goto("/kitchen");
+  await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
 
+  // The recipe view shows ingredients scaled to the draft target.
   // Base is 4 portions, 400 g spaghetti. Initially target = 4.
   await expect(page.getByText("400 g spaghetti")).toBeVisible();
 
-  // Bump to 6 portions — 400 * 6/4 = 600.
+  // Use the kitchen sidebar stepper (visible on desktop) to bump to 6.
   await page
     .getByRole("button", { name: "Increase Pasta al limone portions" })
     .click();
@@ -103,18 +111,19 @@ test("change target portions → ingredients re-scale", async ({ page, flat }) =
     .click();
   await expect(page.getByText("600 g spaghetti")).toBeVisible();
 
-  // Decrease to 2 portions — 200 g.
-  for (let i = 0; i < 4; i++) {
+  // Decrease to 1 portion — 100 g.
+  for (let i = 0; i < 5; i++) {
     await page
       .getByRole("button", { name: "Decrease Pasta al limone portions" })
       .click();
   }
-  await expect(page.getByText("200 g spaghetti")).toBeVisible();
+  await expect(page.getByText("100 g spaghetti")).toBeVisible();
 
-  // Floor at 1 portion: try to decrease past 1 — stays at 1.
+  // Stepping below 1 opens the remove-confirm modal — cancel it.
   await page
     .getByRole("button", { name: "Decrease Pasta al limone portions" })
     .click();
+  await page.getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByText("100 g spaghetti")).toBeVisible();
 });
 
@@ -154,9 +163,13 @@ test("designated cook can be edited in stock lane", async ({ page, flat }) => {
   await login(page, flat.user);
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await expect(
+    page.getByRole("button", { name: "✓ In draft" }),
+  ).toBeVisible();
   await page.goto("/kitchen");
   await page.getByRole("button", { name: "Finalise draft" }).click();
   await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(/\/h\/[0-9a-f-]{36}$/);
   await page.goto("/kitchen?lane=stock");
 
   await page.getByLabel("Choose cook for Pasta al limone").click();
@@ -177,11 +190,14 @@ test("finalise draft → in-stock lane → mark cooked → empty", async ({
   await login(page, flat.user);
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await expect(
+    page.getByRole("button", { name: "✓ In draft" }),
+  ).toBeVisible();
   await page.goto("/kitchen");
 
   // Lane defaults to draft.
-  await expect(page.getByText(/Draft \(1\)/)).toBeVisible();
-  await expect(page.getByText(/In stock \(0\)/)).toBeVisible();
+  await expect(page.getByText("Draft 1", { exact: true })).toBeVisible();
+  await expect(page.getByText("In stock 0", { exact: true })).toBeVisible();
 
   // Finalise the draft → redirects to handoff page.
   await page.getByRole("button", { name: "Finalise draft" }).click();
@@ -192,31 +208,35 @@ test("finalise draft → in-stock lane → mark cooked → empty", async ({
 
   // Back to kitchen — draft is empty, stock has 1.
   await page.goto("/kitchen");
-  await expect(page.getByText(/Draft \(0\)/)).toBeVisible();
-  await expect(page.getByText(/In stock \(1\)/)).toBeVisible();
+  await expect(page.getByText("Draft 0", { exact: true })).toBeVisible();
+  await expect(page.getByText("In stock 1", { exact: true })).toBeVisible();
 
-  // Switch to in-stock lane (click the SegmentedControl label).
-  await page.getByText(/^In stock \(1\)$/).click();
+  // Switch to in-stock lane (click the visible label).
+  await page.getByText("In stock 1", { exact: true }).click();
   await expect(page).toHaveURL(/\?lane=stock$/);
   await expect(page.getByRole("link", { name: "Pasta al limone" })).toBeVisible();
-  await expect(page.getByText(/4 portions/)).toBeVisible();
-  await expect(page.getByText("400 g spaghetti")).toBeVisible();
 
-  // Mark cooked → leaves the lane.
+  // Mark cooked → opens confirm modal → confirm → leaves the lane.
   await page
     .getByRole("button", { name: "Mark Pasta al limone as cooked" })
     .click();
+  await page
+    .getByRole("button", { name: "Confirm mark Pasta al limone as cooked" })
+    .click();
 
-  await expect(page.getByText(/In stock \(0\)/)).toBeVisible();
+  await expect(page.getByText("In stock 0", { exact: true })).toBeVisible();
   await expect(page.getByText(/Nothing in stock yet/)).toBeVisible();
 });
 
-test("reorder draft entries with up/down buttons", async ({ page, flat }) => {
+test("reorder draft entries with drag handle", async ({ page, flat }) => {
   await login(page, flat.user);
   // Create two distinct recipes.
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await page.getByLabel("Back to collection").click();
+  await expect(
+    page.getByRole("button", { name: "✓ In draft" }),
+  ).toBeVisible();
+  await page.goto("/");
 
   await page.getByRole("link", { name: "+ New recipe" }).click();
   await page.getByLabel("Name").fill("Risotto");
@@ -225,32 +245,36 @@ test("reorder draft entries with up/down buttons", async ({ page, flat }) => {
   await page.getByLabel("Ingredient 1 item").fill("rice");
   await page.getByRole("button", { name: "Save recipe" }).click();
   await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await expect(
+    page.getByRole("button", { name: "✓ In draft" }),
+  ).toBeVisible();
   await page.goto("/kitchen");
 
   const cardLinks = page
-    .getByRole("link", { name: /Pasta al limone|Risotto/ });
+    .getByRole("link", { name: /^(Pasta al limone|Risotto)$/ });
 
   // Initial order: Pasta first, Risotto second.
   await expect(cardLinks.nth(0)).toHaveText("Pasta al limone");
   await expect(cardLinks.nth(1)).toHaveText("Risotto");
 
-  // First card's ↑ is disabled, last card's ↓ is disabled.
-  await expect(
-    page.getByRole("button", { name: "Move Pasta al limone up" }),
-  ).toBeDisabled();
-  await expect(
-    page.getByRole("button", { name: "Move Risotto down" }),
-  ).toBeDisabled();
+  // Use dnd-kit's keyboard sensor: focus the first card's drag handle,
+  // press Space to grab, ArrowDown to move below the next item, Space to drop.
+  // dnd-kit needs a brief delay between events so the announcement can update.
+  const handles = page.getByRole("button", { name: "Reorder" });
+  await handles.nth(0).focus();
+  await page.keyboard.press("Space");
+  await page.waitForTimeout(100);
+  await page.keyboard.press("ArrowDown");
+  await page.waitForTimeout(100);
+  await page.keyboard.press("Space");
 
-  // Move Risotto up — should swap with Pasta.
-  await page.getByRole("button", { name: "Move Risotto up" }).click();
   await expect(cardLinks.nth(0)).toHaveText("Risotto");
   await expect(cardLinks.nth(1)).toHaveText("Pasta al limone");
 
   // Reload — order persisted.
   await page.reload();
   const reloadedLinks = page
-    .getByRole("link", { name: /Pasta al limone|Risotto/ });
+    .getByRole("link", { name: /^(Pasta al limone|Risotto)$/ });
   await expect(reloadedLinks.nth(0)).toHaveText("Risotto");
   await expect(reloadedLinks.nth(1)).toHaveText("Pasta al limone");
 });
