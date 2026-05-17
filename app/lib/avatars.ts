@@ -55,7 +55,8 @@ export async function deleteAvatar(key: string): Promise<void> {
   try {
     await avatarStore().delete(key);
   } catch {
-    // Best-effort.
+    // Best-effort cleanup: missing keys and transient blob-store errors
+    // should not block profile updates/removals.
   }
 }
 

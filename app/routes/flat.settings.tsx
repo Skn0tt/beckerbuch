@@ -9,7 +9,6 @@ import {
   Paper,
   Stack,
   Text,
-  FileInput,
   TextInput,
   Title,
 } from "@mantine/core";
@@ -179,9 +178,13 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
               <Stack gap="xs">
                 <CsrfField token={csrfToken} />
                 <input type="hidden" name="intent" value="upload-avatar" />
-                <FileInput
-                  label="Profile picture"
+                <Text size="sm" fw={500}>
+                  Profile picture
+                </Text>
+                <input
+                  type="file"
                   name="avatar"
+                  aria-label="Profile picture"
                   accept="image/png,image/jpeg,image/webp"
                 />
                 <Group>
