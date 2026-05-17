@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
+import type { APIRequestContext } from "@playwright/test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { test, expect } from "./fixtures";
@@ -154,6 +155,69 @@ async function mcpClient(accessToken: string): Promise<Client> {
   return client;
 }
 
+function textFromToolResult(result: Awaited<ReturnType<Client["callTool"]>>): string {
+  const content = result.content as Array<{ type: string; text?: string }>;
+  const text = content.find((part) => part.type === "text")?.text;
+  if (!text) throw new Error("tool result did not contain text");
+  return text;
+}
+
+function jsonFromToolResult<T>(result: Awaited<ReturnType<Client["callTool"]>>): T {
+  return JSON.parse(textFromToolResult(result)) as T;
+}
+
+async function addRecipeViaMcp(
+  client: Client,
+  args: {
+    name: string;
+    baseQuantity?: number;
+    ingredients?: Array<{ amount?: string; unit?: string; item: string }>;
+    steps?: string;
+    sourceUrl?: string;
+    photoUrl?: string;
+  },
+): Promise<string> {
+  const callResult = await client.callTool({
+    name: "kochbuch_add_recipe",
+    arguments: {
+      baseQuantity: 1,
+      ingredients: [{ item: "water" }],
+      ...args,
+    },
+  });
+  expect(callResult.isError).toBeFalsy();
+  const match = textFromToolResult(callResult).match(/\/recipes\/([0-9a-f-]{36})/);
+  if (!match) throw new Error("tool did not return a recipe url");
+  return match[1];
+}
+
+async function createOtherFlatAccessToken(
+  page: import("@playwright/test").Page,
+  request: APIRequestContext,
+): Promise<string> {
+  await page.context().clearCookies();
+  const adminRes = await request.post("/admin/tenants", {
+    data: {},
+    headers: { "X-Admin-Token": "test-admin-token" },
+  });
+  if (!adminRes.ok()) {
+    throw new Error(
+      `POST /admin/tenants failed (${adminRes.status()}): ${await adminRes.text()}`,
+    );
+  }
+  const { inviteUrl } = (await adminRes.json()) as { inviteUrl: string };
+  const slug = base64url(randomBytes(8));
+  await page.goto(inviteUrl);
+  await page.getByLabel("Email").fill(`other-${slug}@cookbook.test`);
+  await page.getByLabel("Display name").fill(`Other Cook ${slug}`);
+  await page.getByRole("textbox", { name: "Password" }).fill("cookbook-other-password");
+  await page.getByRole("button", { name: "Create account & join" }).click();
+  await page.waitForURL("/");
+  const result = await runOAuthFlow(page);
+  if (!result.ok) throw new Error("flow failed");
+  return result.tokens.accessToken;
+}
+
 /**
  * Tiny in-process HTTP server, used as a known-good source for `photoUrl`
  * (and as a known-non-image source for the bad-photo case).
@@ -280,6 +344,261 @@ test.describe("MCP server", () => {
     });
     expect(callResult.isError).toBe(true);
     await client.close();
+  });
+
+  test("search_recipes returns matches, empty results, and respects limit", async ({
+    page,
+    flat,
+  }) => {
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    await addRecipeViaMcp(client, {
+      name: "Pasta al limone",
+      ingredients: [{ item: "spaghetti" }],
+    });
+    await addRecipeViaMcp(client, {
+      name: "Chicken curry",
+      ingredients: [{ item: "chicken" }],
+    });
+    await addRecipeViaMcp(client, {
+      name: "Sourdough loaf",
+      ingredients: [{ item: "flour" }],
+      sourceUrl: "https://kingarthur.example.com/loaf",
+    });
+
+    const byName = await client.callTool({
+      name: "kochbuch_search_recipes",
+      arguments: { query: "chick", limit: 1 },
+    });
+    expect(byName.isError).toBeFalsy();
+    const byNameBody = jsonFromToolResult<{
+      results: Array<{ name: string; url: string; publicUrl: string }>;
+    }>(byName);
+    expect(byNameBody.results).toHaveLength(1);
+    expect(byNameBody.results[0]?.name).toBe("Chicken curry");
+    expect(byNameBody.results[0]?.url).toContain("/recipes/");
+    expect(byNameBody.results[0]?.publicUrl).toContain("/r/");
+
+    const bySource = await client.callTool({
+      name: "kochbuch_search_recipes",
+      arguments: { query: "kingarthur", limit: 5 },
+    });
+    expect(bySource.isError).toBeFalsy();
+    const bySourceBody = jsonFromToolResult<{ results: Array<{ name: string }> }>(bySource);
+    expect(bySourceBody.results.map((recipe) => recipe.name)).toEqual(["Sourdough loaf"]);
+
+    const miss = await client.callTool({
+      name: "kochbuch_search_recipes",
+      arguments: { query: "nothingmatchesthis", limit: 5 },
+    });
+    expect(miss.isError).toBeFalsy();
+    expect(jsonFromToolResult<{ results: unknown[] }>(miss).results).toHaveLength(0);
+
+    const limited = await client.callTool({
+      name: "kochbuch_search_recipes",
+      arguments: { limit: 2 },
+    });
+    expect(limited.isError).toBeFalsy();
+    expect(jsonFromToolResult<{ results: unknown[] }>(limited).results).toHaveLength(2);
+
+    await client.close();
+  });
+
+  test("get_recipe returns flat-owned recipes and hides other flats", async ({
+    page,
+    flat,
+    request,
+  }) => {
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    const recipeId = await addRecipeViaMcp(client, {
+      name: "MCP Soup",
+      baseQuantity: 4,
+      ingredients: [
+        { amount: "1", unit: "l", item: "water" },
+        { item: "salt" },
+      ],
+      steps: "Boil.",
+      sourceUrl: "https://example.com/soup",
+    });
+
+    const getResult = await client.callTool({
+      name: "kochbuch_get_recipe",
+      arguments: { id: recipeId },
+    });
+    expect(getResult.isError).toBeFalsy();
+    const recipe = jsonFromToolResult<{
+      id: string;
+      name: string;
+      baseQuantity: number;
+      steps: string;
+      sourceHost: string | null;
+      photoUrl: string | null;
+      ingredients: Array<{ amount: string | null; unit: string | null; item: string }>;
+    }>(getResult);
+    expect(recipe.id).toBe(recipeId);
+    expect(recipe.name).toBe("MCP Soup");
+    expect(recipe.baseQuantity).toBe(4);
+    expect(recipe.steps).toBe("Boil.");
+    expect(recipe.sourceHost).toBe("example.com");
+    expect(recipe.photoUrl).toBeNull();
+    expect(recipe.ingredients).toEqual([
+      { amount: "1", unit: "l", item: "water" },
+      { amount: null, unit: null, item: "salt" },
+    ]);
+    await client.close();
+
+    const otherAccessToken = await createOtherFlatAccessToken(page, request);
+    const otherClient = await mcpClient(otherAccessToken);
+    const otherGet = await otherClient.callTool({
+      name: "kochbuch_get_recipe",
+      arguments: { id: recipeId },
+    });
+    expect(otherGet.isError).toBe(true);
+    expect(textFromToolResult(otherGet)).toBe("Recipe not found.");
+    await otherClient.close();
+  });
+
+  test("edit_recipe patches recipe fields and replaces ingredients", async ({
+    page,
+    flat,
+  }) => {
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    const recipeId = await addRecipeViaMcp(client, {
+      name: "Old Name",
+      baseQuantity: 2,
+      ingredients: [{ amount: "1", unit: "cup", item: "rice" }],
+      steps: "Old steps",
+    });
+
+    const editName = await client.callTool({
+      name: "kochbuch_edit_recipe",
+      arguments: { id: recipeId, name: "New Name" },
+    });
+    expect(editName.isError).toBeFalsy();
+    expect(jsonFromToolResult<{ name: string }>(editName).name).toBe("New Name");
+
+    const editIngredients = await client.callTool({
+      name: "kochbuch_edit_recipe",
+      arguments: {
+        id: recipeId,
+        ingredients: [
+          { amount: "200", unit: "g", item: "pasta" },
+          { item: "pepper" },
+        ],
+      },
+    });
+    expect(editIngredients.isError).toBeFalsy();
+    expect(
+      jsonFromToolResult<{
+        ingredients: Array<{ amount: string | null; unit: string | null; item: string }>;
+      }>(editIngredients).ingredients,
+    ).toEqual([
+      { amount: "200", unit: "g", item: "pasta" },
+      { amount: null, unit: null, item: "pepper" },
+    ]);
+
+    await client.close();
+
+    await page.goto(`/recipes/${recipeId}`);
+    await expect(page.getByRole("heading", { name: "New Name" })).toBeVisible();
+    await expect(page.getByText("200 g pasta")).toBeVisible();
+    await expect(page.getByText("pepper")).toBeVisible();
+    await expect(page.getByText("1 cup rice")).toHaveCount(0);
+  });
+
+  test("edit_recipe can add and remove a photo", async ({ page, flat }) => {
+    const { server, baseUrl } = await startTinyServer(() => ({
+      status: 200,
+      body: TINY_PNG,
+      type: "image/png",
+    }));
+    try {
+      await login(page, flat.user);
+      const result = await runOAuthFlow(page);
+      if (!result.ok) throw new Error("flow failed");
+      const client = await mcpClient(result.tokens.accessToken);
+
+      const recipeId = await addRecipeViaMcp(client, {
+        name: "Photo Patch",
+        ingredients: [{ item: "water" }],
+      });
+
+      const addPhoto = await client.callTool({
+        name: "kochbuch_edit_recipe",
+        arguments: { id: recipeId, photoUrl: `${baseUrl}/img.png` },
+      });
+      expect(addPhoto.isError).toBeFalsy();
+      expect(jsonFromToolResult<{ photoUrl: string | null }>(addPhoto).photoUrl).toContain(
+        `/r/${recipeId}/photo`,
+      );
+
+      await page.goto(`/recipes/${recipeId}`);
+      await expect(page.getByRole("img", { name: /Photo Patch/i })).toBeVisible();
+
+      const removePhoto = await client.callTool({
+        name: "kochbuch_edit_recipe",
+        arguments: { id: recipeId, removePhoto: true },
+      });
+      expect(removePhoto.isError).toBeFalsy();
+      expect(jsonFromToolResult<{ photoUrl: string | null }>(removePhoto).photoUrl).toBeNull();
+      await client.close();
+
+      await page.goto(`/recipes/${recipeId}`);
+      await expect(page.getByRole("img", { name: /Photo Patch/i })).toHaveCount(0);
+    } finally {
+      await new Promise((r) => server.close(() => r(null)));
+    }
+  });
+
+  test("edit_recipe rejects cross-flat access and conflicting photo options", async ({
+    page,
+    flat,
+    request,
+  }) => {
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    const recipeId = await addRecipeViaMcp(client, {
+      name: "Private Recipe",
+      ingredients: [{ item: "water" }],
+    });
+
+    const conflicting = await client.callTool({
+      name: "kochbuch_edit_recipe",
+      arguments: {
+        id: recipeId,
+        photoUrl: "https://example.com/photo.png",
+        removePhoto: true,
+      },
+    });
+    expect(conflicting.isError).toBe(true);
+    expect(textFromToolResult(conflicting)).toBe(
+      "photoUrl and removePhoto cannot be used together.",
+    );
+    await client.close();
+
+    const otherAccessToken = await createOtherFlatAccessToken(page, request);
+    const otherClient = await mcpClient(otherAccessToken);
+    const otherEdit = await otherClient.callTool({
+      name: "kochbuch_edit_recipe",
+      arguments: { id: recipeId, name: "Should Not Work" },
+    });
+    expect(otherEdit.isError).toBe(true);
+    expect(textFromToolResult(otherEdit)).toBe("Recipe not found.");
+    await otherClient.close();
   });
 
   test("/mcp returns 401 + WWW-Authenticate without a bearer", async () => {
