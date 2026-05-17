@@ -1,6 +1,6 @@
-import { Anchor, Container, Group, Stack, Title } from "@mantine/core";
+import { Button, Container, Stack } from "@mantine/core";
 import { eq, asc } from "drizzle-orm";
-import { data, Link, redirect, useActionData } from "react-router";
+import { data, Form, redirect, useActionData } from "react-router";
 import type { Route } from "./+types/recipes.$id.edit";
 import { db } from "../db/client";
 import { ingredients, recipes } from "../db/schema";
@@ -8,6 +8,7 @@ import { requireFlatMember } from "../auth/require";
 import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { isSameOrigin } from "../auth/origin";
 import { RecipeForm, parseRecipeFields } from "../components/recipe-form";
+import { CsrfField } from "../auth/csrf-field";
 import { deletePhoto, storePhoto, validatePhoto } from "../blobs";
 import { updateSearchVector } from "../search";
 
@@ -109,14 +110,31 @@ export default function EditRecipe({ loaderData }: Route.ComponentProps) {
   return (
     <Container size="sm" py="xl">
       <Stack gap="md">
-        <Group justify="space-between" align="center">
-          <Title order={2}>Edit recipe</Title>
-          <Anchor component={Link} to={`/recipes/${recipe.id}`}>← Cancel</Anchor>
-        </Group>
+        <Form
+          id="delete-recipe-form"
+          method="post"
+          action={`/recipes/${recipe.id}`}
+          onSubmit={(e) => {
+            if (!confirm("Delete this recipe?")) e.preventDefault();
+          }}
+        >
+          <CsrfField token={csrfToken} />
+          <input type="hidden" name="intent" value="delete" />
+        </Form>
         <RecipeForm
           csrfToken={csrfToken}
           error={actionData?.error}
           submitLabel="Save changes"
+          secondaryAction={
+            <Button
+              type="submit"
+              form="delete-recipe-form"
+              color="red"
+              variant="subtle"
+            >
+              Delete recipe
+            </Button>
+          }
           initial={{
             name: recipe.name,
             baseQuantity: recipe.baseQuantity,

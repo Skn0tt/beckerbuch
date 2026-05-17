@@ -87,9 +87,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   const allIngredients = groups.flatMap((g) => g.ingredients);
-  const bringUrl = `https://api.getbring.com/rest/bringrecipes/deeplink?url=${encodeURIComponent(handoffUrl)}`;
 
-  return { flat, groups, allIngredients, handoffUrl, bringUrl, qrSvg };
+  return { flat, groups, allIngredients, handoffUrl, qrSvg };
 }
 
 export function meta({ data: d }: Route.MetaArgs) {
@@ -98,8 +97,7 @@ export function meta({ data: d }: Route.MetaArgs) {
 }
 
 export default function Handoff({ loaderData }: Route.ComponentProps) {
-  const { flat, groups, allIngredients, handoffUrl, bringUrl, qrSvg } =
-    loaderData;
+  const { flat, groups, allIngredients, handoffUrl, qrSvg } = loaderData;
 
   const jsonLd = {
     "@context": "https://schema.org/",
@@ -124,15 +122,38 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
           <Text c="dimmed">Nothing to shop right now.</Text>
         ) : (
           <>
-            <Button
-              component="a"
-              href={bringUrl}
-              rel="external noopener"
-              size="lg"
-              data-testid="handoff-bring-import"
-            >
-              Import into Bring! →
-            </Button>
+            {/* Desktop: QR + copy-link card to send the page to a phone. */}
+            <Card withBorder visibleFrom="sm" data-testid="handoff-desktop">
+              <Stack gap="sm">
+                <Title order={2} size="h5">
+                  Open on your phone, then share into Bring!
+                </Title>
+                <Group align="center" gap="md" wrap="nowrap">
+                  <Box
+                    aria-label="QR code for handoff URL"
+                    w={160}
+                    dangerouslySetInnerHTML={{ __html: qrSvg }}
+                  />
+                  <Stack gap="xs">
+                    <Text size="sm" style={{ wordBreak: "break-all" }}>
+                      {handoffUrl}
+                    </Text>
+                    <CopyButton value={handoffUrl}>
+                      {({ copied, copy }) => (
+                        <Button size="xs" variant="default" onClick={copy}>
+                          {copied ? "Copied" : "Copy link"}
+                        </Button>
+                      )}
+                    </CopyButton>
+                  </Stack>
+                </Group>
+              </Stack>
+            </Card>
+
+            <Text size="sm" c="dimmed" hiddenFrom="sm">
+              Use your browser&apos;s Share menu and pick Bring! to import this
+              list.
+            </Text>
 
             <Stack gap="xs">
               <Title order={2} size="h4">
@@ -157,34 +178,6 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
             </Stack>
           </>
         )}
-
-        {/* Desktop: QR + copy-link card to send the page to a phone. */}
-        <Card withBorder visibleFrom="sm" data-testid="handoff-desktop">
-          <Stack gap="sm">
-            <Title order={2} size="h5">
-              Send to your phone
-            </Title>
-            <Group align="center" gap="md" wrap="nowrap">
-              <Box
-                aria-label="QR code for handoff URL"
-                w={160}
-                dangerouslySetInnerHTML={{ __html: qrSvg }}
-              />
-              <Stack gap="xs">
-                <Text size="sm" style={{ wordBreak: "break-all" }}>
-                  {handoffUrl}
-                </Text>
-                <CopyButton value={handoffUrl}>
-                  {({ copied, copy }) => (
-                    <Button size="xs" variant="default" onClick={copy}>
-                      {copied ? "Copied" : "Copy link"}
-                    </Button>
-                  )}
-                </CopyButton>
-              </Stack>
-            </Group>
-          </Stack>
-        </Card>
       </Stack>
     </Container>
   );

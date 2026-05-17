@@ -12,7 +12,7 @@ import {
   Textarea,
   Title,
 } from "@mantine/core";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Form } from "react-router";
 import { CsrfField } from "../auth/csrf-field";
 
@@ -34,9 +34,16 @@ type Props = {
   initial?: RecipeFormInitial;
   error?: string;
   submitLabel: string;
+  secondaryAction?: ReactNode;
 };
 
-export function RecipeForm({ csrfToken, initial, error, submitLabel }: Props) {
+export function RecipeForm({
+  csrfToken,
+  initial,
+  error,
+  submitLabel,
+  secondaryAction,
+}: Props) {
   const initialRows =
     initial?.ingredients && initial.ingredients.length > 0
       ? initial.ingredients
@@ -170,7 +177,8 @@ export function RecipeForm({ csrfToken, initial, error, submitLabel }: Props) {
           </Alert>
         )}
 
-        <Group justify="flex-end">
+        <Group justify="space-between">
+          {secondaryAction ?? <span />}
           <Button type="submit">{submitLabel}</Button>
         </Group>
       </Stack>

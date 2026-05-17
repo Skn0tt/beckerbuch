@@ -11,7 +11,7 @@ async function createPasta(page: import("@playwright/test").Page) {
   await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
 }
 
-test("add a recipe to draft twice → both show on /kitchen → remove one leaves the other", async ({
+test("add a recipe to draft → button flips to 'In draft' → kitchen shows one entry → remove → can add again", async ({
   page,
   flat,
 }) => {
@@ -19,25 +19,32 @@ test("add a recipe to draft twice → both show on /kitchen → remove one leave
   await createPasta(page);
 
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await expect(page.getByText(/Added to draft/)).toBeVisible();
+  // Button replaced with the "In draft" indicator.
+  await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "+ Add to draft" }),
+  ).toHaveCount(0);
 
-  // Same recipe can be added again.
-  await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await expect(page.getByText(/Added to draft/)).toBeVisible();
+  const recipeUrl = page.url();
 
-  await page.getByRole("link", { name: "Open Kitchen" }).click();
+  await page.goto("/kitchen");
   await expect(page).toHaveURL("/kitchen");
 
-  await expect(page.getByText(/Draft \(2\)/)).toBeVisible();
-  await expect(page.getByRole("link", { name: "Pasta al limone" })).toHaveCount(2);
+  // Only one instance even after a no-op re-click would happen.
+  await expect(page.getByText(/Draft \(1\)/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Pasta al limone" })).toHaveCount(1);
 
   await page
     .getByRole("button", { name: "Remove Pasta al limone from draft" })
-    .first()
     .click();
 
-  await expect(page.getByText(/Draft \(1\)/)).toBeVisible();
-  await expect(page.getByRole("link", { name: "Pasta al limone" })).toHaveCount(1);
+  await expect(page.getByText(/Draft \(0\)/)).toBeVisible();
+
+  // Back on the recipe page the add button returns.
+  await page.goto(recipeUrl);
+  await expect(
+    page.getByRole("button", { name: "+ Add to draft" }),
+  ).toBeVisible();
 });
 
 test("kitchen empty state links back to collection", async ({ page, flat }) => {
@@ -56,7 +63,7 @@ test("draft is scoped to the flat — other flat's draft is invisible", async ({
   await login(page, flat.user);
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await expect(page.getByText(/Added to draft/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
   await page.context().clearCookies();
 
   // Spin up a fresh flat B.
@@ -82,7 +89,7 @@ test("change target portions → ingredients re-scale", async ({ page, flat }) =
   await login(page, flat.user);
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await page.getByRole("link", { name: "Open Kitchen" }).click();
+  await page.goto("/kitchen");
 
   // Base is 4 portions, 400 g spaghetti. Initially target = 4.
   await expect(page.getByText("400 g spaghetti")).toBeVisible();
@@ -115,7 +122,7 @@ test("designated cook picker — assign self, then unassign", async ({ page, fla
   await login(page, flat.user);
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await page.getByRole("link", { name: "Open Kitchen" }).click();
+  await page.goto("/kitchen");
 
   const openPicker = page.getByLabel("Choose cook for Pasta al limone");
   await openPicker.click();
@@ -147,7 +154,7 @@ test("designated cook can be edited in stock lane", async ({ page, flat }) => {
   await login(page, flat.user);
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await page.getByRole("link", { name: "Open Kitchen" }).click();
+  await page.goto("/kitchen");
   await page.getByRole("button", { name: "Finalise draft" }).click();
   await page.getByRole("button", { name: "Confirm finalise draft" }).click();
   await page.goto("/kitchen?lane=stock");
@@ -170,7 +177,7 @@ test("finalise draft → in-stock lane → mark cooked → empty", async ({
   await login(page, flat.user);
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await page.getByRole("link", { name: "Open Kitchen" }).click();
+  await page.goto("/kitchen");
 
   // Lane defaults to draft.
   await expect(page.getByText(/Draft \(1\)/)).toBeVisible();
@@ -218,7 +225,7 @@ test("reorder draft entries with up/down buttons", async ({ page, flat }) => {
   await page.getByLabel("Ingredient 1 item").fill("rice");
   await page.getByRole("button", { name: "Save recipe" }).click();
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await page.getByRole("link", { name: "Open Kitchen" }).click();
+  await page.goto("/kitchen");
 
   const cardLinks = page
     .getByRole("link", { name: /Pasta al limone|Risotto/ });

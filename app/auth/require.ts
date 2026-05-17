@@ -6,7 +6,12 @@ import { hashSessionToken, readSessionTokenFromRequest } from "./session";
 
 export type AuthedContext = {
   session: { id: string };
-  user: { id: string; email: string; displayName: string };
+  user: {
+    id: string;
+    email: string;
+    displayName: string;
+    avatarKey: string | null;
+  };
   flat: { id: string; name: string };
 };
 
@@ -42,6 +47,7 @@ export async function tryGetAuthedContext(
       userId: users.id,
       userEmail: users.email,
       userDisplayName: users.displayName,
+      userAvatarKey: users.avatarBlobKey,
       flatId: flats.id,
       flatName: flats.name,
     })
@@ -56,7 +62,12 @@ export async function tryGetAuthedContext(
   if (!row) return null;
   return {
     session: { id: row.sessionId },
-    user: { id: row.userId, email: row.userEmail, displayName: row.userDisplayName },
+    user: {
+      id: row.userId,
+      email: row.userEmail,
+      displayName: row.userDisplayName,
+      avatarKey: row.userAvatarKey,
+    },
     flat: { id: row.flatId, name: row.flatName },
   };
 }

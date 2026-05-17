@@ -6,11 +6,13 @@ import {
   Group,
   Text,
   Title,
+  UnstyledButton,
   VisuallyHidden,
 } from "@mantine/core";
 import { Link, Outlet, redirect, useLocation, useNavigate } from "react-router";
 import type { Route } from "./+types/_app";
 import { tryGetAuthedContext } from "../auth/require";
+import { UserAvatar } from "../components/user-avatar";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await tryGetAuthedContext(request);
@@ -36,7 +38,6 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
   const showBackToCollection =
     location.pathname.startsWith("/recipes/") &&
-    !location.pathname.endsWith("/edit") &&
     !location.pathname.endsWith("/photo") &&
     location.pathname !== "/recipes/new";
 
@@ -80,20 +81,19 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
             <VisuallyHidden data-testid="current-user">
               {user.displayName}
             </VisuallyHidden>
-            <ActionIcon
+            <UnstyledButton
               component={Link}
               to="/flat/settings"
-              variant="subtle"
-              size="lg"
               aria-label="Settings"
+              style={{ display: "inline-flex", borderRadius: "50%" }}
             >
-              ⚙
-            </ActionIcon>
+              <UserAvatar user={user} size="md" />
+            </UnstyledButton>
           </Group>
         </Group>
       </AppShell.Header>
 
-      <AppShell.Footer hiddenFrom="sm">
+      <AppShell.Footer hiddenFrom="md">
         <Group h="100%" gap={0} grow preventGrowOverflow={false}>
           {MOBILE_NAV.map((item) => {
             const active = item.end

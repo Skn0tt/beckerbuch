@@ -12,22 +12,35 @@ import {
   Text,
   TextInput,
   Title,
+  UnstyledButton,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Form, Link, useFetcher } from "react-router";
+import {
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  KeyboardSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { csrfFieldName } from "../auth/csrf-shared";
 import { CsrfField } from "../auth/csrf-field";
 import { UserAvatar } from "./user-avatar";
-import { formatIngredient as fmtIngredient } from "../lib/scale";
 import type { KitchenEntry, KitchenMember } from "../lib/kitchen-data";
 
-function formatIngredient(
-  ing: KitchenEntry["ingredients"][number],
-  factor: number,
-): string {
-  return fmtIngredient(ing, factor);
-}
+type Lane = "draft" | "stock";
 
 function NoteEditor({
   entry,
@@ -78,66 +91,39 @@ function NoteEditor({
 
   if (editing) {
     return (
-      <Group gap="xs" wrap="nowrap">
-        <TextInput
-          ref={inputRef}
-          size="xs"
-          value={draft}
-          onChange={(e) => setDraft(e.currentTarget.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              submit(draft);
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              setEditing(false);
-            }
-          }}
-          placeholder="e.g. cook this on Friday"
-          aria-label={`Note for ${entry.recipeName}`}
-          style={{ flex: 1 }}
-          data-testid="note-input"
-        />
-        <Button
-          type="button"
-          size="xs"
-          variant="light"
-          onClick={() => submit(draft)}
-        >
-          Save
-        </Button>
-        {current && (
-          <Button
-            type="button"
-            size="xs"
-            variant="subtle"
-            color="red"
-            onClick={() => submit("")}
-            aria-label={`Clear note for ${entry.recipeName}`}
-          >
-            Clear
-          </Button>
-        )}
-      </Group>
+      <TextInput
+        ref={inputRef}
+        size="xs"
+        value={draft}
+        onChange={(e) => setDraft(e.currentTarget.value)}
+        onBlur={() => submit(draft)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            submit(draft);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            setEditing(false);
+          }
+        }}
+        placeholder="e.g. cook this on Friday"
+        aria-label={`Note for ${entry.recipeName}`}
+        data-testid="note-input"
+      />
     );
   }
 
   if (current) {
     return (
-      <Group gap="xs" wrap="nowrap" align="center">
-        <Text size="sm" fs="italic" c="dimmed" style={{ flex: 1 }} data-testid="note-text">
-          📝 {current}
+      <UnstyledButton
+        onClick={startEditing}
+        aria-label={`Edit note for ${entry.recipeName}`}
+        style={{ display: "block", width: "100%", textAlign: "left" }}
+      >
+        <Text size="sm" fs="italic" c="dimmed" data-testid="note-text">
+          {current}
         </Text>
-        <Button
-          type="button"
-          size="compact-xs"
-          variant="subtle"
-          onClick={startEditing}
-          aria-label={`Edit note for ${entry.recipeName}`}
-        >
-          Edit
-        </Button>
-      </Group>
+      </UnstyledButton>
     );
   }
 
@@ -209,9 +195,13 @@ function UnassignedAvatar({ size = "sm" }: { size?: number | string }) {
   return (
     <Avatar
       radius="xl"
-      variant="default"
       size={size}
-      style={{ borderStyle: "dashed" }}
+      style={
+        {
+          "--avatar-bg": "var(--mantine-color-gray-1)",
+          "--avatar-color": "var(--mantine-color-gray-5)",
+        } as React.CSSProperties
+      }
     >
       ?
     </Avatar>
@@ -235,71 +225,64 @@ function CookPicker({
       ? null
       : (members.find((m) => m.id === effectiveCookId) ?? null);
   return (
-    <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
-      <Text size="sm" c="dimmed">
-        Cook:
-      </Text>
-      <Popover
-        opened={opened}
-        onChange={setOpened}
-        width={240}
-        position="bottom-end"
-        withArrow
-      >
-        <Popover.Target>
+    <Popover
+      opened={opened}
+      onChange={setOpened}
+      width={240}
+      position="bottom-end"
+      withArrow
+    >
+      <Popover.Target>
+        <UnstyledButton
+          aria-label={`Choose cook for ${entry.recipeName}`}
+          onClick={() => setOpened((v) => !v)}
+          style={{ display: "inline-flex", borderRadius: "50%" }}
+        >
+          {selectedMember ? (
+            <UserAvatar user={selectedMember} size="sm" />
+          ) : (
+            <UnassignedAvatar size="sm" />
+          )}
+        </UnstyledButton>
+      </Popover.Target>
+      <Popover.Dropdown p={6}>
+        <Stack gap={4}>
           <Button
-            variant="default"
-            size="compact-sm"
-            px={6}
-            aria-label={`Choose cook for ${entry.recipeName}`}
-            onClick={() => setOpened((v) => !v)}
+            fullWidth
+            variant={effectiveCookId === null ? "light" : "subtle"}
+            justify="flex-start"
+            leftSection={<UnassignedAvatar size="sm" />}
+            size="xs"
+            onClick={() => {
+              submitCook("");
+              setOpened(false);
+            }}
+            aria-label={`Set cook to unassigned for ${entry.recipeName}`}
+            aria-pressed={effectiveCookId === null}
           >
-            {selectedMember ? (
-              <UserAvatar user={selectedMember} size="sm" />
-            ) : (
-              <UnassignedAvatar size="sm" />
-            )}
+            Unassigned
           </Button>
-        </Popover.Target>
-        <Popover.Dropdown p={6}>
-          <Stack gap={4}>
+          {members.map((m) => (
             <Button
+              key={m.id}
               fullWidth
-              variant={effectiveCookId === null ? "light" : "subtle"}
               justify="flex-start"
-              leftSection={<UnassignedAvatar size="sm" />}
+              variant={effectiveCookId === m.id ? "light" : "subtle"}
+              leftSection={<UserAvatar user={m} size="sm" />}
               size="xs"
               onClick={() => {
-                submitCook("");
+                submitCook(m.id);
                 setOpened(false);
               }}
-              aria-label={`Set cook to unassigned for ${entry.recipeName}`}
-              aria-pressed={effectiveCookId === null}
+              aria-label={`Set cook to ${m.displayName} for ${entry.recipeName}`}
+              aria-pressed={effectiveCookId === m.id}
             >
-              Unassigned
+              {m.displayName}
             </Button>
-            {members.map((m) => (
-              <Button
-                key={m.id}
-                fullWidth
-                justify="flex-start"
-                variant={effectiveCookId === m.id ? "light" : "subtle"}
-                leftSection={<UserAvatar user={m} size="sm" />}
-                size="xs"
-                onClick={() => {
-                  submitCook(m.id);
-                  setOpened(false);
-                }}
-                aria-label={`Set cook to ${m.displayName} for ${entry.recipeName}`}
-                aria-pressed={effectiveCookId === m.id}
-              >
-                {m.displayName}
-              </Button>
-            ))}
-          </Stack>
-        </Popover.Dropdown>
-      </Popover>
-    </Group>
+          ))}
+        </Stack>
+      </Popover.Dropdown>
+    </Popover>
   );
 }
 
@@ -310,6 +293,7 @@ export function DraftCard({
   isFirst,
   isLast,
   formAction,
+  dragHandle,
 }: {
   entry: KitchenEntry;
   csrfToken: string;
@@ -317,6 +301,7 @@ export function DraftCard({
   isFirst: boolean;
   isLast: boolean;
   formAction?: string;
+  dragHandle?: ReactNode;
 }) {
   const fetcher = useFetcher();
   const pending = fetcher.formData?.get("targetQuantity");
@@ -325,16 +310,33 @@ export function DraftCard({
       ? Number(pending)
       : entry.targetQuantity;
 
-  const factor = entry.baseQuantity > 0 ? target / entry.baseQuantity : 1;
+  const removeFetcher = useFetcher();
+  const [confirmRemove, { open: openConfirm, close: closeConfirm }] =
+    useDisclosure(false);
 
   const submitTarget = (next: number) => {
-    if (next < 1) return;
+    if (next < 1) {
+      openConfirm();
+      return;
+    }
     const fd = new FormData();
     fd.set("intent", "update-quantity");
     fd.set("instanceId", entry.id);
     fd.set("targetQuantity", String(next));
     fd.set(csrfFieldName(), csrfToken);
     fetcher.submit(fd, { method: "post", ...(formAction ? { action: formAction } : {}) });
+  };
+
+  const confirmRemoveSubmit = () => {
+    const fd = new FormData();
+    fd.set("intent", "remove-from-draft");
+    fd.set("instanceId", entry.id);
+    fd.set(csrfFieldName(), csrfToken);
+    removeFetcher.submit(fd, {
+      method: "post",
+      ...(formAction ? { action: formAction } : {}),
+    });
+    closeConfirm();
   };
 
   const cookFetcher = useFetcher();
@@ -360,15 +362,26 @@ export function DraftCard({
     <Card withBorder padding="sm">
       <Stack gap="xs">
         <Group justify="space-between" align="center" wrap="nowrap">
-          <Group gap="xs" wrap="nowrap">
-            <MoveButtons
-              entry={entry}
-              csrfToken={csrfToken}
-              isFirst={isFirst}
-              isLast={isLast}
-              formAction={formAction}
-            />
-            <Anchor component={Link} to={`/recipes/${entry.recipeId}`} fw={500}>
+          <Group gap="xs" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
+            {dragHandle ?? (
+              <MoveButtons
+                entry={entry}
+                csrfToken={csrfToken}
+                isFirst={isFirst}
+                isLast={isLast}
+                formAction={formAction}
+              />
+            )}
+            <Anchor
+              component={Link}
+              to={`/recipes/${entry.recipeId}`}
+              fw={500}
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               {entry.recipeName}
             </Anchor>
           </Group>
@@ -379,7 +392,7 @@ export function DraftCard({
                 size="sm"
                 type="button"
                 aria-label={`Decrease ${entry.recipeName} portions`}
-                onClick={() => submitTarget(Math.max(1, target - 1))}
+                onClick={() => submitTarget(target - 1)}
               >
                 −
               </ActionIcon>
@@ -395,42 +408,43 @@ export function DraftCard({
               >
                 +
               </ActionIcon>
-              <Text size="sm" c="dimmed">
-                portions
-              </Text>
             </Group>
-            <Form method="post" action={formAction}>
-              <CsrfField token={csrfToken} />
-              <input type="hidden" name="intent" value="remove-from-draft" />
-              <input type="hidden" name="instanceId" value={entry.id} />
-              <Button
-                type="submit"
-                color="red"
-                variant="subtle"
-                size="xs"
-                aria-label={`Remove ${entry.recipeName} from draft`}
-              >
-                Remove
-              </Button>
-            </Form>
+            <CookPicker
+              entry={entry}
+              members={members}
+              effectiveCookId={effectiveCookId}
+              submitCook={submitCook}
+            />
           </Group>
         </Group>
 
-        <CookPicker
-          entry={entry}
-          members={members}
-          effectiveCookId={effectiveCookId}
-          submitCook={submitCook}
-        />
-
         <NoteEditor entry={entry} csrfToken={csrfToken} formAction={formAction} />
-
-        <List spacing={2} size="sm" c="dimmed" withPadding>
-          {entry.ingredients.map((i) => (
-            <List.Item key={i.position}>{formatIngredient(i, factor)}</List.Item>
-          ))}
-        </List>
       </Stack>
+
+      <Modal
+        opened={confirmRemove}
+        onClose={closeConfirm}
+        title="Remove from draft?"
+        size="sm"
+      >
+        <Stack gap="sm">
+          <Text size="sm">
+            Remove <strong>{entry.recipeName}</strong> from the draft?
+          </Text>
+          <Group justify="flex-end" gap="sm">
+            <Button variant="default" onClick={closeConfirm}>
+              Cancel
+            </Button>
+            <Button
+              color="red"
+              onClick={confirmRemoveSubmit}
+              aria-label={`Confirm remove ${entry.recipeName} from draft`}
+            >
+              Remove
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Card>
   );
 }
@@ -442,6 +456,7 @@ export function StockCard({
   isFirst,
   isLast,
   formAction,
+  dragHandle,
 }: {
   entry: KitchenEntry;
   csrfToken: string;
@@ -449,9 +464,8 @@ export function StockCard({
   isFirst: boolean;
   isLast: boolean;
   formAction?: string;
+  dragHandle?: ReactNode;
 }) {
-  const factor =
-    entry.baseQuantity > 0 ? entry.targetQuantity / entry.baseQuantity : 1;
   const cookFetcher = useFetcher();
   const pendingCookRaw = cookFetcher.formData?.get("cookId");
   const pendingCook =
@@ -470,55 +484,101 @@ export function StockCard({
     fd.set(csrfFieldName(), csrfToken);
     cookFetcher.submit(fd, { method: "post", ...(formAction ? { action: formAction } : {}) });
   };
+
+  const [confirmCooked, { open: openCookedConfirm, close: closeCookedConfirm }] =
+    useDisclosure(false);
+
+  const cookedFetcher = useFetcher();
+  const submitCooked = () => {
+    const fd = new FormData();
+    fd.set("intent", "mark-cooked");
+    fd.set("instanceId", entry.id);
+    fd.set(csrfFieldName(), csrfToken);
+    cookedFetcher.submit(fd, {
+      method: "post",
+      ...(formAction ? { action: formAction } : {}),
+    });
+    closeCookedConfirm();
+  };
+
   return (
     <Card withBorder padding="sm">
       <Stack gap="xs">
         <Group justify="space-between" align="center" wrap="nowrap">
-          <Group gap="xs" wrap="nowrap">
-            <MoveButtons
-              entry={entry}
-              csrfToken={csrfToken}
-              isFirst={isFirst}
-              isLast={isLast}
-              formAction={formAction}
-            />
-            <Anchor component={Link} to={`/recipes/${entry.recipeId}`} fw={500}>
+          <Group gap="xs" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
+            {dragHandle ?? (
+              <MoveButtons
+                entry={entry}
+                csrfToken={csrfToken}
+                isFirst={isFirst}
+                isLast={isLast}
+                formAction={formAction}
+              />
+            )}
+            <Anchor
+              component={Link}
+              to={`/recipes/${entry.recipeId}`}
+              fw={500}
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               {entry.recipeName}
             </Anchor>
           </Group>
           <Group gap="xs" wrap="nowrap">
             <Text size="sm" c="dimmed">
-              {entry.targetQuantity} portions
+              {entry.targetQuantity}
             </Text>
-            <Form method="post" action={formAction}>
-              <CsrfField token={csrfToken} />
-              <input type="hidden" name="intent" value="mark-cooked" />
-              <input type="hidden" name="instanceId" value={entry.id} />
-              <Button
-                type="submit"
-                color="green"
-                variant="light"
-                size="xs"
-                aria-label={`Mark ${entry.recipeName} as cooked`}
-              >
-                ✓ Cooked
-              </Button>
-            </Form>
+            <CookPicker
+              entry={entry}
+              members={members}
+              effectiveCookId={effectiveCookId}
+              submitCook={submitCook}
+            />
+            <Button
+              type="button"
+              color="green"
+              variant="light"
+              size="xs"
+              onClick={openCookedConfirm}
+              aria-label={`Mark ${entry.recipeName} as cooked`}
+            >
+              ✓ Cooked
+            </Button>
           </Group>
         </Group>
-        <CookPicker
-          entry={entry}
-          members={members}
-          effectiveCookId={effectiveCookId}
-          submitCook={submitCook}
-        />
         <NoteEditor entry={entry} csrfToken={csrfToken} formAction={formAction} />
-        <List spacing={2} size="sm" c="dimmed" withPadding>
-          {entry.ingredients.map((i) => (
-            <List.Item key={i.position}>{formatIngredient(i, factor)}</List.Item>
-          ))}
-        </List>
       </Stack>
+
+      <Modal
+        opened={confirmCooked}
+        onClose={closeCookedConfirm}
+        title="Mark as cooked?"
+        size="sm"
+      >
+        <Stack gap="sm">
+          <Text size="sm">
+            Mark <strong>{entry.recipeName}</strong> as cooked? This removes it
+            from In stock.
+          </Text>
+          <Group justify="flex-end" gap="sm">
+            <Button variant="default" onClick={closeCookedConfirm}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              color="green"
+              onClick={submitCooked}
+              aria-label={`Confirm mark ${entry.recipeName} as cooked`}
+            >
+              ✓ Cooked
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Card>
   );
 }
@@ -538,7 +598,7 @@ export function FinaliseButton({
   return (
     <>
       <Group justify="flex-end" mt="sm">
-        <Button onClick={open} aria-label="Finalise draft">
+        <Button onClick={open} aria-label="Finalise draft" variant="subtle" size="xs">
           Finalise →
         </Button>
       </Group>
@@ -585,6 +645,147 @@ export function FinaliseButton({
   );
 }
 
+function DragHandle({
+  attributes,
+  listeners,
+  label,
+}: {
+  attributes: ReturnType<typeof useSortable>["attributes"];
+  listeners: ReturnType<typeof useSortable>["listeners"];
+  label: string;
+}) {
+  return (
+    <ActionIcon
+      variant="subtle"
+      color="gray"
+      size="sm"
+      aria-label={label}
+      {...attributes}
+      {...listeners}
+      style={{ cursor: "grab", touchAction: "none" }}
+    >
+      ⋮⋮
+    </ActionIcon>
+  );
+}
+
+function SortableRow({
+  id,
+  children,
+}: {
+  id: string;
+  children: (handle: ReactNode) => ReactNode;
+}) {
+  const { setNodeRef, transform, transition, isDragging, attributes, listeners } =
+    useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.6 : 1,
+      }}
+    >
+      {children(
+        <DragHandle attributes={attributes} listeners={listeners} label="Reorder" />,
+      )}
+    </div>
+  );
+}
+
+export function SortableLane({
+  lane,
+  entries,
+  members,
+  csrfToken,
+  formAction,
+}: {
+  lane: Lane;
+  entries: KitchenEntry[];
+  members: KitchenMember[];
+  csrfToken: string;
+  formAction?: string;
+}) {
+  const serverOrder = entries.map((e) => e.id);
+  const serverKey = serverOrder.join(",");
+  const [override, setOverride] = useState<{ key: string; ids: string[] } | null>(
+    null,
+  );
+  const order = override && override.key === serverKey ? override.ids : serverOrder;
+
+  const fetcher = useFetcher();
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 150, tolerance: 5 },
+    }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  const ordered = order.map((id) => byId.get(id)).filter(Boolean) as KitchenEntry[];
+
+  const onDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const oldIdx = order.indexOf(String(active.id));
+    const newIdx = order.indexOf(String(over.id));
+    if (oldIdx < 0 || newIdx < 0) return;
+    const next = arrayMove(order, oldIdx, newIdx);
+    setOverride({ key: serverKey, ids: next });
+    const fd = new FormData();
+    fd.set("intent", "reorder");
+    fd.set("lane", lane);
+    fd.set("instanceIds", next.join(","));
+    fd.set(csrfFieldName(), csrfToken);
+    fetcher.submit(fd, {
+      method: "post",
+      ...(formAction ? { action: formAction } : {}),
+    });
+  };
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={onDragEnd}
+    >
+      <SortableContext items={order} strategy={verticalListSortingStrategy}>
+        <Stack gap="xs">
+          {ordered.map((entry, i) => (
+            <SortableRow key={entry.id} id={entry.id}>
+              {(handle) =>
+                lane === "draft" ? (
+                  <DraftCard
+                    entry={entry}
+                    csrfToken={csrfToken}
+                    members={members}
+                    isFirst={i === 0}
+                    isLast={i === ordered.length - 1}
+                    formAction={formAction}
+                    dragHandle={handle}
+                  />
+                ) : (
+                  <StockCard
+                    entry={entry}
+                    csrfToken={csrfToken}
+                    members={members}
+                    isFirst={i === 0}
+                    isLast={i === ordered.length - 1}
+                    formAction={formAction}
+                    dragHandle={handle}
+                  />
+                )
+              }
+            </SortableRow>
+          ))}
+        </Stack>
+      </SortableContext>
+    </DndContext>
+  );
+}
+
 /**
  * Compact Draft + In-stock + Finalise tree. Rendered as the right
  * sidebar on the desktop home page; the /kitchen route uses the
@@ -607,59 +808,66 @@ export function KitchenSidebar({
   formAction?: string;
 }) {
   return (
-    <Stack gap="md" component="aside" aria-label="Kitchen">
-      <Group justify="space-between" align="baseline">
-        <Title order={4}>Draft ({draft.length})</Title>
-        <Anchor component={Link} to="/kitchen" size="sm">
-          Kitchen ↗
-        </Anchor>
-      </Group>
-      {draft.length === 0 ? (
-        <Text size="sm" c="dimmed">
-          Draft is empty — add recipes from the collection.
-        </Text>
-      ) : (
-        <Stack gap="xs">
-          {draft.map((d, i) => (
-            <DraftCard
-              key={d.id}
-              entry={d}
-              csrfToken={csrfToken}
+    <Stack
+      gap="md"
+      component="aside"
+      aria-label="Kitchen"
+      style={{
+        position: "sticky",
+        top: "var(--app-shell-header-height, 56px)",
+        height:
+          "calc(100vh - var(--app-shell-header-height, 56px) - var(--mantine-spacing-md))",
+      }}
+    >
+      <Stack gap="xs" style={{ flex: 1, minHeight: 0 }}>
+        <Title order={4}>
+          Draft <Text span c="dimmed" inherit>{draft.length}</Text>
+        </Title>
+        <Stack gap="xs" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          {draft.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              Draft is empty — add recipes from the collection.
+            </Text>
+          ) : (
+            <SortableLane
+              lane="draft"
+              entries={draft}
               members={members}
-              isFirst={i === 0}
-              isLast={i === draft.length - 1}
+              csrfToken={csrfToken}
               formAction={formAction}
             />
-          ))}
+          )}
+        </Stack>
+        {draft.length > 0 && (
           <FinaliseButton
             csrfToken={csrfToken}
             draft={draft}
             stockCount={stock.length}
             formAction={formAction}
           />
-        </Stack>
-      )}
+        )}
+      </Stack>
 
-      <Title order={4}>In stock ({stock.length})</Title>
-      {stock.length === 0 ? (
-        <Text size="sm" c="dimmed">
-          Nothing in stock yet — finalise the draft to start cooking.
-        </Text>
-      ) : (
-        <Stack gap="xs">
-          {stock.map((s, i) => (
-              <StockCard
-                key={s.id}
-                entry={s}
-                csrfToken={csrfToken}
-                members={members}
-                isFirst={i === 0}
-                isLast={i === stock.length - 1}
-                formAction={formAction}
+      <Stack gap="xs" style={{ flex: 1, minHeight: 0 }}>
+        <Title order={4}>
+          In stock <Text span c="dimmed" inherit>{stock.length}</Text>
+        </Title>
+        <Stack gap="xs" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          {stock.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              Nothing in stock yet — finalise the draft to start cooking.
+            </Text>
+          ) : (
+            <SortableLane
+              lane="stock"
+              entries={stock}
+              members={members}
+              csrfToken={csrfToken}
+              formAction={formAction}
             />
-          ))}
+          )}
         </Stack>
-      )}
+      </Stack>
     </Stack>
   );
 }

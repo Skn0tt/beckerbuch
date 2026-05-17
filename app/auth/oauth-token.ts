@@ -28,6 +28,7 @@ export async function tryGetMcpContext(
       userId: users.id,
       userEmail: users.email,
       userDisplayName: users.displayName,
+      userAvatarKey: users.avatarBlobKey,
       flatId: flats.id,
       flatName: flats.name,
     })
@@ -53,6 +54,7 @@ export async function tryGetMcpContext(
       id: row.userId,
       email: row.userEmail,
       displayName: row.userDisplayName,
+      avatarKey: row.userAvatarKey,
     },
     flat: { id: row.flatId, name: row.flatName },
   };

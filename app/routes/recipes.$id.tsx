@@ -1,24 +1,30 @@
 import {
+  ActionIcon,
   Alert,
   Anchor,
+  Box,
   Button,
   Group,
   Image,
   List,
+  Modal,
   Stack,
   Text,
   Title,
 } from "@mantine/core";
-import { and, eq, asc, count, isNull, max, sql } from "drizzle-orm";
-import { Form, data, Link, redirect, useActionData, useFetcher } from "react-router";
+import { useDisclosure } from "@mantine/hooks";
+import { and, eq, asc, count, isNotNull, isNull, max, sql } from "drizzle-orm";
+import { data, Form, Link, redirect, useActionData, useFetcher } from "react-router";
 import type { Route } from "./+types/recipes.$id";
 import { db } from "../db/client";
 import { ingredients, recipeInstances, recipes } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
 import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { CsrfField } from "../auth/csrf-field";
+import { csrfFieldName } from "../auth/csrf-shared";
 import { isSameOrigin } from "../auth/origin";
 import { deletePhoto } from "../blobs";
+import { formatIngredient } from "../lib/scale";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -40,7 +46,47 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     .from(ingredients)
     .where(eq(ingredients.recipeId, recipe.id))
     .orderBy(asc(ingredients.position));
-  return { recipe, ingredients: ings, csrfToken: csrfTokenForSession(ctx.session.id) };
+  // Show "In draft" state if this recipe already has an open draft
+  // instance for the flat. We pick the lowest-position one as the
+  // target for quantity updates (legacy data may have multiple).
+  const [draftInstance] = await db()
+    .select({
+      id: recipeInstances.id,
+      targetQuantity: recipeInstances.targetQuantity,
+    })
+    .from(recipeInstances)
+    .where(
+      and(
+        eq(recipeInstances.flatId, ctx.flat.id),
+        eq(recipeInstances.recipeId, recipe.id),
+        isNull(recipeInstances.finalisedAt),
+      ),
+    )
+    .orderBy(asc(recipeInstances.position))
+    .limit(1);
+  const [stockInstance] = await db()
+    .select({
+      id: recipeInstances.id,
+      targetQuantity: recipeInstances.targetQuantity,
+    })
+    .from(recipeInstances)
+    .where(
+      and(
+        eq(recipeInstances.flatId, ctx.flat.id),
+        eq(recipeInstances.recipeId, recipe.id),
+        isNotNull(recipeInstances.finalisedAt),
+        isNull(recipeInstances.cookedAt),
+      ),
+    )
+    .orderBy(asc(recipeInstances.position))
+    .limit(1);
+  return {
+    recipe,
+    ingredients: ings,
+    draftInstance: draftInstance ?? null,
+    stockInstance: stockInstance ?? null,
+    csrfToken: csrfTokenForSession(ctx.session.id),
+  };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -66,6 +112,21 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === "add-to-draft") {
     const flatId = ctx.flat.id;
+    // One draft instance per recipe — clicking add again is a no-op.
+    const existing = await db()
+      .select({ id: recipeInstances.id })
+      .from(recipeInstances)
+      .where(
+        and(
+          eq(recipeInstances.flatId, flatId),
+          eq(recipeInstances.recipeId, recipe.id),
+          isNull(recipeInstances.finalisedAt),
+        ),
+      )
+      .limit(1);
+    if (existing.length > 0) {
+      return { added: true as const };
+    }
     // Retry on partial-unique-index collision (concurrent add).
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
@@ -96,6 +157,43 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { error: "Couldn't add to draft. Please try again." };
   }
 
+  if (intent === "update-quantity") {
+    const target = Number.parseInt(String(form.get("targetQuantity") ?? ""), 10);
+    if (!Number.isFinite(target) || target < 1 || target > 1000) {
+      return { error: "Portions must be between 1 and 1000." };
+    }
+    await db()
+      .update(recipeInstances)
+      .set({ targetQuantity: target })
+      .where(
+        and(
+          eq(recipeInstances.flatId, ctx.flat.id),
+          eq(recipeInstances.recipeId, recipe.id),
+          isNull(recipeInstances.finalisedAt),
+        ),
+      );
+    return { ok: true as const };
+  }
+
+  if (intent === "mark-cooked") {
+    const updated = await db()
+      .update(recipeInstances)
+      .set({ cookedAt: new Date(), cookedBy: ctx.user.id })
+      .where(
+        and(
+          eq(recipeInstances.flatId, ctx.flat.id),
+          eq(recipeInstances.recipeId, recipe.id),
+          isNotNull(recipeInstances.finalisedAt),
+          isNull(recipeInstances.cookedAt),
+        ),
+      )
+      .returning({ id: recipeInstances.id });
+    if (updated.length === 0) {
+      return { error: "Already cooked or not in stock." };
+    }
+    return { ok: true as const };
+  }
+
   if (intent !== "delete") return { error: "Unknown action." };
 
   const [{ value: usageCount }] = await db()
@@ -114,54 +212,125 @@ export async function action({ request, params }: Route.ActionArgs) {
   return redirect("/");
 }
 
-function formatIngredient(ing: { amount: string | null; unit: string | null; item: string }): string {
-  const parts: string[] = [];
-  if (ing.amount) parts.push(ing.amount);
-  if (ing.unit) parts.push(ing.unit);
-  parts.push(ing.item);
-  return parts.join(" ");
+function DraftControls({
+  recipeName,
+  targetQuantity,
+  csrfToken,
+}: {
+  recipeName: string;
+  targetQuantity: number;
+  csrfToken: string;
+}) {
+  const qtyFetcher = useFetcher();
+  const pending = qtyFetcher.formData?.get("targetQuantity");
+  const current =
+    typeof pending === "string" && Number.isFinite(Number(pending))
+      ? Number(pending)
+      : targetQuantity;
+
+  const submitTarget = (next: number) => {
+    if (next < 1 || next > 1000) return;
+    const fd = new FormData();
+    fd.set("intent", "update-quantity");
+    fd.set("targetQuantity", String(next));
+    fd.set(csrfFieldName(), csrfToken);
+    qtyFetcher.submit(fd, { method: "post" });
+  };
+
+  return (
+    <Group gap="sm" wrap="nowrap" align="center">
+      <Button variant="default" color="gray" disabled>
+        ✓ In draft
+      </Button>
+      {/* Steppers only on mobile — desktop users have the kitchen sidebar. */}
+      <Group gap={4} wrap="nowrap" hiddenFrom="md">
+        <ActionIcon
+          variant="default"
+          size="md"
+          type="button"
+          aria-label={`Decrease ${recipeName} portions`}
+          onClick={() => submitTarget(Math.max(1, current - 1))}
+          disabled={current <= 1}
+        >
+          −
+        </ActionIcon>
+        <Text size="sm" w={28} ta="center" aria-live="polite">
+          {current}
+        </Text>
+        <ActionIcon
+          variant="default"
+          size="md"
+          type="button"
+          aria-label={`Increase ${recipeName} portions`}
+          onClick={() => submitTarget(current + 1)}
+          disabled={current >= 1000}
+        >
+          +
+        </ActionIcon>
+        <Text size="sm" c="dimmed">
+          portions
+        </Text>
+      </Group>
+    </Group>
+  );
+}
+
+function CookedButton({
+  recipeName,
+  csrfToken,
+}: {
+  recipeName: string;
+  csrfToken: string;
+}) {
+  const [opened, { open, close }] = useDisclosure(false);
+  return (
+    <>
+      <Button color="green" variant="light" onClick={open}>
+        ✓ Cooked
+      </Button>
+      <Modal opened={opened} onClose={close} title="Mark as cooked?" size="sm">
+        <Stack gap="sm">
+          <Text size="sm">
+            Mark <strong>{recipeName}</strong> as cooked? This removes it from
+            In stock.
+          </Text>
+          <Group justify="flex-end" gap="sm">
+            <Button variant="default" onClick={close}>
+              Cancel
+            </Button>
+            <Form method="post" onSubmit={close}>
+              <CsrfField token={csrfToken} />
+              <input type="hidden" name="intent" value="mark-cooked" />
+              <Button
+                type="submit"
+                color="green"
+                aria-label={`Confirm mark ${recipeName} as cooked`}
+              >
+                ✓ Cooked
+              </Button>
+            </Form>
+          </Group>
+        </Stack>
+      </Modal>
+    </>
+  );
 }
 
 export default function RecipeView({ loaderData }: Route.ComponentProps) {
-  const { recipe, ingredients: ings, csrfToken } = loaderData;
-  const actionData = useActionData<{ added?: true; error?: string } | undefined>();
-  // Add-to-draft uses a fetcher rather than the navigation Form so that
-  // rapid double-clicks (legitimate: "I want two of these in the
-  // draft") don't supersede each other. RR7's <Form> aborts in-flight
-  // submissions on a new submit, which would silently drop the first
-  // insert. Before JS hydration the form falls back to a regular
-  // navigation, so we also surface the same alert via actionData.
+  const { recipe, ingredients: ings, draftInstance, stockInstance, csrfToken } =
+    loaderData;
+  const actionData = useActionData<{ error?: string } | undefined>();
+  // Add-to-draft uses a fetcher so the loader revalidates and the
+  // button flips to the "In draft" state without a full navigation.
   const addFetcher = useFetcher<{ added?: true; error?: string }>();
-  const added = addFetcher.data?.added || actionData?.added;
   const addError = addFetcher.data?.error;
+  const scaledQuantity =
+    stockInstance?.targetQuantity ??
+    draftInstance?.targetQuantity ??
+    recipe.baseQuantity;
+  const factor = scaledQuantity / recipe.baseQuantity;
   return (
     <Stack gap="md">
-      <Group justify="space-between" align="center">
-        <Group gap="xs">
-          <Button
-            component={Link}
-            to={`/recipes/${recipe.id}/edit`}
-            variant="default"
-            size="xs"
-          >
-            Edit
-          </Button>
-          <Form
-            method="post"
-            onSubmit={(e) => {
-              if (!confirm("Delete this recipe?")) e.preventDefault();
-            }}
-            style={{ display: "inline" }}
-          >
-            <CsrfField token={csrfToken} />
-            <input type="hidden" name="intent" value="delete" />
-            <Button type="submit" color="red" variant="subtle" size="xs">
-              Delete
-            </Button>
-          </Form>
-        </Group>
-      </Group>
-
       {actionData?.error && (
         <Alert color="red" role="alert">
           {actionData.error}
@@ -170,11 +339,6 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
       {addError && (
         <Alert color="red" role="alert">
           {addError}
-        </Alert>
-      )}
-      {added && (
-        <Alert color="green" role="status">
-          Added to draft. <Anchor component={Link} to="/kitchen">Open Kitchen →</Anchor>
         </Alert>
       )}
 
@@ -192,19 +356,31 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
 
       <Text c="dimmed">Base: {recipe.baseQuantity} portions</Text>
 
-      <addFetcher.Form method="post">
-        <CsrfField token={csrfToken} />
-        <input type="hidden" name="intent" value="add-to-draft" />
-        <Button type="submit">+ Add to draft</Button>
-      </addFetcher.Form>
+      <Box>
+        {stockInstance ? (
+          <CookedButton recipeName={recipe.name} csrfToken={csrfToken} />
+        ) : draftInstance ? (
+          <DraftControls
+            recipeName={recipe.name}
+            targetQuantity={draftInstance.targetQuantity}
+            csrfToken={csrfToken}
+          />
+        ) : (
+          <addFetcher.Form method="post">
+            <CsrfField token={csrfToken} />
+            <input type="hidden" name="intent" value="add-to-draft" />
+            <Button type="submit">+ Add to draft</Button>
+          </addFetcher.Form>
+        )}
+      </Box>
 
       <section>
         <Title order={4} mb="xs">
-          Ingredients ({recipe.baseQuantity} portions)
+          Ingredients ({scaledQuantity} portions)
         </Title>
         <List spacing={2}>
           {ings.map((i) => (
-            <List.Item key={i.id}>{formatIngredient(i)}</List.Item>
+            <List.Item key={i.id}>{formatIngredient(i, factor)}</List.Item>
           ))}
         </List>
       </section>
@@ -226,6 +402,10 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
           </Anchor>
         </Text>
       )}
+
+      <Anchor component={Link} to={`/recipes/${recipe.id}/edit`}>
+        Edit recipe
+      </Anchor>
     </Stack>
   );
 }

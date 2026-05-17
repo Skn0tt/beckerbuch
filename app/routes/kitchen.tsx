@@ -15,9 +15,8 @@ import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { isSameOrigin } from "../auth/origin";
 import { loadKitchen } from "../lib/kitchen-data";
 import {
-  DraftCard,
   FinaliseButton,
-  StockCard,
+  SortableLane,
 } from "../components/kitchen-sidebar";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -126,6 +125,60 @@ export async function action({ request }: Route.ActionArgs) {
           isNull(recipeInstances.cookedAt),
         ),
       );
+    return { ok: true };
+  }
+
+  if (intent === "reorder") {
+    const lane = String(form.get("lane") ?? "");
+    const ids = String(form.get("instanceIds") ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (lane !== "draft" && lane !== "stock") {
+      return { error: "Invalid lane." };
+    }
+    if (ids.length === 0 || !ids.every((id) => UUID_RE.test(id))) {
+      return { error: "Invalid order." };
+    }
+    const laneCond =
+      lane === "draft"
+        ? isNull(recipeInstances.finalisedAt)
+        : and(
+            isNotNull(recipeInstances.finalisedAt),
+            isNull(recipeInstances.cookedAt),
+          );
+
+    await db().transaction(async (tx) => {
+      const rows = await tx
+        .select({
+          id: recipeInstances.id,
+          position: recipeInstances.position,
+        })
+        .from(recipeInstances)
+        .where(and(eq(recipeInstances.flatId, ctx.flat.id), laneCond));
+      const existing = new Map(rows.map((r) => [r.id, r.position]));
+      if (rows.length !== ids.length || !ids.every((id) => existing.has(id))) {
+        // Lane changed under us — bail without writing.
+        return;
+      }
+      const sorted = [...existing.values()].sort((a, b) => a - b);
+
+      // 2-phase: park everything in negative space, then assign the
+      // new positions. Dodges the partial unique on (flat_id, position).
+      for (const id of ids) {
+        const cur = existing.get(id)!;
+        await tx
+          .update(recipeInstances)
+          .set({ position: -1 - cur })
+          .where(eq(recipeInstances.id, id));
+      }
+      for (let i = 0; i < ids.length; i++) {
+        await tx
+          .update(recipeInstances)
+          .set({ position: sorted[i] })
+          .where(eq(recipeInstances.id, ids[i]));
+      }
+    });
     return { ok: true };
   }
 
@@ -275,8 +328,22 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
           onChange={(v) => navigate(v === "stock" ? "?lane=stock" : "?lane=draft")}
           aria-label="Kitchen lane"
           data={[
-            { value: "draft", label: `Draft (${draft.length})` },
-            { value: "stock", label: `In stock (${stock.length})` },
+            {
+              value: "draft",
+              label: (
+                <>
+                  Draft <Text span c="dimmed" inherit>{draft.length}</Text>
+                </>
+              ),
+            },
+            {
+              value: "stock",
+              label: (
+                <>
+                  In stock <Text span c="dimmed" inherit>{stock.length}</Text>
+                </>
+              ),
+            },
           ]}
         />
 
@@ -288,16 +355,12 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
             </Text>
           ) : (
             <Stack gap="xs">
-              {draft.map((d, i) => (
-                <DraftCard
-                  key={d.id}
-                  entry={d}
-                  csrfToken={csrfToken}
-                  members={members}
-                  isFirst={i === 0}
-                  isLast={i === draft.length - 1}
-                />
-              ))}
+              <SortableLane
+                lane="draft"
+                entries={draft}
+                members={members}
+                csrfToken={csrfToken}
+              />
               <FinaliseButton
                 csrfToken={csrfToken}
                 draft={draft}
@@ -310,18 +373,12 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
             Nothing in stock yet — finalise the draft to start cooking.
           </Text>
         ) : (
-          <Stack gap="xs">
-            {stock.map((s, i) => (
-              <StockCard
-                key={s.id}
-                entry={s}
-                csrfToken={csrfToken}
-                members={members}
-                isFirst={i === 0}
-                isLast={i === stock.length - 1}
-              />
-            ))}
-          </Stack>
+          <SortableLane
+            lane="stock"
+            entries={stock}
+            members={members}
+            csrfToken={csrfToken}
+          />
         )}
       </Stack>
     </Container>
