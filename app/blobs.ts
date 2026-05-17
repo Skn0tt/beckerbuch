@@ -20,24 +20,44 @@ export type StoredPhoto = {
 
 export type PhotoValidationError = string;
 
+export const PHOTO_MAX_BYTES = MAX_PHOTO_BYTES;
+
 function recipeStore() {
   return getStore({ name: STORE_NAME, consistency: "strong" });
+}
+
+export type PhotoValidationResult =
+  | { ok: true; contentType: string }
+  | { ok: false; error: PhotoValidationError };
+
+/**
+ * Validate raw photo bytes. Used by both the upload-File path
+ * (browser form) and the MCP photoUrl-fetch path.
+ */
+export function validatePhotoBytes(
+  size: number,
+  contentType: string,
+): PhotoValidationResult {
+  if (size === 0) return { ok: false, error: "Photo file is empty." };
+  if (size > MAX_PHOTO_BYTES) {
+    return {
+      ok: false,
+      error: `Photo is too large (max ${MAX_PHOTO_BYTES / 1024 / 1024} MB).`,
+    };
+  }
+  const type = contentType.toLowerCase();
+  if (!ALLOWED_MIME.has(type)) {
+    return { ok: false, error: "Photo must be a JPEG, PNG, or WebP image." };
+  }
+  return { ok: true, contentType: type };
 }
 
 /**
  * Validate an uploaded photo File. Returns the normalised content-type
  * if OK, or a string error message.
  */
-export function validatePhoto(file: File): { ok: true; contentType: string } | { ok: false; error: PhotoValidationError } {
-  if (file.size === 0) return { ok: false, error: "Photo file is empty." };
-  if (file.size > MAX_PHOTO_BYTES) {
-    return { ok: false, error: `Photo is too large (max ${MAX_PHOTO_BYTES / 1024 / 1024} MB).` };
-  }
-  const type = file.type.toLowerCase();
-  if (!ALLOWED_MIME.has(type)) {
-    return { ok: false, error: "Photo must be a JPEG, PNG, or WebP image." };
-  }
-  return { ok: true, contentType: type };
+export function validatePhoto(file: File): PhotoValidationResult {
+  return validatePhotoBytes(file.size, file.type);
 }
 
 export async function storePhoto(
@@ -45,11 +65,28 @@ export async function storePhoto(
   file: File,
   contentType: string,
 ): Promise<string> {
+  const buf = await file.arrayBuffer();
+  return storePhotoBytes(recipeId, buf, contentType);
+}
+
+export async function storePhotoBytes(
+  recipeId: string,
+  bytes: ArrayBuffer | Uint8Array,
+  contentType: string,
+): Promise<string> {
   const ext = MIME_TO_EXT[contentType] ?? "bin";
   const random = crypto.randomUUID();
   const key = `recipes/${recipeId}/${random}.${ext}`;
-  const buf = await file.arrayBuffer();
-  await recipeStore().set(key, buf, {
+  // Netlify Blobs accepts ArrayBuffer; normalise Uint8Array to a fresh ArrayBuffer.
+  let payload: ArrayBuffer;
+  if (bytes instanceof Uint8Array) {
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    payload = copy.buffer;
+  } else {
+    payload = bytes;
+  }
+  await recipeStore().set(key, payload, {
     metadata: { contentType },
   });
   return key;

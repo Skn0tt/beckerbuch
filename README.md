@@ -39,3 +39,20 @@ for why and how to drive the app interactively through Playwright instead.
 For visual debugging, use Playwright's CLI flags directly:
 `npx playwright test --debug`, `--ui`, `--headed`, or sprinkle
 `await page.pause()` in a spec.
+
+## Connecting ChatGPT (MCP)
+
+Kochbuch exposes a small MCP server at `/mcp` so ChatGPT (and other
+MCP clients) can add recipes on your behalf. It speaks **Streamable
+HTTP** with **OAuth 2.1 + PKCE** and **Dynamic Client Registration**
+(RFC 7591) — the standard remote-connector flow.
+
+In ChatGPT, add a **custom connector** pointing at
+`https://<your-deployment>/mcp`. ChatGPT will discover the OAuth
+configuration via `/.well-known/oauth-protected-resource`, register
+itself, and walk you through the consent screen (you'll need to be
+signed in to your flat first). After approval it can call:
+
+- `kochbuch_add_recipe` — name, baseQuantity, ingredients, steps,
+  optional sourceUrl, optional photoUrl (server fetches the image)
+
