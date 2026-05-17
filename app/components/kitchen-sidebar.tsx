@@ -808,6 +808,13 @@ export function KitchenSidebar({
   csrfToken: string;
   formAction?: string;
 }) {
+  // Layout intent: each lane's share of the sidebar height is weighted by
+  // how many items it holds. When both are empty it's 50/50; when one lane
+  // is empty and the other has cards, the populated lane gets nearly all
+  // the room — so scrollbars only appear once both lanes have so much
+  // content that there's no whitespace left to absorb.
+  const draftGrow = Math.max(draft.length, 1);
+  const stockGrow = Math.max(stock.length, 1);
   return (
     <Stack
       gap="md"
@@ -820,7 +827,7 @@ export function KitchenSidebar({
           "calc(100vh - var(--app-shell-header-height, 56px) - var(--mantine-spacing-md))",
       }}
     >
-      <Stack gap="xs" style={{ flex: 1, minHeight: 0 }}>
+      <Stack gap="xs" style={{ flex: `${draftGrow} 1 0`, minHeight: 0 }}>
         <Title order={4}>
           Draft <Text span c="dimmed" inherit>{draft.length}</Text>
         </Title>
@@ -849,7 +856,7 @@ export function KitchenSidebar({
         )}
       </Stack>
 
-      <Stack gap="xs" style={{ flex: 1, minHeight: 0 }}>
+      <Stack gap="xs" style={{ flex: `${stockGrow} 1 0`, minHeight: 0 }}>
         <Title order={4}>
           In stock <Text span c="dimmed" inherit>{stock.length}</Text>
         </Title>
