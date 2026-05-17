@@ -20,6 +20,8 @@ export function shouldRevalidate({
   defaultShouldRevalidate: boolean;
   actionResult: unknown;
 }) {
+  // Sidebar forms post to /kitchen (a sibling route), so force
+  // revalidation after any action to keep draft/stock data fresh.
   if (actionResult !== undefined) return true;
   return defaultShouldRevalidate;
 }
