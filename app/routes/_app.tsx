@@ -56,8 +56,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
                 aria-label="Back to collection"
                 onClick={() => {
                   const historyIndex = window.history.state?.idx;
-                  const canGoBack =
-                    typeof historyIndex === "number" ? historyIndex > 0 : window.history.length > 1;
+                  const canGoBack = typeof historyIndex === "number" && historyIndex > 0;
                   if (canGoBack) {
                     navigate(-1);
                     return;
