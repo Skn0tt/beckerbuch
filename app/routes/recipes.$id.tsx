@@ -124,13 +124,16 @@ function formatIngredient(ing: { amount: string | null; unit: string | null; ite
 
 export default function RecipeView({ loaderData }: Route.ComponentProps) {
   const { recipe, ingredients: ings, csrfToken } = loaderData;
-  const actionData = useActionData<{ error?: string } | undefined>();
+  const actionData = useActionData<{ added?: true; error?: string } | undefined>();
   // Add-to-draft uses a fetcher rather than the navigation Form so that
   // rapid double-clicks (legitimate: "I want two of these in the
   // draft") don't supersede each other. RR7's <Form> aborts in-flight
   // submissions on a new submit, which would silently drop the first
-  // insert.
+  // insert. Before JS hydration the form falls back to a regular
+  // navigation, so we also surface the same alert via actionData.
   const addFetcher = useFetcher<{ added?: true; error?: string }>();
+  const added = addFetcher.data?.added || actionData?.added;
+  const addError = addFetcher.data?.error;
   return (
     <Stack gap="md">
       <Group justify="space-between" align="center">
@@ -164,12 +167,12 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
           {actionData.error}
         </Alert>
       )}
-      {addFetcher.data?.error && (
+      {addError && (
         <Alert color="red" role="alert">
-          {addFetcher.data.error}
+          {addError}
         </Alert>
       )}
-      {addFetcher.data?.added && (
+      {added && (
         <Alert color="green" role="status">
           Added to draft. <Anchor component={Link} to="/kitchen">Open Kitchen →</Anchor>
         </Alert>
