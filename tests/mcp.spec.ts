@@ -162,8 +162,10 @@ function textFromToolResult(result: Awaited<ReturnType<Client["callTool"]>>): st
   return text;
 }
 
-function jsonFromToolResult<T>(result: Awaited<ReturnType<Client["callTool"]>>): T {
-  return JSON.parse(textFromToolResult(result)) as T;
+function jsonFromToolResult<TResult>(
+  result: Awaited<ReturnType<Client["callTool"]>>,
+): TResult {
+  return JSON.parse(textFromToolResult(result)) as TResult;
 }
 
 async function addRecipeViaMcp(
@@ -191,7 +193,7 @@ async function addRecipeViaMcp(
   return match[1];
 }
 
-async function createOtherFlatAccessToken(
+async function createIsolatedFlatAccessToken(
   page: Page,
   request: APIRequestContext,
 ): Promise<string> {
@@ -454,7 +456,7 @@ test.describe("MCP server", () => {
     ]);
     await client.close();
 
-    const otherAccessToken = await createOtherFlatAccessToken(page, request);
+    const otherAccessToken = await createIsolatedFlatAccessToken(page, request);
     const otherClient = await mcpClient(otherAccessToken);
     const otherGet = await otherClient.callTool({
       name: "kochbuch_get_recipe",
@@ -590,7 +592,7 @@ test.describe("MCP server", () => {
     );
     await client.close();
 
-    const otherAccessToken = await createOtherFlatAccessToken(page, request);
+    const otherAccessToken = await createIsolatedFlatAccessToken(page, request);
     const otherClient = await mcpClient(otherAccessToken);
     const otherEdit = await otherClient.callTool({
       name: "kochbuch_edit_recipe",

@@ -151,12 +151,7 @@ async function handle(request: Request): Promise<Response> {
         sourceUrl: args.sourceUrl ?? null,
         sourceHost,
         steps: args.steps ?? "",
-        ingredients: args.ingredients.map((p, position) => ({
-          position,
-          amount: p.amount?.trim() ? p.amount.trim() : null,
-          unit: p.unit?.trim() ? p.unit.trim() : null,
-          item: p.item.trim(),
-        })),
+        ingredients: normalizeIngredients(args.ingredients),
         photo,
       });
 
@@ -230,19 +225,6 @@ async function handle(request: Request): Promise<Response> {
         photo = { bytes: fetched.bytes, contentType: fetched.contentType };
       }
 
-      const nextIngredients = args.ingredients?.map((ingredient, position) => {
-        const item = ingredient.item.trim();
-        return {
-          position,
-          amount: ingredient.amount?.trim() ? ingredient.amount.trim() : null,
-          unit: ingredient.unit?.trim() ? ingredient.unit.trim() : null,
-          item,
-        };
-      });
-      if (nextIngredients?.some((ingredient) => ingredient.item.length === 0)) {
-        return toolError("Each ingredient item is required.");
-      }
-
       const recipe = await editRecipe({
         flatId: ctx.flat.id,
         id: args.id,
@@ -251,7 +233,7 @@ async function handle(request: Request): Promise<Response> {
           ...(args.baseQuantity !== undefined ? { baseQuantity: args.baseQuantity } : {}),
           ...(args.steps !== undefined ? { steps: args.steps } : {}),
           ...(args.sourceUrl !== undefined ? { sourceUrl: args.sourceUrl } : {}),
-          ...(nextIngredients ? { ingredients: nextIngredients } : {}),
+          ...(args.ingredients ? { ingredients: normalizeIngredients(args.ingredients) } : {}),
           ...(photo ? { photo } : {}),
           ...(args.removePhoto ? { removePhoto: true } : {}),
         },
@@ -284,6 +266,17 @@ function jsonResult(payload: unknown) {
   return {
     content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
   };
+}
+
+function normalizeIngredients(
+  ingredients: Array<{ amount?: string; unit?: string; item: string }>,
+) {
+  return ingredients.map((ingredient, position) => ({
+    position,
+    amount: ingredient.amount?.trim() ? ingredient.amount.trim() : null,
+    unit: ingredient.unit?.trim() ? ingredient.unit.trim() : null,
+    item: ingredient.item,
+  }));
 }
 
 function recipeListPayload(recipe: RecipeListItem, request: Request) {
