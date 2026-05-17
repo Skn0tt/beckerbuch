@@ -42,7 +42,7 @@ test("add a recipe to draft twice → both show on /kitchen → remove one leave
 
 test("kitchen empty state links back to collection", async ({ page, flat }) => {
   await login(page, flat.user);
-  await page.getByRole("link", { name: "Kitchen" }).click();
+  await page.goto("/kitchen");
   await expect(page).toHaveURL("/kitchen");
   await expect(page.getByText(/Draft is empty/)).toBeVisible();
 });
@@ -74,7 +74,7 @@ test("draft is scoped to the flat — other flat's draft is invisible", async ({
   await page.getByRole("button", { name: "Create account & join" }).click();
   await page.waitForURL("/");
 
-  await page.getByRole("link", { name: "Kitchen" }).click();
+  await page.goto("/kitchen");
   await expect(page.getByText(/Draft is empty/)).toBeVisible();
 });
 

@@ -275,10 +275,6 @@ Hand-rolled, deliberately small. Three tables (`users`, `sessions`,
 
 ### 4.4 Boring / dangerous bits we own
 
-- **Login rate-limit:** 5 attempts per email per 15 minutes; tracked
-  in a small `login_attempts` table (or in-memory in v1, since we have
-  one or two users — TECH.md acknowledges the risk and we move it to
-  the table the moment we ship to anyone outside our flat).
 - **Timing-safe email lookup:** always run argon2 verify even if the
   user doesn't exist (against a fixed dummy hash) so the response time
   doesn't reveal account existence.

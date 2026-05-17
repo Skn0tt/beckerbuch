@@ -20,11 +20,6 @@ import {
 } from "../auth/session";
 import { tryGetAuthedContext } from "../auth/require";
 import { getDummyHash, verifyPassword } from "../auth/password";
-import {
-  checkLoginRateLimit,
-  clearLoginAttempts,
-  recordLoginFailure,
-} from "../auth/rate-limit";
 import { safeRedirectTarget } from "../auth/safe-redirect";
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -43,13 +38,6 @@ export async function action({ request }: Route.ActionArgs) {
     return { error: "Email and password are required." };
   }
 
-  const limit = checkLoginRateLimit(email);
-  if (!limit.allowed) {
-    return {
-      error: `Too many attempts. Try again in ${Math.ceil(limit.retryAfterMs / 60000)} minute(s).`,
-    };
-  }
-
   const d = db();
   const [user] = await d
     .select({ id: users.id, passwordHash: users.passwordHash })
@@ -64,11 +52,8 @@ export async function action({ request }: Route.ActionArgs) {
     : (await verifyPassword(await getDummyHash(), password), false);
 
   if (!ok || !user) {
-    recordLoginFailure(email);
     return { error: "Invalid email or password." };
   }
-
-  clearLoginAttempts(email);
 
   const token = createSessionToken();
   await d.insert(sessions).values({ id: hashSessionToken(token), userId: user.id });

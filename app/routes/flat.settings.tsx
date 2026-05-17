@@ -1,5 +1,4 @@
 import {
-  Anchor,
   Button,
   Container,
   CopyButton,
@@ -11,7 +10,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { Form, Link, redirect } from "react-router";
+import { Form, redirect } from "react-router";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import type { Route } from "./+types/flat.settings";
 import { db } from "../db/client";
@@ -105,7 +104,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function FlatSettings({ loaderData }: Route.ComponentProps) {
-  const { flat, members, currentInvite, origin, csrfToken } = loaderData;
+  const { members, currentInvite, origin, csrfToken } = loaderData;
   const inviteUrl = currentInvite
     ? `${origin}/invite/${currentInvite.token}`
     : null;
@@ -113,11 +112,6 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
   return (
     <Container size={520} py="xl">
       <Stack gap="lg">
-        <Group justify="space-between" align="center">
-          <Title order={2}>Flat: {flat.name}</Title>
-          <Anchor component={Link} to="/">← Back</Anchor>
-        </Group>
-
         <section>
           <Title order={4} mb="xs">
             Members
@@ -179,6 +173,18 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
             <input type="hidden" name="intent" value="rotate-invite" />
             <Button type="submit" variant="default">
               {inviteUrl ? "Generate new link" : "Generate link"}
+            </Button>
+          </Form>
+        </section>
+
+        <section>
+          <Title order={4} mb="xs">
+            Account
+          </Title>
+          <Form method="post" action="/logout">
+            <CsrfField token={csrfToken} />
+            <Button type="submit" variant="default" color="red">
+              Sign out
             </Button>
           </Form>
         </section>

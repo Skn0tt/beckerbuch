@@ -44,6 +44,7 @@ test("open-redirect via ?redirect= is rejected", async ({ page, flat }) => {
 
 test("logout returns to /login and home is gated again", async ({ page, flat }) => {
   await login(page, flat.user);
+  await page.getByRole("link", { name: "Settings" }).click();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login/);
   await page.goto("/");

@@ -6,9 +6,10 @@ test("settings shows flat name, current user as member, and a generate button", 
   flat,
 }) => {
   await login(page, flat.user);
-  await page.getByRole("link", { name: "Flat settings" }).click();
+  await page.getByRole("link", { name: "Settings" }).click();
 
-  await expect(page.getByRole("heading", { name: `Flat: ${flat.name}` })).toBeVisible();
+  await expect(page).toHaveURL("/flat/settings");
+  await expect(page.getByRole("heading", { name: "Members" })).toBeVisible();
   const memberRow = page.getByRole("listitem").filter({ hasText: flat.user.email });
   await expect(memberRow.getByText(flat.user.displayName)).toBeVisible();
   await expect(memberRow.getByText(flat.user.email)).toBeVisible();

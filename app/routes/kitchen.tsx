@@ -1,41 +1,26 @@
 import {
-  ActionIcon,
   Anchor,
-  Button,
-  Card,
   Container,
-  Group,
-  List,
-  Modal,
   SegmentedControl,
   Stack,
   Text,
-  TextInput,
-  Title,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { useEffect, useRef, useState } from "react";
-import { Form, Link, redirect, useFetcher, useNavigate } from "react-router";
+import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { Link, redirect, useNavigate } from "react-router";
 import type { Route } from "./+types/kitchen";
 import { db } from "../db/client";
-import { ingredients, recipeInstances, recipes, flatMembers, users } from "../db/schema";
+import { recipeInstances, flatMembers } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
 import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
-import { csrfFieldName } from "../auth/csrf-shared";
-import { CsrfField } from "../auth/csrf-field";
 import { isSameOrigin } from "../auth/origin";
-import { formatIngredient as fmtIngredient } from "../lib/scale";
+import { loadKitchen } from "../lib/kitchen-data";
+import {
+  DraftCard,
+  FinaliseButton,
+  StockCard,
+} from "../components/kitchen-sidebar";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-type DraftIngredient = {
-  recipeId: string;
-  position: number;
-  amount: string | null;
-  unit: string | null;
-  item: string;
-};
 
 export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requireFlatMember(request);
@@ -43,83 +28,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   const laneParam = url.searchParams.get("lane");
   const lane: "draft" | "stock" = laneParam === "stock" ? "stock" : "draft";
 
-  const baseSelect = {
-    id: recipeInstances.id,
-    targetQuantity: recipeInstances.targetQuantity,
-    position: recipeInstances.position,
-    recipeId: recipes.id,
-    recipeName: recipes.name,
-    baseQuantity: recipes.baseQuantity,
-    designatedCookId: recipeInstances.designatedCookId,
-    note: recipeInstances.note,
-  };
-
-  const draft = await db()
-    .select(baseSelect)
-    .from(recipeInstances)
-    .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
-    .where(
-      and(
-        eq(recipeInstances.flatId, ctx.flat.id),
-        isNull(recipeInstances.finalisedAt),
-      ),
-    )
-    .orderBy(asc(recipeInstances.position));
-
-  const stock = await db()
-    .select(baseSelect)
-    .from(recipeInstances)
-    .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
-    .where(
-      and(
-        eq(recipeInstances.flatId, ctx.flat.id),
-        isNotNull(recipeInstances.finalisedAt),
-        isNull(recipeInstances.cookedAt),
-      ),
-    )
-    .orderBy(asc(recipeInstances.position));
-
-  const members = await db()
-    .select({ id: users.id, displayName: users.displayName })
-    .from(flatMembers)
-    .innerJoin(users, eq(users.id, flatMembers.userId))
-    .where(eq(flatMembers.flatId, ctx.flat.id))
-    .orderBy(asc(users.displayName));
-
-  const recipeIds = [
-    ...new Set([...draft.map((d) => d.recipeId), ...stock.map((s) => s.recipeId)]),
-  ];
-  const ings: DraftIngredient[] =
-    recipeIds.length === 0
-      ? []
-      : await db()
-          .select({
-            recipeId: ingredients.recipeId,
-            position: ingredients.position,
-            amount: ingredients.amount,
-            unit: ingredients.unit,
-            item: ingredients.item,
-          })
-          .from(ingredients)
-          .where(inArray(ingredients.recipeId, recipeIds))
-          .orderBy(asc(ingredients.position));
-
-  const ingsByRecipe = new Map<string, DraftIngredient[]>();
-  for (const i of ings) {
-    const arr = ingsByRecipe.get(i.recipeId) ?? [];
-    arr.push(i);
-    ingsByRecipe.set(i.recipeId, arr);
-  }
-
-  const withIngs = <T extends { recipeId: string }>(rows: T[]) =>
-    rows.map((d) => ({ ...d, ingredients: ingsByRecipe.get(d.recipeId) ?? [] }));
-
+  const data = await loadKitchen(ctx.flat.id);
   return {
     lane,
-    draft: withIngs(draft),
-    stock: withIngs(stock),
+    draft: data.draft,
+    stock: data.stock,
+    members: data.members,
     csrfToken: csrfTokenForSession(ctx.session.id),
-    members,
   };
 }
 
@@ -172,7 +87,6 @@ export async function action({ request }: Route.ActionArgs) {
     let cookId: string | null = null;
     if (raw !== "") {
       if (!UUID_RE.test(raw)) return { error: "Invalid cook." };
-      // Validate cook is a member of this flat.
       const member = await db()
         .select({ userId: flatMembers.userId })
         .from(flatMembers)
@@ -286,7 +200,6 @@ export async function action({ request }: Route.ActionArgs) {
     if (direction !== "up" && direction !== "down") {
       return { error: "Invalid direction." };
     }
-    // Look up the row to determine its lane.
     const rows = await db()
       .select({
         id: recipeInstances.id,
@@ -313,7 +226,6 @@ export async function action({ request }: Route.ActionArgs) {
           isNull(recipeInstances.cookedAt),
         );
 
-    // Find adjacent neighbour by position.
     const neighbours = await db()
       .select({ id: recipeInstances.id, position: recipeInstances.position })
       .from(recipeInstances)
@@ -352,407 +264,12 @@ export async function action({ request }: Route.ActionArgs) {
   return { error: "Unknown action." };
 }
 
-function formatIngredient(ing: DraftIngredient, factor: number): string {
-  return fmtIngredient(ing, factor);
-}
-
-type DraftEntry = Awaited<ReturnType<typeof loader>>["draft"][number];
-
-function NoteEditor({
-  entry,
-  csrfToken,
-}: {
-  entry: DraftEntry;
-  csrfToken: string;
-}) {
-  const fetcher = useFetcher({ key: `note-${entry.id}` });
-  // Optimistic: submitting form data wins over server data.
-  const submittedNote = fetcher.formData?.get("note");
-  const optimistic =
-    submittedNote != null ? String(submittedNote).trim() : null;
-  const persisted = entry.note ?? null;
-  const current =
-    submittedNote != null
-      ? optimistic && optimistic.length > 0
-        ? optimistic
-        : null
-      : persisted;
-
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(current ?? "");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // Focus the input the moment we enter edit mode.
-  useEffect(() => {
-    if (editing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
-  }, [editing]);
-
-  const startEditing = () => {
-    setDraft(current ?? "");
-    setEditing(true);
-  };
-
-  const submit = (value: string) => {
-    const fd = new FormData();
-    fd.set(csrfFieldName(), csrfToken);
-    fd.set("intent", "set-note");
-    fd.set("instanceId", entry.id);
-    fd.set("note", value);
-    fetcher.submit(fd, { method: "post" });
-    setEditing(false);
-  };
-
-  if (editing) {
-    return (
-      <Group gap="xs" wrap="nowrap">
-        <TextInput
-          ref={inputRef}
-          size="xs"
-          value={draft}
-          onChange={(e) => setDraft(e.currentTarget.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              submit(draft);
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              setEditing(false);
-            }
-          }}
-          placeholder="e.g. cook this on Friday"
-          aria-label={`Note for ${entry.recipeName}`}
-          style={{ flex: 1 }}
-          data-testid="note-input"
-        />
-        <Button
-          type="button"
-          size="xs"
-          variant="light"
-          onClick={() => submit(draft)}
-        >
-          Save
-        </Button>
-        {current && (
-          <Button
-            type="button"
-            size="xs"
-            variant="subtle"
-            color="red"
-            onClick={() => submit("")}
-            aria-label={`Clear note for ${entry.recipeName}`}
-          >
-            Clear
-          </Button>
-        )}
-      </Group>
-    );
-  }
-
-  if (current) {
-    return (
-      <Group gap="xs" wrap="nowrap" align="center">
-        <Text size="sm" fs="italic" c="dimmed" style={{ flex: 1 }} data-testid="note-text">
-          📝 {current}
-        </Text>
-        <Button
-          type="button"
-          size="compact-xs"
-          variant="subtle"
-          onClick={startEditing}
-          aria-label={`Edit note for ${entry.recipeName}`}
-        >
-          Edit
-        </Button>
-      </Group>
-    );
-  }
-
-  return (
-    <Button
-      type="button"
-      size="compact-xs"
-      variant="subtle"
-      c="dimmed"
-      onClick={startEditing}
-      aria-label={`Add note for ${entry.recipeName}`}
-      style={{ alignSelf: "flex-start" }}
-    >
-      + Note
-    </Button>
-  );
-}
-
-function MoveButtons({
-  entry,
-  csrfToken,
-  isFirst,
-  isLast,
-}: {
-  entry: DraftEntry;
-  csrfToken: string;
-  isFirst: boolean;
-  isLast: boolean;
-}) {
-  return (
-    <Group gap={2} wrap="nowrap">
-      <Form method="post">
-        <CsrfField token={csrfToken} />
-        <input type="hidden" name="intent" value="move" />
-        <input type="hidden" name="instanceId" value={entry.id} />
-        <input type="hidden" name="direction" value="up" />
-        <ActionIcon
-          type="submit"
-          variant="default"
-          size="sm"
-          disabled={isFirst}
-          aria-label={`Move ${entry.recipeName} up`}
-        >
-          ↑
-        </ActionIcon>
-      </Form>
-      <Form method="post">
-        <CsrfField token={csrfToken} />
-        <input type="hidden" name="intent" value="move" />
-        <input type="hidden" name="instanceId" value={entry.id} />
-        <input type="hidden" name="direction" value="down" />
-        <ActionIcon
-          type="submit"
-          variant="default"
-          size="sm"
-          disabled={isLast}
-          aria-label={`Move ${entry.recipeName} down`}
-        >
-          ↓
-        </ActionIcon>
-      </Form>
-    </Group>
-  );
-}
-
-function DraftCard({
-  entry,
-  csrfToken,
-  members,
-  isFirst,
-  isLast,
-}: {
-  entry: DraftEntry;
-  csrfToken: string;
-  members: { id: string; displayName: string }[];
-  isFirst: boolean;
-  isLast: boolean;
-}) {
-  const fetcher = useFetcher();
-  // Optimistic target while a submit is in flight; otherwise use server value.
-  const pending = fetcher.formData?.get("targetQuantity");
-  const target =
-    typeof pending === "string" && Number.isFinite(Number(pending))
-      ? Number(pending)
-      : entry.targetQuantity;
-
-  const factor = entry.baseQuantity > 0 ? target / entry.baseQuantity : 1;
-
-  const submitTarget = (next: number) => {
-    if (next < 1) return;
-    const fd = new FormData();
-    fd.set("intent", "update-quantity");
-    fd.set("instanceId", entry.id);
-    fd.set("targetQuantity", String(next));
-    fd.set(csrfFieldName(), csrfToken);
-    fetcher.submit(fd, { method: "post" });
-  };
-
-  const cookFetcher = useFetcher();
-  // Optimistic cook selection while a submit is in flight; otherwise use
-  // server value. Without this the button waits for a full POST +
-  // loader revalidation round-trip before flipping aria-pressed, which
-  // can exceed Playwright's default 5s assertion timeout under load.
-  const pendingCookRaw = cookFetcher.formData?.get("cookId");
-  const pendingCook =
-    typeof pendingCookRaw === "string" ? pendingCookRaw : null;
-  const effectiveCookId =
-    pendingCook === null
-      ? entry.designatedCookId
-      : pendingCook === ""
-        ? null
-        : pendingCook;
-  const submitCook = (cookId: string) => {
-    const fd = new FormData();
-    fd.set("intent", "set-cook");
-    fd.set("instanceId", entry.id);
-    fd.set("cookId", cookId);
-    fd.set(csrfFieldName(), csrfToken);
-    cookFetcher.submit(fd, { method: "post" });
-  };
-
-  return (
-    <Card withBorder padding="sm">
-      <Stack gap="xs">
-        <Group justify="space-between" align="center" wrap="nowrap">
-          <Group gap="xs" wrap="nowrap">
-            <MoveButtons
-              entry={entry}
-              csrfToken={csrfToken}
-              isFirst={isFirst}
-              isLast={isLast}
-            />
-            <Anchor component={Link} to={`/recipes/${entry.recipeId}`} fw={500}>
-              {entry.recipeName}
-            </Anchor>
-          </Group>
-          <Group gap="xs" wrap="nowrap">
-            <Group gap={4} wrap="nowrap">
-              <ActionIcon
-                variant="default"
-                size="sm"
-                type="button"
-                aria-label={`Decrease ${entry.recipeName} portions`}
-                onClick={() => submitTarget(Math.max(1, target - 1))}
-              >
-                −
-              </ActionIcon>
-              <Text size="sm" w={28} ta="center" aria-live="polite">
-                {target}
-              </Text>
-              <ActionIcon
-                variant="default"
-                size="sm"
-                type="button"
-                aria-label={`Increase ${entry.recipeName} portions`}
-                onClick={() => submitTarget(target + 1)}
-              >
-                +
-              </ActionIcon>
-              <Text size="sm" c="dimmed">
-                portions
-              </Text>
-            </Group>
-            <Form method="post">
-              <CsrfField token={csrfToken} />
-              <input type="hidden" name="intent" value="remove-from-draft" />
-              <input type="hidden" name="instanceId" value={entry.id} />
-              <Button
-                type="submit"
-                color="red"
-                variant="subtle"
-                size="xs"
-                aria-label={`Remove ${entry.recipeName} from draft`}
-              >
-                Remove
-              </Button>
-            </Form>
-          </Group>
-        </Group>
-
-        <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
-          <Text size="sm" c="dimmed">Cook:</Text>
-          <Group gap={4} wrap="wrap">
-            <Button
-              variant={effectiveCookId === null ? "filled" : "default"}
-              size="xs"
-              onClick={() => submitCook("")}
-              aria-label={`Set cook to unassigned for ${entry.recipeName}`}
-              aria-pressed={effectiveCookId === null}
-            >
-              Unassigned
-            </Button>
-            {members.map((m) => (
-              <Button
-                key={m.id}
-                variant={effectiveCookId === m.id ? "filled" : "default"}
-                size="xs"
-                onClick={() => submitCook(m.id)}
-                aria-label={`Set cook to ${m.displayName} for ${entry.recipeName}`}
-                aria-pressed={effectiveCookId === m.id}
-              >
-                {m.displayName}
-              </Button>
-            ))}
-          </Group>
-        </Group>
-
-        <NoteEditor entry={entry} csrfToken={csrfToken} />
-
-        <List spacing={2} size="sm" c="dimmed" withPadding>
-          {entry.ingredients.map((i) => (
-            <List.Item key={i.position}>{formatIngredient(i, factor)}</List.Item>
-          ))}
-        </List>
-      </Stack>
-    </Card>
-  );
-}
-
-function StockCard({
-  entry,
-  csrfToken,
-  isFirst,
-  isLast,
-}: {
-  entry: DraftEntry;
-  csrfToken: string;
-  isFirst: boolean;
-  isLast: boolean;
-}) {
-  const factor =
-    entry.baseQuantity > 0 ? entry.targetQuantity / entry.baseQuantity : 1;
-  return (
-    <Card withBorder padding="sm">
-      <Stack gap="xs">
-        <Group justify="space-between" align="center" wrap="nowrap">
-          <Group gap="xs" wrap="nowrap">
-            <MoveButtons
-              entry={entry}
-              csrfToken={csrfToken}
-              isFirst={isFirst}
-              isLast={isLast}
-            />
-            <Anchor component={Link} to={`/recipes/${entry.recipeId}`} fw={500}>
-              {entry.recipeName}
-            </Anchor>
-          </Group>
-          <Group gap="xs" wrap="nowrap">
-            <Text size="sm" c="dimmed">
-              {entry.targetQuantity} portions
-            </Text>
-            <Form method="post">
-              <CsrfField token={csrfToken} />
-              <input type="hidden" name="intent" value="mark-cooked" />
-              <input type="hidden" name="instanceId" value={entry.id} />
-              <Button
-                type="submit"
-                color="green"
-                variant="light"
-                size="xs"
-                aria-label={`Mark ${entry.recipeName} as cooked`}
-              >
-                ✓ Cooked
-              </Button>
-            </Form>
-          </Group>
-        </Group>
-        <NoteEditor entry={entry} csrfToken={csrfToken} />
-        <List spacing={2} size="sm" c="dimmed" withPadding>
-          {entry.ingredients.map((i) => (
-            <List.Item key={i.position}>{formatIngredient(i, factor)}</List.Item>
-          ))}
-        </List>
-      </Stack>
-    </Card>
-  );
-}
-
 export default function Kitchen({ loaderData }: Route.ComponentProps) {
   const { lane, draft, stock, csrfToken, members } = loaderData;
   const navigate = useNavigate();
   return (
     <Container size="sm" py="md">
       <Stack gap="md">
-        <Title order={1}>Kitchen</Title>
-
         <SegmentedControl
           value={lane}
           onChange={(v) => navigate(v === "stock" ? "?lane=stock" : "?lane=draft")}
@@ -807,65 +324,5 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
         )}
       </Stack>
     </Container>
-  );
-}
-
-function FinaliseButton({
-  csrfToken,
-  draft,
-  stockCount,
-}: {
-  csrfToken: string;
-  draft: DraftEntry[];
-  stockCount: number;
-}) {
-  const [opened, { open, close }] = useDisclosure(false);
-  return (
-    <>
-      <Group justify="flex-end" mt="sm">
-        <Button onClick={open} aria-label="Finalise draft">
-          Finalise →
-        </Button>
-      </Group>
-      <Modal opened={opened} onClose={close} title="Finalise this draft?">
-        <Stack gap="sm">
-          <Text size="sm">This will:</Text>
-          <List size="sm" withPadding>
-            <List.Item>Move {draft.length} recipe(s) to In stock</List.Item>
-            <List.Item>Empty the draft</List.Item>
-            {stockCount > 0 ? (
-              <List.Item>
-                Send all {stockCount + draft.length} in-stock recipe(s) to the
-                handoff page — including {stockCount} already there
-              </List.Item>
-            ) : (
-              <List.Item>Open the Bring! handoff page</List.Item>
-            )}
-          </List>
-          <Text size="sm" fw={500}>
-            Recipes:
-          </Text>
-          <List size="sm" withPadding>
-            {draft.map((d) => (
-              <List.Item key={d.id}>
-                {d.recipeName} (serves {d.targetQuantity})
-              </List.Item>
-            ))}
-          </List>
-          <Group justify="flex-end" gap="sm">
-            <Button variant="default" onClick={close}>
-              Cancel
-            </Button>
-            <Form method="post">
-              <CsrfField token={csrfToken} />
-              <input type="hidden" name="intent" value="finalise" />
-              <Button type="submit" aria-label="Confirm finalise draft">
-                Finalise →
-              </Button>
-            </Form>
-          </Group>
-        </Stack>
-      </Modal>
-    </>
   );
 }

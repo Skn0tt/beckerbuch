@@ -76,7 +76,7 @@ export { expect };
  */
 export async function generateInvite(page: Page, user: TestUser): Promise<string> {
   await login(page, user);
-  await page.getByRole("link", { name: "Flat settings" }).click();
+  await page.goto("/flat/settings");
   await page.getByRole("button", { name: /generate/i }).click();
   await expect(page.getByLabel("Invite link")).toBeVisible();
   return page.getByLabel("Invite link").inputValue();

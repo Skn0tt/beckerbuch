@@ -1,19 +1,16 @@
 import {
+  ActionIcon,
+  Anchor,
   AppShell,
   Box,
-  Burger,
-  Button,
   Group,
-  NavLink,
   Text,
   Title,
+  VisuallyHidden,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
-import { Form, Link, NavLink as RouterNavLink, Outlet, redirect, useLocation } from "react-router";
+import { Link, Outlet, redirect, useLocation } from "react-router";
 import type { Route } from "./+types/_app";
 import { tryGetAuthedContext } from "../auth/require";
-import { csrfTokenForSession } from "../auth/csrf.server";
-import { CsrfField } from "../auth/csrf-field";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await tryGetAuthedContext(request);
@@ -25,83 +22,54 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     user: ctx.user,
     flat: ctx.flat,
-    csrfToken: csrfTokenForSession(ctx.session.id),
   };
 }
 
-const NAV_ITEMS = [
+const MOBILE_NAV = [
   { to: "/", label: "Recipes", end: true },
   { to: "/kitchen", label: "Kitchen" },
-  { to: "/flat/settings", label: "Flat settings" },
 ];
 
 export default function AppLayout({ loaderData }: Route.ComponentProps) {
-  const { user, flat, csrfToken } = loaderData;
-  const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] =
-    useDisclosure(false);
+  const { user, flat } = loaderData;
   const location = useLocation();
 
   return (
     <AppShell
       header={{ height: 56 }}
-      navbar={{
-        width: 220,
-        breakpoint: "sm",
-        collapsed: { mobile: !mobileOpened, desktop: false },
-      }}
       footer={{ height: 60 }}
-      padding="md"
+      padding={0}
     >
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
+          <Anchor
+            component={Link}
+            to="/"
+            underline="never"
+            c="inherit"
+          >
+            <Title order={3}>{flat.name}</Title>
+          </Anchor>
           <Group gap="sm">
-            <Burger
-              opened={mobileOpened}
-              onClick={toggleMobile}
-              hiddenFrom="sm"
-              size="sm"
-              aria-label="Open navigation"
-            />
-            <Title order={3}>cookbook</Title>
-            <Text size="sm" c="dimmed" visibleFrom="sm">
-              · {flat.name}
-            </Text>
-          </Group>
-          <Group gap="sm">
-            <Text size="sm" c="dimmed" data-testid="current-user">
+            <VisuallyHidden data-testid="current-user">
               {user.displayName}
-            </Text>
-            <Form method="post" action="/logout">
-              <CsrfField token={csrfToken} />
-              <Button type="submit" variant="subtle" size="xs">
-                Sign out
-              </Button>
-            </Form>
+            </VisuallyHidden>
+            <ActionIcon
+              component={Link}
+              to="/flat/settings"
+              variant="subtle"
+              size="lg"
+              aria-label="Settings"
+            >
+              ⚙
+            </ActionIcon>
           </Group>
         </Group>
       </AppShell.Header>
 
-      <AppShell.Navbar p="sm">
-        {NAV_ITEMS.map((item) => (
-          <NavLink
-            key={item.to}
-            component={RouterNavLink}
-            to={item.to}
-            end={item.end}
-            label={item.label}
-            active={
-              item.end
-                ? location.pathname === item.to
-                : location.pathname.startsWith(item.to)
-            }
-            onClick={closeMobile}
-          />
-        ))}
-      </AppShell.Navbar>
-
       <AppShell.Footer hiddenFrom="sm">
         <Group h="100%" gap={0} grow preventGrowOverflow={false}>
-          {NAV_ITEMS.map((item) => {
+          {MOBILE_NAV.map((item) => {
             const active = item.end
               ? location.pathname === item.to
               : location.pathname.startsWith(item.to);
