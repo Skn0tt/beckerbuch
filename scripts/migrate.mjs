@@ -17,6 +17,13 @@ const pool = new Pool({
 
 try {
   const db = drizzle(pool);
+  console.log("Enabling extensions...");
+  await pool.query(`
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+    CREATE EXTENSION IF NOT EXISTS citext;
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+    CREATE EXTENSION IF NOT EXISTS unaccent;
+  `);
   console.log("Applying migrations from ./drizzle ...");
   await migrate(db, { migrationsFolder: "./drizzle" });
   console.log("Migrations applied successfully.");
