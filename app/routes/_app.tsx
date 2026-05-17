@@ -63,7 +63,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
                   navigate(-1);
                 }}
               >
-                ←
+                <span aria-hidden>←</span>
               </ActionIcon>
             )}
             <Anchor
