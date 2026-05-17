@@ -1,6 +1,11 @@
 import { test, expect, generateInvite } from "./fixtures";
 import { login } from "./login";
 
+const TINY_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+  "base64",
+);
+
 test("settings shows flat name, current user as member, and a generate button", async ({
   page,
   flat,
@@ -78,4 +83,22 @@ test("settings shows the MCP URL with a copy button and a link to Claude docs", 
     "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp",
   );
   await expect(claudeLink).toHaveAttribute("target", "_blank");
+});
+
+test("upload and remove profile picture in settings", async ({ page, flat }) => {
+  await login(page, flat.user);
+  await page.goto("/flat/settings");
+
+  const profilePicture = page.locator('input[type="file"][name="avatar"]');
+  await profilePicture.setInputFiles({
+    name: "avatar.png",
+    mimeType: "image/png",
+    buffer: TINY_PNG,
+  });
+  await page.getByRole("button", { name: "Upload" }).click();
+
+  await expect(page.getByRole("button", { name: "Remove picture" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Remove picture" }).click();
+  await expect(page.getByRole("button", { name: "Remove picture" })).toHaveCount(0);
 });

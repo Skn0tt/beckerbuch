@@ -117,32 +117,49 @@ test("designated cook picker — assign self, then unassign", async ({ page, fla
   await page.getByRole("button", { name: "+ Add to draft" }).click();
   await page.getByRole("link", { name: "Open Kitchen" }).click();
 
-  const setSelf = page.getByLabel(
-    `Set cook to ${flat.user.displayName} for Pasta al limone`,
-  );
-  const setUnassigned = page.getByLabel(
-    "Set cook to unassigned for Pasta al limone",
-  );
+  const openPicker = page.getByLabel("Choose cook for Pasta al limone");
+  await openPicker.click();
+  const setSelf = page.getByLabel(`Set cook to ${flat.user.displayName} for Pasta al limone`);
+  const setUnassigned = page.getByLabel("Set cook to unassigned for Pasta al limone");
 
   await expect(setUnassigned).toHaveAttribute("aria-pressed", "true");
-
   await setSelf.click();
-  await expect(setSelf).toHaveAttribute("aria-pressed", "true");
 
   // Reload — choice persisted.
   await page.reload();
-  await expect(
-    page.getByLabel(`Set cook to ${flat.user.displayName} for Pasta al limone`),
-  ).toHaveAttribute("aria-pressed", "true");
+  await page.getByLabel("Choose cook for Pasta al limone").click();
+  await expect(page.getByLabel(`Set cook to ${flat.user.displayName} for Pasta al limone`)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 
   // Unassign.
+  await page.getByLabel("Choose cook for Pasta al limone").click();
   await page.getByLabel("Set cook to unassigned for Pasta al limone").click();
+  await page.reload();
+  await page.getByLabel("Choose cook for Pasta al limone").click();
   await expect(
     page.getByLabel("Set cook to unassigned for Pasta al limone"),
   ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("designated cook can be edited in stock lane", async ({ page, flat }) => {
+  await login(page, flat.user);
+  await createPasta(page);
+  await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await page.getByRole("link", { name: "Open Kitchen" }).click();
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await page.goto("/kitchen?lane=stock");
+
+  await page.getByLabel("Choose cook for Pasta al limone").click();
+  await page
+    .getByLabel(`Set cook to ${flat.user.displayName} for Pasta al limone`)
+    .click();
   await page.reload();
+  await page.getByLabel("Choose cook for Pasta al limone").click();
   await expect(
-    page.getByLabel("Set cook to unassigned for Pasta al limone"),
+    page.getByLabel(`Set cook to ${flat.user.displayName} for Pasta al limone`),
   ).toHaveAttribute("aria-pressed", "true");
 });
 
