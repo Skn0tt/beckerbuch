@@ -155,19 +155,26 @@ test("public /h/:flatId renders stock + Bring! deep link, no auth required", asy
     anonPage.getByRole("link", { name: /Pasta al limone \(serves 4\)/ }),
   ).toBeVisible();
 
-  const bringLink = anonPage.getByTestId("bring-deeplink").first();
+  const bringLink = anonPage.getByTestId("handoff-bring-import");
   await expect(bringLink).toBeVisible();
   const href = await bringLink.getAttribute("href");
   expect(href).toMatch(
     /^https:\/\/api\.getbring\.com\/rest\/bringrecipes\/deeplink\?url=/,
   );
-  // The encoded URL is the public /r/:id?q=4 absolute URL.
+  // The encoded URL is the public /h/:flatId absolute URL.
   const encoded = href!.replace(
     /^https:\/\/api\.getbring\.com\/rest\/bringrecipes\/deeplink\?url=/,
     "",
   );
-  const recipeUrl = decodeURIComponent(encoded);
-  expect(recipeUrl).toMatch(/^https?:\/\/[^/]+\/r\/[0-9a-f-]{36}\?q=4$/);
+  const importUrl = decodeURIComponent(encoded);
+  expect(importUrl).toMatch(/^https?:\/\/[^/]+\/h\/[0-9a-f-]{36}$/);
+
+  // JSON-LD aggregates all scaled ingredients from the shopping list.
+  const jsonLd = JSON.parse(
+    (await anonPage.locator('script[type="application/ld+json"]').textContent())!,
+  );
+  expect(jsonLd["@type"]).toBe("Recipe");
+  expect(jsonLd.recipeIngredient).toContain("400 g spaghetti");
 
   await anon.close();
 });

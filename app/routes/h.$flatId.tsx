@@ -10,12 +10,13 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { data } from "react-router";
 import QRCode from "qrcode";
 import type { Route } from "./+types/h.$flatId";
 import { db } from "../db/client";
-import { flats, recipeInstances, recipes } from "../db/schema";
+import { flats, ingredients, recipeInstances, recipes } from "../db/schema";
+import { formatIngredient } from "../lib/scale";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -36,6 +37,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: recipeInstances.id,
       recipeId: recipes.id,
       recipeName: recipes.name,
+      baseQuantity: recipes.baseQuantity,
       targetQuantity: recipeInstances.targetQuantity,
     })
     .from(recipeInstances)
@@ -54,16 +56,40 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const handoffUrl = `${origin}/h/${flat.id}`;
   const qrSvg = await QRCode.toString(handoffUrl, { type: "svg", margin: 1 });
 
-  const items = rows.map((r) => {
-    const recipeUrl = `${origin}/r/${r.recipeId}?q=${r.targetQuantity}`;
+  // Batch-load all ingredients for the in-stock recipes in one query.
+  const recipeIds = rows.map((r) => r.recipeId);
+  const allIngs =
+    recipeIds.length > 0
+      ? await db()
+          .select()
+          .from(ingredients)
+          .where(inArray(ingredients.recipeId, recipeIds))
+          .orderBy(asc(ingredients.position))
+      : [];
+  const ingsByRecipe = new Map<string, typeof allIngs>();
+  for (const ing of allIngs) {
+    const list = ingsByRecipe.get(ing.recipeId) ?? [];
+    list.push(ing);
+    ingsByRecipe.set(ing.recipeId, list);
+  }
+
+  const groups = rows.map((r) => {
+    const ings = ingsByRecipe.get(r.recipeId) ?? [];
+    const factor = r.baseQuantity > 0 ? r.targetQuantity / r.baseQuantity : 1;
     return {
-      ...r,
-      recipeUrl,
-      bringUrl: `https://api.getbring.com/rest/bringrecipes/deeplink?url=${encodeURIComponent(recipeUrl)}`,
+      instanceId: r.id,
+      recipeId: r.recipeId,
+      recipeName: r.recipeName,
+      targetQuantity: r.targetQuantity,
+      recipeUrl: `${origin}/r/${r.recipeId}?q=${r.targetQuantity}`,
+      ingredients: ings.map((i) => formatIngredient(i, factor)),
     };
   });
 
-  return { flat, items, handoffUrl, qrSvg };
+  const allIngredients = groups.flatMap((g) => g.ingredients);
+  const bringUrl = `https://api.getbring.com/rest/bringrecipes/deeplink?url=${encodeURIComponent(handoffUrl)}`;
+
+  return { flat, groups, allIngredients, handoffUrl, bringUrl, qrSvg };
 }
 
 export function meta({ data: d }: Route.MetaArgs) {
@@ -72,20 +98,72 @@ export function meta({ data: d }: Route.MetaArgs) {
 }
 
 export default function Handoff({ loaderData }: Route.ComponentProps) {
-  const { items, handoffUrl, qrSvg } = loaderData;
+  const { flat, groups, allIngredients, handoffUrl, bringUrl, qrSvg } =
+    loaderData;
+
+  const jsonLd = {
+    "@context": "https://schema.org/",
+    "@type": "Recipe",
+    name: `Shopping list — ${flat.name}`,
+    recipeYield: `${groups.reduce((s, g) => s + g.targetQuantity, 0)} servings`,
+    recipeIngredient: allIngredients,
+  };
+  // Escape `<` to avoid breaking out of the script tag.
+  const jsonLdHtml = JSON.stringify(jsonLd).replace(/</g, "\\u003c");
 
   return (
     <Container size="sm" py="md">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdHtml }}
+      />
       <Stack gap="md">
-        <Title order={1}>Send to Bring!</Title>
+        <Title order={1}>Shopping list</Title>
 
-        {/* Desktop: QR + URL to send the page to a phone. */}
+        {groups.length === 0 ? (
+          <Text c="dimmed">Nothing to shop right now.</Text>
+        ) : (
+          <>
+            <Button
+              component="a"
+              href={bringUrl}
+              rel="external noopener"
+              size="lg"
+              data-testid="handoff-bring-import"
+            >
+              Import into Bring! →
+            </Button>
+
+            <Stack gap="xs">
+              <Title order={2} size="h4">
+                Recipes in this list
+              </Title>
+              {groups.map((g) => (
+                <Card key={g.instanceId} withBorder padding="sm">
+                  <Stack gap="xs">
+                    <Anchor href={g.recipeUrl} fw={500}>
+                      {g.recipeName} (serves {g.targetQuantity})
+                    </Anchor>
+                    <Stack gap={2}>
+                      {g.ingredients.map((ing, idx) => (
+                        <Text key={idx} size="sm" c="dimmed">
+                          {ing}
+                        </Text>
+                      ))}
+                    </Stack>
+                  </Stack>
+                </Card>
+              ))}
+            </Stack>
+          </>
+        )}
+
+        {/* Desktop: QR + copy-link card to send the page to a phone. */}
         <Card withBorder visibleFrom="sm" data-testid="handoff-desktop">
           <Stack gap="sm">
-            <Text size="sm">
-              Bring! lives on your phone. Open this page on your phone to share
-              each recipe in.
-            </Text>
+            <Title order={2} size="h5">
+              Send to your phone
+            </Title>
             <Group align="center" gap="md" wrap="nowrap">
               <Box
                 aria-label="QR code for handoff URL"
@@ -107,37 +185,6 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
             </Group>
           </Stack>
         </Card>
-
-        {/* Mobile: per-recipe share-into-Bring! links. */}
-        <Box hiddenFrom="sm" data-testid="handoff-mobile">
-          <Text size="sm" mb="sm">
-            Tap to share each recipe into Bring!.
-          </Text>
-        </Box>
-
-        {items.length === 0 ? (
-          <Text c="dimmed">Nothing to shop right now.</Text>
-        ) : (
-          <Stack gap="xs">
-            {items.map((it) => (
-              <Card key={it.id} withBorder padding="sm">
-                <Stack gap="xs">
-                  <Anchor href={it.recipeUrl} fw={500}>
-                    {it.recipeName} (serves {it.targetQuantity})
-                  </Anchor>
-                  <Anchor
-                    href={it.bringUrl}
-                    rel="external noopener"
-                    aria-label={`Share ${it.recipeName} into Bring!`}
-                    data-testid="bring-deeplink"
-                  >
-                    Share into Bring! →
-                  </Anchor>
-                </Stack>
-              </Card>
-            ))}
-          </Stack>
-        )}
       </Stack>
     </Container>
   );
