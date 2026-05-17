@@ -167,7 +167,7 @@ export async function editRecipe(input: {
   patch: EditRecipePatch;
 }): Promise<FlatRecipe | null> {
   if (input.patch.photo && input.patch.removePhoto) {
-    throw new Error("photoUrl and removePhoto cannot be used together.");
+    throw new Error("photo and removePhoto cannot be used together.");
   }
 
   const current = await getRecipeForFlat({ flatId: input.flatId, id: input.id });

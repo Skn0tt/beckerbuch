@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import type { APIRequestContext } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { test, expect } from "./fixtures";
@@ -192,7 +192,7 @@ async function addRecipeViaMcp(
 }
 
 async function createOtherFlatAccessToken(
-  page: import("@playwright/test").Page,
+  page: Page,
   request: APIRequestContext,
 ): Promise<string> {
   await page.context().clearCookies();

@@ -18,11 +18,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const ingredientSchema = z.object({
   amount: z.string().optional(),
   unit: z.string().optional(),
-  item: z.string().min(1).max(200),
+  item: z.string().trim().min(1).max(200),
 });
 
 const addRecipeInput = {
-  name: z.string().min(1).max(200).describe("Recipe name"),
+  name: z.string().trim().min(1).max(200).describe("Recipe name"),
   baseQuantity: z
     .number()
     .int()
@@ -67,7 +67,13 @@ const getRecipeInput = {
 
 const editRecipeInput = {
   id: recipeIdSchema,
-  name: z.string().min(1).max(200).optional().describe("Replace the recipe name"),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe("Replace the recipe name"),
   baseQuantity: z
     .number()
     .int()
@@ -216,9 +222,6 @@ async function handle(request: Request): Promise<Response> {
       if (args.photoUrl && args.removePhoto) {
         return toolError("photoUrl and removePhoto cannot be used together.");
       }
-      if (args.name !== undefined && args.name.trim().length === 0) {
-        return toolError("Name is required (max 200 chars).");
-      }
 
       let photo: { bytes: Uint8Array; contentType: string } | undefined;
       if (args.photoUrl) {
@@ -244,7 +247,7 @@ async function handle(request: Request): Promise<Response> {
         flatId: ctx.flat.id,
         id: args.id,
         patch: {
-          ...(args.name !== undefined ? { name: args.name.trim() } : {}),
+          ...(args.name !== undefined ? { name: args.name } : {}),
           ...(args.baseQuantity !== undefined ? { baseQuantity: args.baseQuantity } : {}),
           ...(args.steps !== undefined ? { steps: args.steps } : {}),
           ...(args.sourceUrl !== undefined ? { sourceUrl: args.sourceUrl } : {}),
