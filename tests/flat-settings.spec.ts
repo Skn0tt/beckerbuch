@@ -52,3 +52,30 @@ test("anonymous visit redirects to /login", async ({ page }) => {
   await page.goto("/flat/settings");
   await expect(page).toHaveURL(/\/login\?redirect=/);
 });
+
+test("settings shows the MCP URL with a copy button and a link to Claude docs", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+  await page.goto("/flat/settings");
+
+  const mcpInput = page.getByLabel("MCP URL");
+  await expect(mcpInput).toBeVisible();
+  const value = await mcpInput.inputValue();
+  expect(value).toMatch(/\/mcp$/);
+  expect(new URL(value).pathname).toBe("/mcp");
+
+  // Copy button sits next to the input; assert one is reachable from the
+  // same Paper as the MCP input.
+  await expect(
+    page.getByRole("button", { name: /^copy$/i }).last(),
+  ).toBeVisible();
+
+  const claudeLink = page.getByRole("link", { name: "Claude" });
+  await expect(claudeLink).toHaveAttribute(
+    "href",
+    "https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp",
+  );
+  await expect(claudeLink).toHaveAttribute("target", "_blank");
+});

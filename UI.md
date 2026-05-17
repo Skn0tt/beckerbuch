@@ -424,15 +424,31 @@ DESKTOP (modal)                                       MOBILE (full-screen)
 │ Anyone with this link can join your flat.    │     │ ┌──────────────────────────────┐ │
 │ [ Generate new link ]                        │     │ │ cookbook.app/invite/8f3a-…   │ │
 │                                              │     │ │              [ Copy ]        │ │
+│ Account                                      │     │ └──────────────────────────────┘ │
+│ [ Sign out ]                                 │     │ [ Generate new link ]            │
+│                                              │     │                                  │
+│ MCP                                          │     │ Account                          │
+│ ┌──────────────────────────────────────────┐ │     │ [ Sign out ]                     │
+│ │ cookbook.app/mcp            [ Copy ]     │ │     │                                  │
+│ └──────────────────────────────────────────┘ │     │ MCP                              │
+│ Use this URL to add cookbook as a custom     │     │ ┌──────────────────────────────┐ │
+│ connector in Claude.                         │     │ │ cookbook.app/mcp             │ │
+│                                              │     │ │              [ Copy ]        │ │
 └──────────────────────────────────────────────┘     │ └──────────────────────────────┘ │
-                                                     │ [ Generate new link ]            │
-                                                     │                                  │
+                                                     │ Use this URL to add cookbook     │
+                                                     │ as a custom connector in Claude. │
                                                      └──────────────────────────────────┘
 ```
 
 - No roles, no remove-member, no rename-flat in v1 (DESIGN.md §5).
 - "Generate new link" invalidates the previous one.
 - Sign out lives one level up, in the **⚙** menu itself, not on this screen.
+  *(Account block here is a placeholder for the current implementation;
+  it will move into the ⚙ menu when that lands.)*
+- **MCP block** surfaces the server's MCP endpoint so it can be wired
+  into an LLM client. "Claude" links to Anthropic's docs on adding a
+  custom connector — no auto-install button (no stable deep-link
+  scheme exists upstream).
 
 ---
 

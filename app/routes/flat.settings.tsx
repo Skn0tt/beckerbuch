@@ -1,4 +1,5 @@
 import {
+  Anchor,
   Button,
   Container,
   CopyButton,
@@ -108,6 +109,7 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
   const inviteUrl = currentInvite
     ? `${origin}/invite/${currentInvite.token}`
     : null;
+  const mcpUrl = `${origin}/mcp`;
 
   return (
     <Container size={520} py="xl">
@@ -187,6 +189,48 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
               Sign out
             </Button>
           </Form>
+        </section>
+
+        <section>
+          <Title order={4} mb="xs">
+            MCP
+          </Title>
+          <Stack gap="xs">
+            <Paper withBorder p="xs">
+              <Group justify="space-between" wrap="nowrap" gap="xs">
+                <TextInput
+                  value={mcpUrl}
+                  readOnly
+                  style={{ flex: 1 }}
+                  aria-label="MCP URL"
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+                <CopyButton value={mcpUrl}>
+                  {({ copied, copy }) => (
+                    <Button
+                      variant="light"
+                      onClick={copy}
+                      size="sm"
+                      type="button"
+                    >
+                      {copied ? "Copied" : "Copy"}
+                    </Button>
+                  )}
+                </CopyButton>
+              </Group>
+            </Paper>
+            <Text c="dimmed" size="sm">
+              Use this URL to add cookbook as a custom connector in{" "}
+              <Anchor
+                href="https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Claude
+              </Anchor>
+              .
+            </Text>
+          </Stack>
         </section>
       </Stack>
     </Container>
