@@ -39,7 +39,6 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     !location.pathname.endsWith("/edit") &&
     !location.pathname.endsWith("/photo") &&
     location.pathname !== "/recipes/new";
-  const canGoBack = location.key !== "default";
 
   return (
     <AppShell
@@ -52,15 +51,15 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
           <Group gap="xs">
             {showBackToCollection && (
               <ActionIcon
-                component={Link}
-                to="/"
                 variant="subtle"
                 size="lg"
                 aria-label="Back to collection"
-                onClick={(event) => {
-                  if (!canGoBack) return;
-                  event.preventDefault();
-                  navigate(-1);
+                onClick={() => {
+                  if (typeof window !== "undefined" && window.history.length > 1) {
+                    navigate(-1);
+                    return;
+                  }
+                  navigate("/");
                 }}
               >
                 <span aria-hidden>←</span>
