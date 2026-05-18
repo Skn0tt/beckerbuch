@@ -16,7 +16,7 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Form, Link, useFetcher } from "react-router";
+import { Form, Link, useFetcher, useNavigation } from "react-router";
 import {
   DndContext,
   PointerSensor,
@@ -595,6 +595,10 @@ export function FinaliseButton({
   formAction?: string;
 }) {
   const [opened, { open, close }] = useDisclosure(false);
+  const navigation = useNavigation();
+  const isFinalising =
+    navigation.state !== "idle" &&
+    navigation.formData?.get("intent") === "finalise";
   return (
     <>
       <Group justify="flex-end" mt="sm">
@@ -602,7 +606,14 @@ export function FinaliseButton({
           Finalise →
         </Button>
       </Group>
-      <Modal opened={opened} onClose={close} title="Finalise this draft?">
+      <Modal
+        opened={opened}
+        onClose={close}
+        title="Finalise this draft?"
+        closeOnClickOutside={!isFinalising}
+        closeOnEscape={!isFinalising}
+        withCloseButton={!isFinalising}
+      >
         <Stack gap="sm">
           <Text size="sm">This will:</Text>
           <List size="sm" withPadding>
@@ -628,13 +639,17 @@ export function FinaliseButton({
             ))}
           </List>
           <Group justify="flex-end" gap="sm">
-            <Button variant="default" onClick={close}>
+            <Button variant="default" onClick={close} disabled={isFinalising}>
               Cancel
             </Button>
             <Form method="post" action={formAction}>
               <CsrfField token={csrfToken} />
               <input type="hidden" name="intent" value="finalise" />
-              <Button type="submit" aria-label="Confirm finalise draft">
+              <Button
+                type="submit"
+                aria-label="Confirm finalise draft"
+                loading={isFinalising}
+              >
                 Finalise →
               </Button>
             </Form>
@@ -808,13 +823,9 @@ export function KitchenSidebar({
   csrfToken: string;
   formAction?: string;
 }) {
-  // Layout intent: each lane's share of the sidebar height is weighted by
-  // how many items it holds. When both are empty it's 50/50; when one lane
-  // is empty and the other has cards, the populated lane gets nearly all
-  // the room — so scrollbars only appear once both lanes have so much
-  // content that there's no whitespace left to absorb.
-  const draftGrow = Math.max(draft.length, 1);
-  const stockGrow = Math.max(stock.length, 1);
+  // Layout intent: the sidebar as a whole scrolls when content overflows
+  // the viewport. The two lanes flow naturally one after the other rather
+  // than each owning its own scroll region.
   return (
     <Stack
       gap="md"
@@ -823,29 +834,28 @@ export function KitchenSidebar({
       style={{
         position: "sticky",
         top: "calc(var(--app-shell-header-height, 56px) + var(--mantine-spacing-md))",
-        height:
+        maxHeight:
           "calc(100vh - var(--app-shell-header-height, 56px) - 2 * var(--mantine-spacing-md))",
+        overflowY: "auto",
       }}
     >
-      <Stack gap="xs" style={{ flex: `${draftGrow} 1 0`, minHeight: 0 }}>
+      <Stack gap="xs">
         <Title order={4}>
           Draft <Text span c="dimmed" inherit>{draft.length}</Text>
         </Title>
-        <Stack gap="xs" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-          {draft.length === 0 ? (
-            <Text size="sm" c="dimmed">
-              Draft is empty — add recipes from the collection.
-            </Text>
-          ) : (
-            <SortableLane
-              lane="draft"
-              entries={draft}
-              members={members}
-              csrfToken={csrfToken}
-              formAction={formAction}
-            />
-          )}
-        </Stack>
+        {draft.length === 0 ? (
+          <Text size="sm" c="dimmed">
+            Draft is empty — add recipes from the collection.
+          </Text>
+        ) : (
+          <SortableLane
+            lane="draft"
+            entries={draft}
+            members={members}
+            csrfToken={csrfToken}
+            formAction={formAction}
+          />
+        )}
         {draft.length > 0 && (
           <FinaliseButton
             csrfToken={csrfToken}
@@ -856,25 +866,23 @@ export function KitchenSidebar({
         )}
       </Stack>
 
-      <Stack gap="xs" style={{ flex: `${stockGrow} 1 0`, minHeight: 0 }}>
+      <Stack gap="xs">
         <Title order={4}>
           In stock <Text span c="dimmed" inherit>{stock.length}</Text>
         </Title>
-        <Stack gap="xs" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-          {stock.length === 0 ? (
-            <Text size="sm" c="dimmed">
-              Nothing in stock yet — finalise the draft to start cooking.
-            </Text>
-          ) : (
-            <SortableLane
-              lane="stock"
-              entries={stock}
-              members={members}
-              csrfToken={csrfToken}
-              formAction={formAction}
-            />
-          )}
-        </Stack>
+        {stock.length === 0 ? (
+          <Text size="sm" c="dimmed">
+            Nothing in stock yet — finalise the draft to start cooking.
+          </Text>
+        ) : (
+          <SortableLane
+            lane="stock"
+            entries={stock}
+            members={members}
+            csrfToken={csrfToken}
+            formAction={formAction}
+          />
+        )}
       </Stack>
     </Stack>
   );

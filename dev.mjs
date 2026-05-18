@@ -72,6 +72,9 @@ const child = spawn("npx", ["netlify", "dev", "--port", "8888", "--no-open"], {
     ADMIN_TOKEN: process.env.ADMIN_TOKEN ?? "test-admin-token",
     KPTNCOOK_API_KEY: process.env.KPTNCOOK_API_KEY ?? KPTNCOOK_MOCK_API_KEY,
     KPTNCOOK_BASE_URL: process.env.KPTNCOOK_BASE_URL ?? kptncookBaseUrl,
+    // Issue #7: tests use the deterministic fake dedup backend so
+    // we never hit the real LLM during npm test.
+    DEDUP_BACKEND: process.env.DEDUP_BACKEND ?? "fake",
   },
 });
 

@@ -1,5 +1,6 @@
 import {
   Anchor,
+  Badge,
   Box,
   Button,
   Card,
@@ -11,12 +12,23 @@ import {
   Title,
 } from "@mantine/core";
 import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
-import { data } from "react-router";
+import { data, useFetcher } from "react-router";
 import QRCode from "qrcode";
 import type { Route } from "./+types/h.$flatId";
 import { db } from "../db/client";
-import { flats, ingredients, recipeInstances, recipes } from "../db/schema";
+import {
+  flats,
+  ingredients,
+  recipeInstances,
+  recipes,
+  type DedupGroup,
+} from "../db/schema";
 import { formatIngredient } from "../lib/scale";
+import {
+  buildDedupInput,
+  snapshotDedupForFlat,
+} from "../lib/dedup-snapshot";
+import { hashInput } from "../lib/dedup";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -25,7 +37,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw data("Not found.", { status: 404 });
   }
   const [flat] = await db()
-    .select({ id: flats.id, name: flats.name })
+    .select({
+      id: flats.id,
+      name: flats.name,
+      dedupGroups: flats.dedupGroups,
+      dedupRejectedGroupIds: flats.dedupRejectedGroupIds,
+      dedupInputHash: flats.dedupInputHash,
+    })
     .from(flats)
     .where(eq(flats.id, params.flatId))
     .limit(1);
@@ -86,9 +104,99 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     };
   });
 
-  const allIngredients = groups.flatMap((g) => g.ingredients);
+  // ---- Dedup snapshot handling --------------------------------------
+  // Compute the current input hash. If the saved snapshot is missing or
+  // stale (recipes/ingredients changed since Finalise), we still render
+  // an unmerged combined list but mark it as stale so the user can
+  // regenerate.
+  const currentInput = await buildDedupInput(flat.id);
+  const currentHash = await hashInput(currentInput);
+  const snapshotFresh =
+    flat.dedupGroups !== null &&
+    flat.dedupInputHash !== null &&
+    flat.dedupInputHash === currentHash;
 
-  return { flat, groups, allIngredients, handoffUrl, qrSvg };
+  const rejectedIds = new Set(flat.dedupRejectedGroupIds ?? []);
+  // What we actually render: the snapshot groups if fresh, otherwise
+  // an all-singletons fallback derived from the current input.
+  const combinedGroups: DedupGroup[] = snapshotFresh
+    ? (flat.dedupGroups ?? [])
+    : currentInput.items.map((it) => ({
+        id: it.id,
+        item: it.item,
+        unit: it.unit,
+        amount: it.amount,
+        displayText: formatIngredient(
+          { amount: it.amount, unit: it.unit, item: it.item },
+          1,
+        ),
+        sources: [
+          {
+            id: it.id,
+            displayText: formatIngredient(
+              { amount: it.amount, unit: it.unit, item: it.item },
+              1,
+            ),
+            recipeName: it.recipeName,
+          },
+        ],
+      }));
+
+  // The exact lines that go into the JSON-LD recipeIngredient. Rejected
+  // groups expand back to their source lines.
+  const allIngredients: string[] = combinedGroups.flatMap((g) =>
+    rejectedIds.has(g.id)
+      ? g.sources.map((s) => s.displayText)
+      : [g.displayText],
+  );
+
+  return {
+    flat: { id: flat.id, name: flat.name },
+    groups,
+    allIngredients,
+    combinedGroups,
+    rejectedIds: [...rejectedIds],
+    snapshotFresh,
+    handoffUrl,
+    qrSvg,
+  };
+}
+
+export async function action({ request, params }: Route.ActionArgs) {
+  if (!UUID_RE.test(params.flatId)) {
+    throw data("Not found.", { status: 404 });
+  }
+  const [flat] = await db()
+    .select({ id: flats.id, dedupRejectedGroupIds: flats.dedupRejectedGroupIds })
+    .from(flats)
+    .where(eq(flats.id, params.flatId))
+    .limit(1);
+  if (!flat) {
+    throw data("Not found.", { status: 404 });
+  }
+
+  const form = await request.formData();
+  const intent = String(form.get("intent") ?? "");
+
+  if (intent === "regenerate") {
+    await snapshotDedupForFlat(flat.id);
+    return { ok: true };
+  }
+
+  if (intent === "split" || intent === "unsplit") {
+    const groupId = String(form.get("groupId") ?? "");
+    if (groupId === "") return { error: "Missing group." };
+    const current = new Set(flat.dedupRejectedGroupIds ?? []);
+    if (intent === "split") current.add(groupId);
+    else current.delete(groupId);
+    await db()
+      .update(flats)
+      .set({ dedupRejectedGroupIds: [...current] })
+      .where(eq(flats.id, flat.id));
+    return { ok: true };
+  }
+
+  return { error: "Unknown intent." };
 }
 
 export function meta({ data: d }: Route.MetaArgs) {
@@ -97,7 +205,18 @@ export function meta({ data: d }: Route.MetaArgs) {
 }
 
 export default function Handoff({ loaderData }: Route.ComponentProps) {
-  const { flat, groups, allIngredients, handoffUrl, qrSvg } = loaderData;
+  const {
+    flat,
+    groups,
+    allIngredients,
+    combinedGroups,
+    rejectedIds,
+    snapshotFresh,
+    handoffUrl,
+    qrSvg,
+  } = loaderData;
+  const rejectedSet = new Set(rejectedIds);
+  const fetcher = useFetcher();
 
   const jsonLd = {
     "@context": "https://schema.org/",
@@ -154,6 +273,101 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
               Use your browser&apos;s Share menu and pick Bring! to import this
               list.
             </Text>
+
+            {/* Combined deduped list (issue #7). */}
+            <Stack gap="xs" data-testid="combined-list">
+              <Group justify="space-between" align="center">
+                <Title order={2} size="h4">
+                  Combined list
+                </Title>
+                {!snapshotFresh && (
+                  <fetcher.Form method="post">
+                    <input type="hidden" name="intent" value="regenerate" />
+                    <Button
+                      type="submit"
+                      size="xs"
+                      variant="light"
+                      color="yellow"
+                      loading={fetcher.state !== "idle"}
+                    >
+                      Regenerate
+                    </Button>
+                  </fetcher.Form>
+                )}
+              </Group>
+              {!snapshotFresh && (
+                <Text size="xs" c="dimmed">
+                  Shopping list changed since finalise — showing all
+                  ingredients unmerged.
+                </Text>
+              )}
+              <Stack gap={4}>
+                {combinedGroups.map((g) => {
+                  const isMerged = g.sources.length > 1;
+                  const isRejected = rejectedSet.has(g.id);
+                  return (
+                    <Card
+                      key={g.id}
+                      withBorder
+                      padding="xs"
+                      data-testid="combined-row"
+                      data-merged={isMerged ? "true" : "false"}
+                      data-rejected={isRejected ? "true" : "false"}
+                    >
+                      <Group justify="space-between" align="flex-start" wrap="nowrap">
+                        <Stack gap={2} style={{ flex: 1 }}>
+                          {isMerged && !isRejected && (
+                            <Text size="sm" fw={500}>
+                              {g.displayText}
+                            </Text>
+                          )}
+                          {!isMerged && (
+                            <Text size="sm">{g.displayText}</Text>
+                          )}
+                          {isMerged &&
+                            g.sources.map((s) => (
+                              <Text key={s.id} size="xs" c="dimmed">
+                                {isRejected ? "" : "· "}
+                                {s.displayText}{" "}
+                                <Text span size="xs" c="dimmed">
+                                  — {s.recipeName}
+                                </Text>
+                              </Text>
+                            ))}
+                        </Stack>
+                        {isMerged && (
+                          <fetcher.Form method="post">
+                            <input
+                              type="hidden"
+                              name="intent"
+                              value={isRejected ? "unsplit" : "split"}
+                            />
+                            <input type="hidden" name="groupId" value={g.id} />
+                            <Button
+                              type="submit"
+                              size="xs"
+                              variant="subtle"
+                              aria-label={
+                                isRejected
+                                  ? `Undo split for ${g.item}`
+                                  : `Split ${g.item}`
+                              }
+                            >
+                              {isRejected ? "Undo split" : "Split"}
+                            </Button>
+                          </fetcher.Form>
+                        )}
+                        {isMerged && !isRejected && (
+                          <Badge size="xs" variant="light" color="blue" hiddenFrom="sm">
+                            merged
+                          </Badge>
+                        )}
+                      </Group>
+                    </Card>
+                  );
+                })}
+              </Stack>
+            </Stack>
 
             <Stack gap="xs">
               <Title order={2} size="h4">

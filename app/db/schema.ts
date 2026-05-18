@@ -10,6 +10,7 @@ import {
   index,
   customType,
   check,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -36,12 +37,53 @@ export const users = pgTable("users", {
     .defaultNow(),
 });
 
+export type DedupGroup = {
+  /** Stable id for this group within the snapshot. */
+  id: string;
+  /** Display item name chosen for the group. */
+  item: string;
+  /** Canonical unit, or null for unitless / unmergeable. */
+  unit: string | null;
+  /** Summed amount in the canonical unit, or null. */
+  amount: string | null;
+  /** Pre-formatted text shown in the UI and emitted to JSON-LD. */
+  displayText: string;
+  /** Source ingredient lines that contributed to this group. */
+  sources: {
+    /** Stable per-snapshot source id (e.g. ingredient row id). */
+    id: string;
+    /** Original formatted text of the source line. */
+    displayText: string;
+    /** Recipe the source line came from. */
+    recipeName: string;
+  }[];
+};
+
 export const flats = pgTable("flats", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  /**
+   * Hash of the dedup input — used by the handoff loader to detect
+   * staleness when recipes are edited after Finalise.
+   */
+  dedupInputHash: text("dedup_input_hash"),
+  /** Snapshot of merged ingredient groups, computed at Finalise. */
+  dedupGroups: jsonb("dedup_groups").$type<DedupGroup[]>(),
+  /**
+   * Per-group reject overrides — when a group id is in this list the
+   * UI and JSON-LD render the original source lines instead of the
+   * merged entry. Public write surface; see TECH.md.
+   */
+  dedupRejectedGroupIds: jsonb("dedup_rejected_group_ids")
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  dedupGeneratedAt: timestamp("dedup_generated_at", { withTimezone: true }),
+  /** Backend identifier — e.g. "openai:gpt-5-mini", "fake", "none". */
+  dedupModel: text("dedup_model"),
 });
 
 export const flatMembers = pgTable(

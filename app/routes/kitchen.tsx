@@ -14,6 +14,7 @@ import { requireFlatMember } from "../auth/require";
 import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { isSameOrigin } from "../auth/origin";
 import { loadKitchen } from "../lib/kitchen-data";
+import { snapshotDedupForFlat } from "../lib/dedup-snapshot";
 import {
   FinaliseButton,
   SortableLane,
@@ -224,6 +225,14 @@ export async function action({ request }: Route.ActionArgs) {
           );
       }
     });
+    // Best-effort: snapshot the deduped shopping list for the handoff
+    // page. Never let an LLM hiccup fail the finalise itself — the
+    // snapshot function persists an all-singletons fallback on error.
+    try {
+      await snapshotDedupForFlat(ctx.flat.id);
+    } catch (err) {
+      console.warn("[finalise] dedup snapshot failed:", err);
+    }
     return redirect(`/h/${ctx.flat.id}`);
   }
 

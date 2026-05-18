@@ -147,6 +147,17 @@ into Bring!, which pulls in the ingredients.
 > Bring!. If something gets bought outside the list, that's invisible to us
 > and that's fine.
 
+The handoff page also shows a **combined shopping list** on top that
+merges near-duplicate ingredients across recipes (e.g. `"300 g tomato"`
++ `"300 g tomatos"` → `"600 g tomato"`). An LLM proposes the
+groupings at Finalise time; the server owns the unit arithmetic and
+display. Each merged group has a **Split** button so a human can
+reject a wrong merge (rejected groups expand back into their source
+lines in both the UI and the JSON-LD). If recipes are edited after
+Finalise, the snapshot becomes stale and the page renders an
+all-singletons fallback with a **Regenerate** button. See TECH.md
+§6.3.
+
 ### 4.5 In stock
 
 The in-stock board lists every recipe currently shoppable-for-cooking. For

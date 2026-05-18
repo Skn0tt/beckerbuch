@@ -400,6 +400,49 @@ The URL is stable for the life of the flat — bookmarkable on the
 phone as "our shopping list lives here". It always shows whatever
 is currently in-stock; there is no per-finalise URL.
 
+### 6.3 Combined shopping list (LLM dedup)
+
+Snapshot lifecycle:
+
+1. **Finalise** (see §7) commits the in-stock transition. Right
+   after, in the same handler (outside the transaction, best-effort),
+   we build a structured input of every in-stock ingredient
+   (`{id, amount, unit, item, recipe}`, scaled to the target
+   quantity) and call the dedup backend.
+2. The model returns only groupings:
+   `{ merges: [{ ids: ["i1", "i2"] }, …] }`. No amounts, no units,
+   no display text — the server owns all of that. Anything the
+   model doesn't list stays as a singleton.
+3. The server post-processes: drops unit-incompatible suggestions
+   (mass / volume / tsp_tbsp / unknown-unit families never cross),
+   sums amounts in a canonical base unit, picks the display item
+   name deterministically (most-frequent → shortest), and composes
+   `displayText` via the existing `formatIngredient` helper. The
+   resulting `DedupGroup[]` is persisted on the `flats` row along
+   with the input hash, generation time, and model name.
+4. If the LLM call or validation fails, we write a no-merge
+   snapshot — Finalise never fails because the model is down.
+
+The handoff loader reads the snapshot. If the current in-stock
+input hash diverges from the stored one (recipes edited after
+Finalise), the page renders an all-singletons fallback and shows a
+**Regenerate** button. Per-merge **Split** / **Undo split** flip a
+group id in `flats.dedup_rejected_group_ids`; rejected groups expand
+back into source lines in both the visible list and the JSON-LD.
+
+Writes (`split`, `unsplit`, `regenerate`) are public and keyed on
+the flat UUID, consistent with the rest of the handoff page's
+trust model.
+
+Backend selection: `DEDUP_BACKEND` env var, default `openai`
+(`gpt-5-mini` via the Netlify AI Gateway — no key configured in
+code, Netlify injects `OPENAI_API_KEY` / `OPENAI_BASE_URL`).
+`DEDUP_MODEL` overrides the model; `openai:<model>` works too;
+`anthropic` is wired but unused day-to-day; `fake` is a
+deterministic backend used by tests (groups by lowercased item
+with trailing `s` stripped). Tests set `DEDUP_BACKEND=fake` via
+`dev.mjs` so they never hit a real LLM.
+
 ---
 
 ## 7. The Finalise transaction
