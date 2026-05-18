@@ -1,5 +1,4 @@
 import {
-  ActionIcon,
   Anchor,
   AppShell,
   Box,
@@ -9,7 +8,7 @@ import {
   UnstyledButton,
   VisuallyHidden,
 } from "@mantine/core";
-import { Link, Outlet, redirect, useLocation, useNavigate } from "react-router";
+import { Link, Outlet, redirect, useLocation } from "react-router";
 import type { Route } from "./+types/_app";
 import { tryGetAuthedContext } from "../auth/require";
 import { UserAvatar } from "../components/user-avatar";
@@ -35,48 +34,23 @@ const MOBILE_NAV = [
 export default function AppLayout({ loaderData }: Route.ComponentProps) {
   const { user, flat } = loaderData;
   const location = useLocation();
-  const navigate = useNavigate();
-  const showBackToCollection =
-    location.pathname.startsWith("/recipes/") &&
-    !location.pathname.endsWith("/photo") &&
-    location.pathname !== "/recipes/new";
 
   return (
     <AppShell
       header={{ height: 56 }}
-      footer={{ height: 60, collapsed: { desktop: true } }}
+      footer={{ height: { base: 60, md: 0 } }}
       padding={0}
     >
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
-          <Group gap="xs">
-            {showBackToCollection && (
-              <ActionIcon
-                variant="subtle"
-                size="lg"
-                aria-label="Back to collection"
-                onClick={() => {
-                  const historyIndex = window.history.state?.idx;
-                  const canGoBack = typeof historyIndex === "number" && historyIndex > 0;
-                  if (canGoBack) {
-                    navigate(-1);
-                    return;
-                  }
-                  navigate("/");
-                }}
-              >
-                <span aria-hidden>←</span>
-              </ActionIcon>
-            )}
-            <Anchor
-              component={Link}
-              to="/"
-              underline="never"
-              c="inherit"
-            >
-              <Title order={3}>{flat.name}</Title>
-            </Anchor>
-          </Group>
+          <Anchor
+            component={Link}
+            to="/"
+            underline="never"
+            c="inherit"
+          >
+            <Title order={3}>{flat.name}</Title>
+          </Anchor>
           <Group gap="sm">
             <VisuallyHidden data-testid="current-user">
               {user.displayName}
