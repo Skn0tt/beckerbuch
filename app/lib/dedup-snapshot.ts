@@ -8,13 +8,23 @@
  * persists an all-singletons snapshot so the handoff page keeps working.
  * Returns the saved input hash.
  */
-import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { flats, ingredients, recipeInstances, recipes } from "../db/schema";
 import { dedup, hashInput, type DedupInput } from "./dedup";
 import { scaleAmount } from "./scale";
 
 export async function buildDedupInput(flatId: string): Promise<DedupInput> {
+  const [latestFinalised] = await db()
+    .select({ at: sql<Date | null>`max(${recipeInstances.finalisedAt})` })
+    .from(recipeInstances)
+    .where(
+      and(
+        eq(recipeInstances.flatId, flatId),
+        isNotNull(recipeInstances.finalisedAt),
+      ),
+    );
+
   const rows = await db()
     .select({
       recipeId: recipes.id,
@@ -27,6 +37,9 @@ export async function buildDedupInput(flatId: string): Promise<DedupInput> {
     .where(
       and(
         eq(recipeInstances.flatId, flatId),
+        latestFinalised.at === null
+          ? sql`false`
+          : eq(recipeInstances.finalisedAt, latestFinalised.at),
         isNotNull(recipeInstances.finalisedAt),
         isNull(recipeInstances.cookedAt),
       ),
