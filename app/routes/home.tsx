@@ -1,4 +1,4 @@
-import { Button, Card, Group, Stack, Text, TextInput } from "@mantine/core";
+import { Box, Button, Group, NavLink as MantineNavLink, Stack, Text, TextInput } from "@mantine/core";
 import { Form, Link } from "react-router";
 import type { Route } from "./+types/home";
 import { requireFlatMember } from "../auth/require";
@@ -24,7 +24,13 @@ export default function Home({ loaderData }: Route.ComponentProps) {
   const { recipes: list, q } = loaderData;
 
   return (
-    <Stack gap="md">
+    <Stack
+      gap="md"
+      style={{
+        height:
+          "calc(100dvh - var(--app-shell-header-height, 56px) - var(--app-shell-footer-offset, 0px) - 2 * var(--mantine-spacing-md))",
+      }}
+    >
       <Form method="get" role="search">
         <Group gap="sm" wrap="nowrap" align="stretch">
           <TextInput
@@ -44,22 +50,16 @@ export default function Home({ loaderData }: Route.ComponentProps) {
       {list.length === 0 ? (
         <Text c="dimmed">{q ? `No recipes match "${q}"` : "No recipes yet"}</Text>
       ) : (
-        <Stack gap="xs">
+        <Box style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
           {list.map((r) => (
-            <Card
+            <MantineNavLink
               key={r.id}
-              withBorder
-              padding="sm"
               component={Link}
               to={`/recipes/${r.id}`}
-            >
-              <Text fw={500}>{r.name}</Text>
-              <Text size="sm" c="dimmed">
-                Base: {r.baseQuantity} portions
-              </Text>
-            </Card>
+              label={r.name}
+            />
           ))}
-        </Stack>
+        </Box>
       )}
     </Stack>
   );
