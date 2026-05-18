@@ -603,6 +603,84 @@ test.describe("MCP server", () => {
     await otherClient.close();
   });
 
+  test("search_recipes works with no arguments at all", async ({ page, flat }) => {
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    await addRecipeViaMcp(client, { name: "Only Recipe" });
+
+    // Repro: Copilot was observed calling search with empty arguments.
+    // Both `arguments: {}` and a fully omitted arguments field should work
+    // and return recent recipes (limit defaults to 20, query defaults to "").
+    const empty = await client.callTool({
+      name: "kochbuch_search_recipes",
+      arguments: {},
+    });
+    expect(empty.isError).toBeFalsy();
+    const emptyBody = jsonFromToolResult<{
+      query: string;
+      results: Array<{ name: string }>;
+    }>(empty);
+    expect(emptyBody.query).toBe("");
+    expect(emptyBody.results.map((r) => r.name)).toContain("Only Recipe");
+
+    const missing = await client.callTool({
+      name: "kochbuch_search_recipes",
+    });
+    expect(missing.isError).toBeFalsy();
+    expect(
+      jsonFromToolResult<{ results: Array<{ name: string }> }>(missing).results.map(
+        (r) => r.name,
+      ),
+    ).toContain("Only Recipe");
+
+    await client.close();
+  });
+
+  test("edit_recipe accepts ingredients and baseQuantity together", async ({
+    page,
+    flat,
+  }) => {
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    const recipeId = await addRecipeViaMcp(client, {
+      name: "Combo Edit",
+      baseQuantity: 2,
+      ingredients: [{ amount: "1", unit: "cup", item: "rice" }],
+    });
+
+    // Repro: Copilot was observed editing a recipe with both ingredients
+    // and baseQuantity in the same call.
+    const editBoth = await client.callTool({
+      name: "kochbuch_edit_recipe",
+      arguments: {
+        id: recipeId,
+        baseQuantity: 6,
+        ingredients: [
+          { amount: "1", unit: "cup", item: "rice" },
+          { amount: "2", unit: "tbsp", item: "soy sauce" },
+        ],
+      },
+    });
+    expect(editBoth.isError).toBeFalsy();
+    const body = jsonFromToolResult<{
+      baseQuantity: number;
+      ingredients: Array<{ amount: string | null; unit: string | null; item: string }>;
+    }>(editBoth);
+    expect(body.baseQuantity).toBe(6);
+    expect(body.ingredients).toEqual([
+      { amount: "1", unit: "cup", item: "rice" },
+      { amount: "2", unit: "tbsp", item: "soy sauce" },
+    ]);
+
+    await client.close();
+  });
+
   test("/mcp returns 401 + WWW-Authenticate without a bearer", async () => {
     const res = await fetch(`${BASE_URL}/mcp`, {
       method: "POST",

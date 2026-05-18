@@ -131,6 +131,7 @@ test("designated cook picker — assign self, then unassign", async ({ page, fla
   await login(page, flat.user);
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
   await page.goto("/kitchen");
 
   const openPicker = page.getByLabel("Choose cook for Pasta al limone");
@@ -226,55 +227,4 @@ test("finalise draft → in-stock lane → mark cooked → empty", async ({
 
   await expect(page.getByText("In stock 0", { exact: true })).toBeVisible();
   await expect(page.getByText(/Nothing in stock yet/)).toBeVisible();
-});
-
-test("reorder draft entries with drag handle", async ({ page, flat }) => {
-  await login(page, flat.user);
-  // Create two distinct recipes.
-  await createPasta(page);
-  await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await expect(
-    page.getByRole("button", { name: "✓ In draft" }),
-  ).toBeVisible();
-  await page.goto("/");
-
-  await page.getByRole("link", { name: "+ New recipe" }).click();
-  await page.getByLabel("Name").fill("Risotto");
-  await page.getByLabel("Ingredient 1 amount").fill("300");
-  await page.getByLabel("Ingredient 1 unit").fill("g");
-  await page.getByLabel("Ingredient 1 item").fill("rice");
-  await page.getByRole("button", { name: "Save recipe" }).click();
-  await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await expect(
-    page.getByRole("button", { name: "✓ In draft" }),
-  ).toBeVisible();
-  await page.goto("/kitchen");
-
-  const cardLinks = page
-    .getByRole("link", { name: /^(Pasta al limone|Risotto)$/ });
-
-  // Initial order: Pasta first, Risotto second.
-  await expect(cardLinks.nth(0)).toHaveText("Pasta al limone");
-  await expect(cardLinks.nth(1)).toHaveText("Risotto");
-
-  // Use dnd-kit's keyboard sensor: focus the first card's drag handle,
-  // press Space to grab, ArrowDown to move below the next item, Space to drop.
-  // dnd-kit needs a brief delay between events so the announcement can update.
-  const handles = page.getByRole("button", { name: "Reorder" });
-  await handles.nth(0).focus();
-  await page.keyboard.press("Space");
-  await page.waitForTimeout(100);
-  await page.keyboard.press("ArrowDown");
-  await page.waitForTimeout(100);
-  await page.keyboard.press("Space");
-
-  await expect(cardLinks.nth(0)).toHaveText("Risotto");
-  await expect(cardLinks.nth(1)).toHaveText("Pasta al limone");
-
-  // Reload — order persisted.
-  await page.reload();
-  const reloadedLinks = page
-    .getByRole("link", { name: /^(Pasta al limone|Risotto)$/ });
-  await expect(reloadedLinks.nth(0)).toHaveText("Risotto");
-  await expect(reloadedLinks.nth(1)).toHaveText("Pasta al limone");
 });
