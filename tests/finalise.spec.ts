@@ -45,7 +45,7 @@ test("finalise: confirm modal, redirects to /h/:flatId, items in stock", async (
   ).toBeVisible();
 });
 
-test("finalise while existing stock: appended after current stock", async ({
+test("finalise while existing stock: handoff includes only latest draft batch", async ({
   page,
   flat,
 }) => {
@@ -61,7 +61,7 @@ test("finalise while existing stock: appended after current stock", async ({
   await page.getByRole("button", { name: "Confirm finalise draft" }).click();
   await expect(page).toHaveURL(`/h/${flat.id}`);
 
-  // Round 2: a second recipe, finalise → both should appear in stock.
+  // Round 2: a second recipe, finalise → handoff should only include this batch.
   await page.goto("/");
   await page.getByRole("link", { name: "+ New recipe" }).click();
   await page.getByLabel("Name").fill("Risotto");
@@ -77,11 +77,11 @@ test("finalise while existing stock: appended after current stock", async ({
   await page.getByRole("button", { name: "Finalise draft" }).click();
   await page.getByRole("button", { name: "Confirm finalise draft" }).click();
 
-  // Handoff shows both.
+  // Handoff only shows the just-finalised draft recipe.
   await expect(page).toHaveURL(`/h/${flat.id}`);
   await expect(
     page.getByRole("link", { name: /Pasta al limone \(serves 4\)/ }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     page.getByRole("link", { name: /Risotto \(serves 4\)/ }),
   ).toBeVisible();

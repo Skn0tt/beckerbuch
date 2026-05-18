@@ -11,7 +11,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { data, useFetcher } from "react-router";
 import QRCode from "qrcode";
 import type { Route } from "./+types/h.$flatId";
@@ -50,24 +50,31 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!flat) {
     throw data("Not found.", { status: 404 });
   }
-  const rows = await db()
-    .select({
-      id: recipeInstances.id,
-      recipeId: recipes.id,
-      recipeName: recipes.name,
-      baseQuantity: recipes.baseQuantity,
-      targetQuantity: recipeInstances.targetQuantity,
-    })
+  const [latestFinalised] = await db()
+    .select({ at: sql<Date | null>`max(${recipeInstances.finalisedAt})` })
     .from(recipeInstances)
-    .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
-    .where(
-      and(
-        eq(recipeInstances.flatId, flat.id),
-        isNotNull(recipeInstances.finalisedAt),
-        isNull(recipeInstances.cookedAt),
-      ),
-    )
-    .orderBy(asc(recipeInstances.position));
+    .where(eq(recipeInstances.flatId, flat.id));
+  const rows =
+    latestFinalised.at === null
+      ? []
+      : await db()
+          .select({
+            id: recipeInstances.id,
+            recipeId: recipes.id,
+            recipeName: recipes.name,
+            baseQuantity: recipes.baseQuantity,
+            targetQuantity: recipeInstances.targetQuantity,
+          })
+          .from(recipeInstances)
+          .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
+          .where(
+            and(
+              eq(recipeInstances.flatId, flat.id),
+              eq(recipeInstances.finalisedAt, latestFinalised.at),
+              isNull(recipeInstances.cookedAt),
+            ),
+          )
+          .orderBy(asc(recipeInstances.position));
 
   const url = new URL(request.url);
   const origin = url.origin;
