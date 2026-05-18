@@ -25,6 +25,8 @@ export async function buildDedupInput(flatId: string): Promise<DedupInput> {
       ),
     );
 
+  if (latestFinalised.at === null) return { items: [] };
+
   const rows = await db()
     .select({
       recipeId: recipes.id,
@@ -37,9 +39,7 @@ export async function buildDedupInput(flatId: string): Promise<DedupInput> {
     .where(
       and(
         eq(recipeInstances.flatId, flatId),
-        latestFinalised.at === null
-          ? sql`false`
-          : eq(recipeInstances.finalisedAt, latestFinalised.at),
+        eq(recipeInstances.finalisedAt, latestFinalised.at),
         isNotNull(recipeInstances.finalisedAt),
         isNull(recipeInstances.cookedAt),
       ),

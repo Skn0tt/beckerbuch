@@ -59,27 +59,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         isNotNull(recipeInstances.finalisedAt),
       ),
     );
-  const rows = await db()
-    .select({
-      id: recipeInstances.id,
-      recipeId: recipes.id,
-      recipeName: recipes.name,
-      baseQuantity: recipes.baseQuantity,
-      targetQuantity: recipeInstances.targetQuantity,
-    })
-    .from(recipeInstances)
-    .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
-    .where(
-      and(
-        eq(recipeInstances.flatId, flat.id),
-        latestFinalised.at === null
-          ? sql`false`
-          : eq(recipeInstances.finalisedAt, latestFinalised.at),
-        isNotNull(recipeInstances.finalisedAt),
-        isNull(recipeInstances.cookedAt),
-      ),
-    )
-    .orderBy(asc(recipeInstances.position));
+  const rows =
+    latestFinalised.at === null
+      ? []
+      : await db()
+          .select({
+            id: recipeInstances.id,
+            recipeId: recipes.id,
+            recipeName: recipes.name,
+            baseQuantity: recipes.baseQuantity,
+            targetQuantity: recipeInstances.targetQuantity,
+          })
+          .from(recipeInstances)
+          .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
+          .where(
+            and(
+              eq(recipeInstances.flatId, flat.id),
+              eq(recipeInstances.finalisedAt, latestFinalised.at),
+              isNotNull(recipeInstances.finalisedAt),
+              isNull(recipeInstances.cookedAt),
+            ),
+          )
+          .orderBy(asc(recipeInstances.position));
 
   const url = new URL(request.url);
   const origin = url.origin;
