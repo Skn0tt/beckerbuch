@@ -76,7 +76,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             and(
               eq(recipeInstances.flatId, flat.id),
               eq(recipeInstances.finalisedAt, latestFinalised.at),
-              isNotNull(recipeInstances.finalisedAt),
               isNull(recipeInstances.cookedAt),
             ),
           )

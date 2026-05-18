@@ -40,7 +40,6 @@ export async function buildDedupInput(flatId: string): Promise<DedupInput> {
       and(
         eq(recipeInstances.flatId, flatId),
         eq(recipeInstances.finalisedAt, latestFinalised.at),
-        isNotNull(recipeInstances.finalisedAt),
         isNull(recipeInstances.cookedAt),
       ),
     )
