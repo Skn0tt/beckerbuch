@@ -11,7 +11,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { data, useFetcher } from "react-router";
 import QRCode from "qrcode";
 import type { Route } from "./+types/h.$flatId";
@@ -53,12 +53,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const [latestFinalised] = await db()
     .select({ at: sql<Date | null>`max(${recipeInstances.finalisedAt})` })
     .from(recipeInstances)
-    .where(
-      and(
-        eq(recipeInstances.flatId, flat.id),
-        isNotNull(recipeInstances.finalisedAt),
-      ),
-    );
+    .where(eq(recipeInstances.flatId, flat.id));
   const rows =
     latestFinalised.at === null
       ? []
