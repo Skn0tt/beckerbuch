@@ -4,8 +4,9 @@ import type { Route } from "./+types/recipes.new";
 import { requireFlatMember } from "../auth/require";
 import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { isSameOrigin } from "../auth/origin";
-import { RecipeForm, parseRecipeFields } from "../components/recipe-form";
-import { validatePhoto } from "../blobs";
+import { parseRecipeFields } from "../components/recipe-form";
+import { NewRecipeShell } from "../components/new-recipe-shell";
+import { validatePhoto, validatePhotoBytes } from "../blobs";
 import { createRecipe } from "../lib/recipes";
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -24,8 +25,10 @@ export async function action({ request }: Route.ActionArgs) {
   const parsed = parseRecipeFields(form);
   if (!parsed.ok) return { error: parsed.error };
 
-  const photoFile = form.get("photo");
   let photo: { bytes: Uint8Array; contentType: string } | undefined;
+
+  // A file pick beats the kptncook-imported photo if both are present.
+  const photoFile = form.get("photo");
   if (photoFile instanceof File && photoFile.size > 0) {
     const v = validatePhoto(photoFile);
     if (!v.ok) return { error: v.error };
@@ -33,6 +36,23 @@ export async function action({ request }: Route.ActionArgs) {
       bytes: new Uint8Array(await photoFile.arrayBuffer()),
       contentType: v.contentType,
     };
+  } else {
+    const imported = form.get("importedPhotoB64");
+    if (typeof imported === "string" && imported.length > 0) {
+      const sepIdx = imported.indexOf(";");
+      if (sepIdx > 0) {
+        const contentType = imported.slice(0, sepIdx);
+        const b64 = imported.slice(sepIdx + 1);
+        try {
+          const bytes = new Uint8Array(Buffer.from(b64, "base64"));
+          const v = validatePhotoBytes(bytes.byteLength, contentType);
+          if (!v.ok) return { error: v.error };
+          photo = { bytes, contentType: v.contentType };
+        } catch {
+          // Drop a corrupt imported photo rather than failing the save.
+        }
+      }
+    }
   }
 
   const { id } = await createRecipe({
@@ -54,10 +74,9 @@ export default function NewRecipe({ loaderData }: Route.ComponentProps) {
           <Title order={2}>New recipe</Title>
           <Anchor component={Link} to="/">← Cancel</Anchor>
         </Group>
-        <RecipeForm
+        <NewRecipeShell
           csrfToken={loaderData.csrfToken}
           error={actionData?.error}
-          submitLabel="Save recipe"
         />
       </Stack>
     </Container>

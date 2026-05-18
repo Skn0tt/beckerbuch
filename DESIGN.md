@@ -75,6 +75,14 @@ Each recipe holds:
 Recipes are owned by the flat. Anyone in the flat can create, edit, and
 delete them. There is no per-recipe ownership in v1.
 
+**Importing from kptncook.** The "Add recipe" form accepts a kptncook
+share URL (or recipe id) as an alternative to typing all the fields
+in. The server fetches the recipe via the kptncook mobile API,
+pre-fills the form (name, ingredients, steps, photo), and the user
+reviews/edits before saving. An `kptncook_fetch_recipe` MCP tool
+exposes the same import path for agents. kptncook is the only
+supported import source.
+
 > **Out of scope for v1:** tags/categories, cuisine, difficulty, prep time,
 > per-user notes, versioning of edits.
 
@@ -203,7 +211,7 @@ To keep the scope honest, these are explicitly **not** in v1:
 - Multiple concurrent drafts.
 - Roles, permissions, multi-flat users.
 - Ratings, comments, social features.
-- Recipe import from URL (we type/paste recipes in by hand for v1).
+- Recipe import from URL (other than kptncook — see §4.1).
 - Reading state back from Bring!.
 
 ## 8. Future: public collections (v2 placeholder)

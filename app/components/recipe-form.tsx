@@ -35,6 +35,7 @@ type Props = {
   error?: string;
   submitLabel: string;
   secondaryAction?: ReactNode;
+  hiddenExtras?: ReactNode;
 };
 
 export function RecipeForm({
@@ -43,6 +44,7 @@ export function RecipeForm({
   error,
   submitLabel,
   secondaryAction,
+  hiddenExtras,
 }: Props) {
   const initialRows =
     initial?.ingredients && initial.ingredients.length > 0
@@ -61,6 +63,7 @@ export function RecipeForm({
   return (
     <Form method="post" encType="multipart/form-data">
       <CsrfField token={csrfToken} />
+      {hiddenExtras}
       <Stack gap="sm">
         <TextInput
           name="name"

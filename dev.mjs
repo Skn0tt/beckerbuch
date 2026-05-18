@@ -53,6 +53,13 @@ if (process.env.SKIP_TESTCONTAINER === "1" && process.env.DATABASE_URL) {
   });
 }
 
+console.log("[dev] Starting kptncook mock…");
+const { startKptncookMock, KPTNCOOK_MOCK_PORT, KPTNCOOK_MOCK_API_KEY } =
+  await import("./tests/kptncook-mock.mjs");
+const kptncookMock = await startKptncookMock();
+const kptncookBaseUrl = `http://127.0.0.1:${KPTNCOOK_MOCK_PORT}`;
+console.log(`[dev] kptncook mock at ${kptncookBaseUrl}`);
+
 console.log("[dev] Spawning netlify dev…");
 const child = spawn("npx", ["netlify", "dev", "--port", "8888", "--no-open"], {
   stdio: "inherit",
@@ -63,10 +70,18 @@ const child = spawn("npx", ["netlify", "dev", "--port", "8888", "--no-open"], {
     SESSION_SECRET:
       process.env.SESSION_SECRET ?? "test-only-not-a-secret-but-long-enough",
     ADMIN_TOKEN: process.env.ADMIN_TOKEN ?? "test-admin-token",
+    KPTNCOOK_API_KEY: process.env.KPTNCOOK_API_KEY ?? KPTNCOOK_MOCK_API_KEY,
+    KPTNCOOK_BASE_URL: process.env.KPTNCOOK_BASE_URL ?? kptncookBaseUrl,
   },
 });
 
-const forward = (sig) => () => child.kill(sig);
+const forward = (sig) => () => {
+  kptncookMock.close();
+  child.kill(sig);
+};
 process.on("SIGINT", forward("SIGINT"));
 process.on("SIGTERM", forward("SIGTERM"));
-child.on("exit", (code) => process.exit(code ?? 0));
+child.on("exit", (code) => {
+  kptncookMock.close();
+  process.exit(code ?? 0);
+});

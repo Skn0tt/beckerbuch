@@ -12,6 +12,7 @@ import {
   type FlatRecipe,
   type RecipeListItem,
 } from "../lib/recipes";
+import { importKptncookRecipe } from "../lib/kptncook";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -243,16 +244,97 @@ async function handle(request: Request): Promise<Response> {
     },
   );
 
+  server.registerTool(
+    "kptncook_fetch_recipe",
+    {
+      title: "Fetch a kptncook recipe",
+      description:
+        "Resolve a kptncook share URL, uid (7-8 chars), or oid (24 hex chars) into a normalized recipe payload that can be passed to kochbuch_add_recipe. Does not store anything — the agent should review and call kochbuch_add_recipe to actually save it. Requires KPTNCOOK_API_KEY to be configured server-side.",
+      inputSchema: {
+        input: z
+          .string()
+          .trim()
+          .min(1)
+          .describe(
+            "Share URL (e.g. https://share.kptncook.com/abc123), uid, or oid",
+          ),
+        includePhoto: z
+          .boolean()
+          .default(true)
+          .describe("Fetch the cover image bytes (base64 in result)"),
+      },
+    },
+    async (args) => {
+      const result = await importKptncookRecipe(args.input, {
+        includePhoto: args.includePhoto !== false,
+      });
+      if (!result.ok) return toolError(result.error);
+      const r = result.recipe;
+      return jsonResult({
+        name: r.name,
+        baseQuantity: r.baseQuantity,
+        sourceUrl: r.sourceUrl,
+        steps: r.steps,
+        ingredients: r.ingredients,
+        photo: r.photo
+          ? {
+              contentType: r.photo.contentType,
+              base64: Buffer.from(r.photo.bytes).toString("base64"),
+            }
+          : null,
+        note:
+          "Pass these fields to kochbuch_add_recipe. The photo is returned as base64 for reference; kochbuch_add_recipe currently only accepts photoUrl, so the photo cannot be carried through automatically yet.",
+      });
+    },
+  );
+
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
   });
   await server.connect(transport);
   try {
-    return await transport.handleRequest(request);
+    return await transport.handleRequest(await normalizeToolCallArgs(request));
   } finally {
     await server.close().catch(() => {});
   }
+}
+
+/**
+ * Some MCP clients (observed in the wild) send `tools/call` without an
+ * `arguments` field when the tool's inputSchema only contains optional /
+ * defaulted fields. The SDK's zod validator rejects `undefined` against a
+ * `z.object(...)` shape and the call fails with "Invalid arguments".
+ * Default missing `arguments` to `{}` so defaults apply as intended.
+ */
+async function normalizeToolCallArgs(request: Request): Promise<Request> {
+  if (request.method !== "POST") return request;
+  const ct = (request.headers.get("content-type") ?? "").toLowerCase();
+  if (!ct.includes("application/json")) return request;
+  const text = await request.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return new Request(request, { body: text });
+  }
+  const messages = Array.isArray(body) ? body : [body];
+  let changed = false;
+  for (const message of messages) {
+    if (
+      message &&
+      typeof message === "object" &&
+      (message as { method?: unknown }).method === "tools/call"
+    ) {
+      const params = (message as { params?: Record<string, unknown> }).params;
+      if (params && params.arguments === undefined) {
+        params.arguments = {};
+        changed = true;
+      }
+    }
+  }
+  const nextBody = changed ? JSON.stringify(body) : text;
+  return new Request(request, { body: nextBody });
 }
 
 function toolError(message: string) {

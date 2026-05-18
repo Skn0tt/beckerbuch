@@ -10,6 +10,7 @@ export default [
     route("flat/settings", "routes/flat.settings.tsx"),
     route("kitchen", "routes/kitchen.tsx"),
     route("recipes/new", "routes/recipes.new.tsx"),
+    route("recipes/import-kptncook", "routes/recipes.import-kptncook.ts"),
     route("recipes/:id/edit", "routes/recipes.$id.edit.tsx"),
     route("recipes/:id/photo", "routes/recipes.$id.photo.tsx"),
   ]),
