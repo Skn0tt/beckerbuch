@@ -1,3 +1,5 @@
+import { parseAmount } from "./amount";
+
 export type ScalableIngredient = {
   amount: string | null;
   unit: string | null;
@@ -9,17 +11,7 @@ export function scaleAmount(
   factor: number,
 ): string | null {
   if (amount === null) return null;
-  const trimmed = amount.trim();
-  let n: number | null = null;
-  const fracMatch = trimmed.match(/^(\d+)\s*\/\s*(\d+)$/);
-  if (fracMatch) {
-    const a = Number(fracMatch[1]);
-    const b = Number(fracMatch[2]);
-    if (b !== 0) n = a / b;
-  } else {
-    const parsed = Number(trimmed.replace(",", "."));
-    if (Number.isFinite(parsed)) n = parsed;
-  }
+  const n = parseAmount(amount);
   if (n === null) return amount;
   const scaled = n * factor;
   if (Number.isInteger(scaled)) return String(scaled);

@@ -1,5 +1,6 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { CSRF_FIELD_NAME, csrfFieldName } from "./csrf-shared";
+import { constantTimeStringEqual } from "./timing-safe";
 
 export { csrfFieldName };
 
@@ -37,9 +38,7 @@ export async function requireCsrf(
     throw new Response("CSRF token missing", { status: 403 });
   }
   const expected = csrfTokenForSession(sessionId);
-  const a = Buffer.from(submitted);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+  if (!constantTimeStringEqual(submitted, expected)) {
     throw new Response("CSRF token mismatch", { status: 403 });
   }
 }

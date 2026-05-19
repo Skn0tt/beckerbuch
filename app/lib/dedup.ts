@@ -13,6 +13,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { DedupGroup } from "../db/schema";
+import { parseAmount } from "./amount";
 import { formatIngredient } from "./scale";
 
 export type DedupInputItem = {
@@ -95,25 +96,6 @@ function unitInfo(unit: string | null): UnitInfo {
   // Unknown unit: treat as its own family so it never silently merges
   // with another unknown unit, but still merges with itself.
   return { family: "u:" + key, toBase: 1, display: unit };
-}
-
-// ---------------------------------------------------------------------------
-// Amount parsing.
-// ---------------------------------------------------------------------------
-
-function parseAmount(amount: string | null): number | null {
-  if (amount === null) return null;
-  const trimmed = amount.trim();
-  if (trimmed === "") return null;
-  const fracMatch = trimmed.match(/^(\d+)\s*\/\s*(\d+)$/);
-  if (fracMatch) {
-    const a = Number(fracMatch[1]);
-    const b = Number(fracMatch[2]);
-    if (b === 0) return null;
-    return a / b;
-  }
-  const n = Number(trimmed.replace(",", "."));
-  return Number.isFinite(n) ? n : null;
 }
 
 function formatAmount(n: number): string {
