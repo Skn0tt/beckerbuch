@@ -327,6 +327,21 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
             </Text>
           </Stack>
         </section>
+
+        <section>
+          <Title order={4} mb="xs">
+            About
+          </Title>
+          <Text size="sm">
+            <Anchor
+              href="https://github.com/Skn0tt/beckerbuch"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Source code on GitHub
+            </Anchor>
+          </Text>
+        </section>
       </Stack>
     </Container>
   );
