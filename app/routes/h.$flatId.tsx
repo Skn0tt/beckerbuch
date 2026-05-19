@@ -79,18 +79,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const origin = url.origin;
   const handoffUrl = `${origin}/h/${flat.id}`;
-  const qrSvg = await QRCode.toString(handoffUrl, { type: "svg", margin: 1 });
 
   // Batch-load all ingredients for the in-stock recipes in one query.
   const recipeIds = rows.map((r) => r.recipeId);
-  const allIngs =
-    recipeIds.length > 0
-      ? await db()
+  const ingsQuery =
+    recipeIds.length === 0
+      ? null
+      : db()
           .select()
           .from(ingredients)
           .where(inArray(ingredients.recipeId, recipeIds))
-          .orderBy(asc(ingredients.position))
-      : [];
+          .orderBy(asc(ingredients.position));
+  const [allIngs, currentInput, qrSvg] = await Promise.all([
+    ingsQuery ?? Promise.resolve([] as never[]),
+    buildDedupInput(flat.id),
+    QRCode.toString(handoffUrl, { type: "svg", margin: 1 }),
+  ]);
+  const currentHash = await hashInput(currentInput);
   const ingsByRecipe = new Map<string, typeof allIngs>();
   for (const ing of allIngs) {
     const list = ingsByRecipe.get(ing.recipeId) ?? [];
@@ -112,12 +117,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   // ---- Dedup snapshot handling --------------------------------------
-  // Compute the current input hash. If the saved snapshot is missing or
-  // stale (recipes/ingredients changed since Finalise), we still render
-  // an unmerged combined list but mark it as stale so the user can
-  // regenerate.
-  const currentInput = await buildDedupInput(flat.id);
-  const currentHash = await hashInput(currentInput);
+  // If the saved snapshot is missing or stale (recipes/ingredients
+  // changed since Finalise), we still render an unmerged combined list
+  // but mark it as stale so the user can regenerate.
   const snapshotFresh =
     flat.dedupGroups !== null &&
     flat.dedupInputHash !== null &&

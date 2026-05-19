@@ -46,41 +46,41 @@ export async function loadKitchen(flatId: string): Promise<KitchenData> {
     note: recipeInstances.note,
   };
 
-  const draft = await db()
-    .select(baseSelect)
-    .from(recipeInstances)
-    .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
-    .where(
-      and(
-        eq(recipeInstances.flatId, flatId),
-        isNull(recipeInstances.finalisedAt),
-      ),
-    )
-    .orderBy(asc(recipeInstances.position));
-
-  const stock = await db()
-    .select(baseSelect)
-    .from(recipeInstances)
-    .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
-    .where(
-      and(
-        eq(recipeInstances.flatId, flatId),
-        isNotNull(recipeInstances.finalisedAt),
-        isNull(recipeInstances.cookedAt),
-      ),
-    )
-    .orderBy(asc(recipeInstances.position));
-
-  const members = await db()
-    .select({
-      id: users.id,
-      displayName: users.displayName,
-      avatarKey: users.avatarBlobKey,
-    })
-    .from(flatMembers)
-    .innerJoin(users, eq(users.id, flatMembers.userId))
-    .where(eq(flatMembers.flatId, flatId))
-    .orderBy(asc(users.displayName));
+  const [draft, stock, members] = await Promise.all([
+    db()
+      .select(baseSelect)
+      .from(recipeInstances)
+      .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
+      .where(
+        and(
+          eq(recipeInstances.flatId, flatId),
+          isNull(recipeInstances.finalisedAt),
+        ),
+      )
+      .orderBy(asc(recipeInstances.position)),
+    db()
+      .select(baseSelect)
+      .from(recipeInstances)
+      .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
+      .where(
+        and(
+          eq(recipeInstances.flatId, flatId),
+          isNotNull(recipeInstances.finalisedAt),
+          isNull(recipeInstances.cookedAt),
+        ),
+      )
+      .orderBy(asc(recipeInstances.position)),
+    db()
+      .select({
+        id: users.id,
+        displayName: users.displayName,
+        avatarKey: users.avatarBlobKey,
+      })
+      .from(flatMembers)
+      .innerJoin(users, eq(users.id, flatMembers.userId))
+      .where(eq(flatMembers.flatId, flatId))
+      .orderBy(asc(users.displayName)),
+  ]);
 
   const recipeIds = [
     ...new Set([...draft.map((d) => d.recipeId), ...stock.map((s) => s.recipeId)]),

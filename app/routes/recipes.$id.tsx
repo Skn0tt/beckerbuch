@@ -41,50 +41,54 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!recipe || recipe.flatId !== ctx.flat.id) {
     throw data("Recipe not found.", { status: 404 });
   }
-  const ings = await db()
-    .select()
-    .from(ingredients)
-    .where(eq(ingredients.recipeId, recipe.id))
-    .orderBy(asc(ingredients.position));
-  // Show "In draft" state if this recipe already has an open draft
-  // instance for the flat. We pick the lowest-position one as the
-  // target for quantity updates (legacy data may have multiple).
-  const [draftInstance] = await db()
-    .select({
-      id: recipeInstances.id,
-      targetQuantity: recipeInstances.targetQuantity,
-    })
-    .from(recipeInstances)
-    .where(
-      and(
-        eq(recipeInstances.flatId, ctx.flat.id),
-        eq(recipeInstances.recipeId, recipe.id),
-        isNull(recipeInstances.finalisedAt),
-      ),
-    )
-    .orderBy(asc(recipeInstances.position))
-    .limit(1);
-  const [stockInstance] = await db()
-    .select({
-      id: recipeInstances.id,
-      targetQuantity: recipeInstances.targetQuantity,
-    })
-    .from(recipeInstances)
-    .where(
-      and(
-        eq(recipeInstances.flatId, ctx.flat.id),
-        eq(recipeInstances.recipeId, recipe.id),
-        isNotNull(recipeInstances.finalisedAt),
-        isNull(recipeInstances.cookedAt),
-      ),
-    )
-    .orderBy(asc(recipeInstances.position))
-    .limit(1);
+  const [ings, draftInstance, stockInstance] = await Promise.all([
+    db()
+      .select()
+      .from(ingredients)
+      .where(eq(ingredients.recipeId, recipe.id))
+      .orderBy(asc(ingredients.position)),
+    // Show "In draft" state if this recipe already has an open draft
+    // instance for the flat. We pick the lowest-position one as the
+    // target for quantity updates (legacy data may have multiple).
+    db()
+      .select({
+        id: recipeInstances.id,
+        targetQuantity: recipeInstances.targetQuantity,
+      })
+      .from(recipeInstances)
+      .where(
+        and(
+          eq(recipeInstances.flatId, ctx.flat.id),
+          eq(recipeInstances.recipeId, recipe.id),
+          isNull(recipeInstances.finalisedAt),
+        ),
+      )
+      .orderBy(asc(recipeInstances.position))
+      .limit(1)
+      .then((r) => r[0] ?? null),
+    db()
+      .select({
+        id: recipeInstances.id,
+        targetQuantity: recipeInstances.targetQuantity,
+      })
+      .from(recipeInstances)
+      .where(
+        and(
+          eq(recipeInstances.flatId, ctx.flat.id),
+          eq(recipeInstances.recipeId, recipe.id),
+          isNotNull(recipeInstances.finalisedAt),
+          isNull(recipeInstances.cookedAt),
+        ),
+      )
+      .orderBy(asc(recipeInstances.position))
+      .limit(1)
+      .then((r) => r[0] ?? null),
+  ]);
   return {
     recipe,
     ingredients: ings,
-    draftInstance: draftInstance ?? null,
-    stockInstance: stockInstance ?? null,
+    draftInstance,
+    stockInstance,
     csrfToken: csrfTokenForSession(ctx.session.id),
   };
 }
