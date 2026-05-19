@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { db } from "../db/client";
 import {
@@ -6,6 +6,7 @@ import {
   oauthClients,
   oauthTokens,
 } from "../db/schema";
+import { constantTimeStringEqual } from "./timing-safe";
 
 export const SUPPORTED_SCOPE = "recipes:write";
 const ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
@@ -19,17 +20,10 @@ export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export function constantTimeEqual(a: string, b: string): boolean {
-  const aBuf = Buffer.from(a);
-  const bBuf = Buffer.from(b);
-  if (aBuf.length !== bBuf.length) return false;
-  return timingSafeEqual(aBuf, bBuf);
-}
-
 /** PKCE: verify base64url(SHA-256(verifier)) == challenge. */
 export function verifyPkceS256(verifier: string, challenge: string): boolean {
   const computed = createHash("sha256").update(verifier).digest("base64url");
-  return constantTimeEqual(computed, challenge);
+  return constantTimeStringEqual(computed, challenge);
 }
 
 // ---------- client registration ----------

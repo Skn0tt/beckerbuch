@@ -1,4 +1,5 @@
-import { createHmac, randomBytes, timingSafeEqual, createHash } from "node:crypto";
+import { createHmac, randomBytes, createHash } from "node:crypto";
+import { constantTimeStringEqual } from "./timing-safe";
 
 export const SESSION_COOKIE_NAME = "cb_session";
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
@@ -94,11 +95,4 @@ function parseCookie(header: string, name: string): string | null {
 
 function base64url(buf: Buffer): string {
   return buf.toString("base64url");
-}
-
-function constantTimeStringEqual(a: string, b: string): boolean {
-  const aBuf = Buffer.from(a);
-  const bBuf = Buffer.from(b);
-  if (aBuf.length !== bBuf.length) return false;
-  return timingSafeEqual(aBuf, bBuf);
 }

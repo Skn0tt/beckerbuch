@@ -6,8 +6,8 @@ import {
   issueTokenPair,
   rotateRefreshToken,
   verifyPkceS256,
-  constantTimeEqual,
 } from "../auth/oauth";
+import { constantTimeStringEqual } from "../auth/timing-safe";
 
 export async function action({ request }: Route.ActionArgs) {
   if (request.method !== "POST") {
@@ -54,10 +54,10 @@ async function handleAuthorizationCode(form: URLSearchParams): Promise<Response>
   const row = await consumeAuthorizationCode(code);
   if (!row) return jsonError("invalid_grant", "code invalid, used, or expired");
 
-  if (!constantTimeEqual(row.clientId, clientId)) {
+  if (!constantTimeStringEqual(row.clientId, clientId)) {
     return jsonError("invalid_grant", "code/client mismatch");
   }
-  if (!constantTimeEqual(row.redirectUri, redirectUri)) {
+  if (!constantTimeStringEqual(row.redirectUri, redirectUri)) {
     return jsonError("invalid_grant", "redirect_uri mismatch");
   }
   if (!verifyPkceS256(verifier, row.codeChallenge)) {
