@@ -15,7 +15,7 @@ import { validatePhotoBytes } from "../blobs";
  */
 
 const SHARE_HOST = "share.kptncook.com";
-const DEFAULT_BASE_URL = "https://mobile.kptncook.com";
+const BASE_URL = "https://mobile.kptncook.com";
 const FETCH_TIMEOUT_MS = 10_000;
 const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 
@@ -29,11 +29,6 @@ const KPTN_HEADERS = {
 function getApiKey(): string | null {
   const key = process.env.KPTNCOOK_API_KEY;
   return key && key.length > 0 ? key : null;
-}
-
-function getBaseUrl(): string {
-  const base = process.env.KPTNCOOK_BASE_URL;
-  return base && base.length > 0 ? base.replace(/\/$/, "") : DEFAULT_BASE_URL;
 }
 
 export type KptncookId = { type: "oid" | "uid"; value: string };
@@ -323,7 +318,7 @@ export async function importKptncookRecipe(
   let response: Response;
   try {
     response = await fetchWithTimeout(
-      `${getBaseUrl()}/recipes/search?kptnkey=${encodeURIComponent(apiKey)}`,
+      `${BASE_URL}/recipes/search?kptnkey=${encodeURIComponent(apiKey)}`,
       {
         method: "POST",
         headers: KPTN_HEADERS,

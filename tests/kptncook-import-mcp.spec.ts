@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures";
 import { login } from "./login";
 import { runOAuthFlow, mcpClient, jsonFromToolResult } from "./mcp-helpers";
-import { MOCK_RECIPES, KPTNCOOK_MOCK_PORT } from "./kptncook-mock.mjs";
+import { MOCK_RECIPES } from "./proxy/fixtures.mjs";
 
 type FetchResult = {
   name: string;
@@ -13,7 +13,7 @@ type FetchResult = {
   note?: string;
 };
 
-const SHARE_URL = `http://127.0.0.1:${KPTNCOOK_MOCK_PORT}/share/${MOCK_RECIPES.cinnamonBuns.shareToken}`;
+const SHARE_URL = `https://share.kptncook.com/${MOCK_RECIPES.cinnamonBuns.shareToken}`;
 
 test.describe("MCP kptncook_fetch_recipe", () => {
   test("returns normalized payload for a share URL", async ({ page, flat }) => {

@@ -1,8 +1,8 @@
 import { test, expect } from "./fixtures";
 import { login } from "./login";
-import { MOCK_RECIPES, KPTNCOOK_MOCK_PORT } from "./kptncook-mock.mjs";
+import { MOCK_RECIPES } from "./proxy/fixtures.mjs";
 
-const SHARE_URL = `http://127.0.0.1:${KPTNCOOK_MOCK_PORT}/share/${MOCK_RECIPES.cinnamonBuns.shareToken}`;
+const SHARE_URL = `https://share.kptncook.com/${MOCK_RECIPES.cinnamonBuns.shareToken}`;
 
 test.describe("kptncook import", () => {
   test("UI: paste share URL → form prefilled → save creates the recipe", async ({

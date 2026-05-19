@@ -2,15 +2,14 @@
  * LLM-based deduplication of shopping-list ingredients across recipes
  * (issue #7).
  *
- * The LLM (or a deterministic fake in tests) only returns the *pairings*
- * — which input ids refer to the same ingredient. All unit-compat
- * checking, amount arithmetic, and display formatting happens in the
- * shared {@link postProcess} below, so the model's job is purely
- * semantic and its output is tiny.
+ * The LLM only returns the *pairings* — which input ids refer to the
+ * same ingredient. All unit-compat checking, amount arithmetic, and
+ * display formatting happens in the shared {@link postProcess} below,
+ * so the model's job is purely semantic and its output is tiny.
  *
- * Backend selection is via DEDUP_BACKEND env var: "openai" (default)
- * or "fake" (used in tests). "anthropic" hook is in place but not
- * wired yet.
+ * In tests the network is intercepted by `tests/proxy/` (see that
+ * directory), so this module always calls real OpenAI in shape; the
+ * proxy responds with a deterministic merge plan during npm test.
  */
 import { randomUUID } from "node:crypto";
 import type { DedupGroup } from "../db/schema";
@@ -316,35 +315,6 @@ interface Backend {
   call(input: DedupInput): Promise<RawMerges>;
 }
 
-/** Group by (lowercased item, trailing-"s" stripped). Deterministic. */
-function fakeBackend(): Backend {
-  return {
-    name: "fake",
-    async call(input) {
-      // If a test sets DEDUP_FAKE_FAIL=1, force the fallback path so we
-      // can exercise the "LLM failure" branch end-to-end.
-      if (process.env.DEDUP_FAKE_FAIL === "1") {
-        throw new Error("DEDUP_FAKE_FAIL set");
-      }
-      const buckets = new Map<string, string[]>();
-      for (const it of input.items) {
-        const key = it.item
-          .toLowerCase()
-          .trim()
-          .replace(/s$/, "");
-        const list = buckets.get(key) ?? [];
-        list.push(it.id);
-        buckets.set(key, list);
-      }
-      const merges: { ids: string[] }[] = [];
-      for (const list of buckets.values()) {
-        if (list.length >= 2) merges.push({ ids: list });
-      }
-      return { merges };
-    },
-  };
-}
-
 function openaiBackend(model: string): Backend {
   return {
     name: `openai:${model}`,
@@ -403,7 +373,6 @@ function openaiBackend(model: string): Backend {
 }
 
 function backendFor(name: string): Backend {
-  if (name === "fake") return fakeBackend();
   // The default and "openai" both map to OpenAI via the AI Gateway.
   const colon = name.indexOf(":");
   if (name === "openai" || colon === -1) {

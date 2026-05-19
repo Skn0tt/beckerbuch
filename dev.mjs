@@ -53,12 +53,11 @@ if (process.env.SKIP_TESTCONTAINER === "1" && process.env.DATABASE_URL) {
   });
 }
 
-console.log("[dev] Starting kptncook mock…");
-const { startKptncookMock, KPTNCOOK_MOCK_PORT, KPTNCOOK_MOCK_API_KEY } =
-  await import("./tests/kptncook-mock.mjs");
-const kptncookMock = await startKptncookMock();
-const kptncookBaseUrl = `http://127.0.0.1:${KPTNCOOK_MOCK_PORT}`;
-console.log(`[dev] kptncook mock at ${kptncookBaseUrl}`);
+console.log("[dev] Starting mock HTTP proxy…");
+const { startMockProxy } = await import("./tests/proxy/server.mjs");
+const { KPTNCOOK_TEST_API_KEY } = await import("./tests/proxy/fixtures.mjs");
+const proxy = await startMockProxy();
+console.log(`[dev] proxy at ${proxy.url} (CA at ${proxy.caCertPath})`);
 
 console.log("[dev] Spawning netlify dev…");
 const child = spawn("npx", ["netlify", "dev", "--port", "8888", "--no-open"], {
@@ -70,21 +69,30 @@ const child = spawn("npx", ["netlify", "dev", "--port", "8888", "--no-open"], {
     SESSION_SECRET:
       process.env.SESSION_SECRET ?? "test-only-not-a-secret-but-long-enough",
     ADMIN_TOKEN: process.env.ADMIN_TOKEN ?? "test-admin-token",
-    KPTNCOOK_API_KEY: process.env.KPTNCOOK_API_KEY ?? KPTNCOOK_MOCK_API_KEY,
-    KPTNCOOK_BASE_URL: process.env.KPTNCOOK_BASE_URL ?? kptncookBaseUrl,
-    // Issue #7: tests use the deterministic fake dedup backend so
-    // we never hit the real LLM during npm test.
-    DEDUP_BACKEND: process.env.DEDUP_BACKEND ?? "fake",
+    // kptncook still wants an API key — the proxy handler checks for
+    // this exact value and rejects anything else, so a real key can't
+    // accidentally slip through during tests.
+    KPTNCOOK_API_KEY: process.env.KPTNCOOK_API_KEY ?? KPTNCOOK_TEST_API_KEY,
+    // The OpenAI SDK refuses to construct without an API key. The
+    // proxy handler accepts any value, so this is just a placeholder.
+    // (In practice the value is overridden by Netlify CLI's AI Gateway
+    // integration; the proxy handler matches both api.openai.com and
+    // the Netlify `/.netlify/ai` URL by path so either works.)
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "test-openai-key",
+    // Route all outbound HTTP(S) through the mockttp proxy and trust
+    // its generated CA. Without these, the app would hit the real
+    // internet.
+    ...proxy.proxyEnv,
   },
 });
 
 const forward = (sig) => () => {
-  kptncookMock.close();
+  proxy.stop();
   child.kill(sig);
 };
 process.on("SIGINT", forward("SIGINT"));
 process.on("SIGTERM", forward("SIGTERM"));
 child.on("exit", (code) => {
-  kptncookMock.close();
+  proxy.stop();
   process.exit(code ?? 0);
 });

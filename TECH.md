@@ -434,14 +434,13 @@ Writes (`split`, `unsplit`, `regenerate`) are public and keyed on
 the flat UUID, consistent with the rest of the handoff page's
 trust model.
 
-Backend selection: `DEDUP_BACKEND` env var, default `openai`
-(`gpt-5-mini` via the Netlify AI Gateway — no key configured in
-code, Netlify injects `OPENAI_API_KEY` / `OPENAI_BASE_URL`).
-`DEDUP_MODEL` overrides the model; `openai:<model>` works too;
-`anthropic` is wired but unused day-to-day; `fake` is a
-deterministic backend used by tests (groups by lowercased item
-with trailing `s` stripped). Tests set `DEDUP_BACKEND=fake` via
-`dev.mjs` so they never hit a real LLM.
+Backend selection: `DEDUP_MODEL` overrides the model name passed to
+the OpenAI SDK (default `gpt-5-mini`, via the Netlify AI Gateway —
+no key configured in code, Netlify injects `OPENAI_API_KEY` /
+`OPENAI_BASE_URL`). During `npm test` the dev rig points the app at
+a mockttp proxy (`tests/proxy/`) which intercepts the call to
+`api.openai.com` and returns a deterministic merge plan, so tests
+never hit a real LLM.
 
 ---
 
