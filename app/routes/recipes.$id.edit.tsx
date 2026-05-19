@@ -1,6 +1,7 @@
 import { Button, Container, Stack } from "@mantine/core";
 import { eq, asc } from "drizzle-orm";
 import { data, Form, redirect, useActionData } from "react-router";
+import { z } from "zod";
 import type { Route } from "./+types/recipes.$id.edit";
 import { db } from "../db/client";
 import { ingredients, recipes } from "../db/schema";
@@ -11,12 +12,13 @@ import { RecipeForm, parseRecipeFields } from "../components/recipe-form";
 import { CsrfField } from "../auth/csrf-field";
 import { deletePhoto, storePhoto, validatePhoto } from "../blobs";
 import { updateSearchVector } from "../search";
+import { parseParams } from "../lib/form";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ParamsSchema = z.object({ id: z.guid() });
 
-async function loadOwnedRecipe(request: Request, id: string) {
+async function loadOwnedRecipe(request: Request, rawId: string) {
   const ctx = await requireFlatMember(request);
-  if (!UUID_RE.test(id)) throw data("Recipe not found.", { status: 404 });
+  const { id } = parseParams(ParamsSchema, { id: rawId }, "Recipe not found.");
   const [recipe] = await db()
     .select()
     .from(recipes)

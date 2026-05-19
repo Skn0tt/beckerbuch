@@ -1,22 +1,22 @@
 import { eq } from "drizzle-orm";
 import { data } from "react-router";
+import { z } from "zod";
 import type { Route } from "./+types/recipes.$id.photo";
 import { db } from "../db/client";
 import { recipes } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
 import { readPhoto } from "../blobs";
+import { parseParams } from "../lib/form";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ParamsSchema = z.object({ id: z.guid() });
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const ctx = await requireFlatMember(request);
-  if (!UUID_RE.test(params.id)) {
-    throw data("Recipe not found.", { status: 404 });
-  }
+  const { id } = parseParams(ParamsSchema, params, "Recipe not found.");
   const [recipe] = await db()
     .select()
     .from(recipes)
-    .where(eq(recipes.id, params.id))
+    .where(eq(recipes.id, id))
     .limit(1);
   if (!recipe || recipe.flatId !== ctx.flat.id) {
     throw data("Recipe not found.", { status: 404 });

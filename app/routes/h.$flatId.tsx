@@ -14,6 +14,7 @@ import {
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { data, useFetcher } from "react-router";
 import QRCode from "qrcode";
+import { z } from "zod";
 import type { Route } from "./+types/h.$flatId";
 import { db } from "../db/client";
 import {
@@ -29,13 +30,24 @@ import {
   snapshotDedupForFlat,
 } from "../lib/dedup-snapshot";
 import { hashInput } from "../lib/dedup";
+import { firstMessage, formDataToObject, parseParams } from "../lib/form";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ParamsSchema = z.object({ flatId: z.guid() });
+
+const ActionSchema = z.discriminatedUnion("intent", [
+  z.object({ intent: z.literal("regenerate") }),
+  z.object({
+    intent: z.literal("split"),
+    groupId: z.string().min(1, "Missing group."),
+  }),
+  z.object({
+    intent: z.literal("unsplit"),
+    groupId: z.string().min(1, "Missing group."),
+  }),
+]);
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  if (!UUID_RE.test(params.flatId)) {
-    throw data("Not found.", { status: 404 });
-  }
+  const { flatId } = parseParams(ParamsSchema, params, "Not found.");
   const [flat] = await db()
     .select({
       id: flats.id,
@@ -45,7 +57,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       dedupInputHash: flats.dedupInputHash,
     })
     .from(flats)
-    .where(eq(flats.id, params.flatId))
+    .where(eq(flats.id, flatId))
     .limit(1);
   if (!flat) {
     throw data("Not found.", { status: 404 });
@@ -170,40 +182,36 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
-  if (!UUID_RE.test(params.flatId)) {
-    throw data("Not found.", { status: 404 });
-  }
+  const { flatId } = parseParams(ParamsSchema, params, "Not found.");
   const [flat] = await db()
     .select({ id: flats.id, dedupRejectedGroupIds: flats.dedupRejectedGroupIds })
     .from(flats)
-    .where(eq(flats.id, params.flatId))
+    .where(eq(flats.id, flatId))
     .limit(1);
   if (!flat) {
     throw data("Not found.", { status: 404 });
   }
 
   const form = await request.formData();
-  const intent = String(form.get("intent") ?? "");
+  const parsed = ActionSchema.safeParse(formDataToObject(form));
+  if (!parsed.success) {
+    return { error: firstMessage(parsed.error) };
+  }
 
-  if (intent === "regenerate") {
+  if (parsed.data.intent === "regenerate") {
     await snapshotDedupForFlat(flat.id);
     return { ok: true };
   }
 
-  if (intent === "split" || intent === "unsplit") {
-    const groupId = String(form.get("groupId") ?? "");
-    if (groupId === "") return { error: "Missing group." };
-    const current = new Set(flat.dedupRejectedGroupIds ?? []);
-    if (intent === "split") current.add(groupId);
-    else current.delete(groupId);
-    await db()
-      .update(flats)
-      .set({ dedupRejectedGroupIds: [...current] })
-      .where(eq(flats.id, flat.id));
-    return { ok: true };
-  }
-
-  return { error: "Unknown intent." };
+  // split | unsplit
+  const current = new Set(flat.dedupRejectedGroupIds ?? []);
+  if (parsed.data.intent === "split") current.add(parsed.data.groupId);
+  else current.delete(parsed.data.groupId);
+  await db()
+    .update(flats)
+    .set({ dedupRejectedGroupIds: [...current] })
+    .where(eq(flats.id, flat.id));
+  return { ok: true };
 }
 
 export function meta({ data: d }: Route.MetaArgs) {

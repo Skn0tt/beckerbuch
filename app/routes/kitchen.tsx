@@ -7,6 +7,7 @@ import {
 } from "@mantine/core";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { Link, redirect, useNavigate } from "react-router";
+import { z } from "zod";
 import type { Route } from "./+types/kitchen";
 import { db } from "../db/client";
 import { recipeInstances, flatMembers } from "../db/schema";
@@ -19,8 +20,58 @@ import {
   FinaliseButton,
   SortableLane,
 } from "../components/kitchen-sidebar";
+import { firstMessage, formDataToObject } from "../lib/form";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const uuid = z.guid("Invalid instance.");
+
+const ActionSchema = z.discriminatedUnion("intent", [
+  z.object({
+    intent: z.literal("remove-from-draft"),
+    instanceId: uuid,
+  }),
+  z.object({
+    intent: z.literal("update-quantity"),
+    instanceId: uuid,
+    targetQuantity: z.coerce
+      .number({ message: "Portions must be between 1 and 1000." })
+      .int("Portions must be between 1 and 1000.")
+      .min(1, "Portions must be between 1 and 1000.")
+      .max(1000, "Portions must be between 1 and 1000."),
+  }),
+  z.object({
+    intent: z.literal("set-cook"),
+    instanceId: uuid,
+    cookId: z.union([z.literal(""), z.guid("Invalid cook.")]),
+  }),
+  z.object({
+    intent: z.literal("set-note"),
+    instanceId: uuid,
+    note: z.string().optional().default(""),
+  }),
+  z.object({
+    intent: z.literal("reorder"),
+    lane: z.enum(["draft", "stock"], { message: "Invalid lane." }),
+    instanceIds: z
+      .string()
+      .transform((s) =>
+        s
+          .split(",")
+          .map((p) => p.trim())
+          .filter((p) => p.length > 0),
+      )
+      .pipe(z.array(z.guid("Invalid order.")).min(1, "Invalid order.")),
+  }),
+  z.object({ intent: z.literal("finalise") }),
+  z.object({
+    intent: z.literal("mark-cooked"),
+    instanceId: uuid,
+  }),
+  z.object({
+    intent: z.literal("move"),
+    instanceId: uuid,
+    direction: z.enum(["up", "down"], { message: "Invalid direction." }),
+  }),
+]);
 
 export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requireFlatMember(request);
@@ -45,16 +96,18 @@ export async function action({ request }: Route.ActionArgs) {
   const ctx = await requireFlatMember(request);
   await requireCsrf(request, ctx.session.id);
   const form = await request.formData();
-  const intent = String(form.get("intent") ?? "");
-  const instanceId = String(form.get("instanceId") ?? "");
+  const parsed = ActionSchema.safeParse(formDataToObject(form));
+  if (!parsed.success) {
+    return { error: firstMessage(parsed.error) };
+  }
+  const action = parsed.data;
 
-  if (intent === "remove-from-draft") {
-    if (!UUID_RE.test(instanceId)) return { error: "Invalid instance." };
+  if (action.intent === "remove-from-draft") {
     await db()
       .delete(recipeInstances)
       .where(
         and(
-          eq(recipeInstances.id, instanceId),
+          eq(recipeInstances.id, action.instanceId),
           eq(recipeInstances.flatId, ctx.flat.id),
           isNull(recipeInstances.finalisedAt),
         ),
@@ -62,18 +115,13 @@ export async function action({ request }: Route.ActionArgs) {
     return { ok: true };
   }
 
-  if (intent === "update-quantity") {
-    if (!UUID_RE.test(instanceId)) return { error: "Invalid instance." };
-    const target = Number.parseInt(String(form.get("targetQuantity") ?? ""), 10);
-    if (!Number.isFinite(target) || target < 1 || target > 1000) {
-      return { error: "Portions must be between 1 and 1000." };
-    }
+  if (action.intent === "update-quantity") {
     await db()
       .update(recipeInstances)
-      .set({ targetQuantity: target })
+      .set({ targetQuantity: action.targetQuantity })
       .where(
         and(
-          eq(recipeInstances.id, instanceId),
+          eq(recipeInstances.id, action.instanceId),
           eq(recipeInstances.flatId, ctx.flat.id),
           isNull(recipeInstances.finalisedAt),
         ),
@@ -81,28 +129,24 @@ export async function action({ request }: Route.ActionArgs) {
     return { ok: true };
   }
 
-  if (intent === "set-cook") {
-    if (!UUID_RE.test(instanceId)) return { error: "Invalid instance." };
-    const raw = String(form.get("cookId") ?? "");
-    let cookId: string | null = null;
-    if (raw !== "") {
-      if (!UUID_RE.test(raw)) return { error: "Invalid cook." };
+  if (action.intent === "set-cook") {
+    const cookId: string | null = action.cookId === "" ? null : action.cookId;
+    if (cookId !== null) {
       const member = await db()
         .select({ userId: flatMembers.userId })
         .from(flatMembers)
         .where(
-          and(eq(flatMembers.flatId, ctx.flat.id), eq(flatMembers.userId, raw)),
+          and(eq(flatMembers.flatId, ctx.flat.id), eq(flatMembers.userId, cookId)),
         )
         .limit(1);
       if (member.length === 0) return { error: "Cook is not in this flat." };
-      cookId = raw;
     }
     await db()
       .update(recipeInstances)
       .set({ designatedCookId: cookId })
       .where(
         and(
-          eq(recipeInstances.id, instanceId),
+          eq(recipeInstances.id, action.instanceId),
           eq(recipeInstances.flatId, ctx.flat.id),
           isNull(recipeInstances.cookedAt),
         ),
@@ -110,10 +154,8 @@ export async function action({ request }: Route.ActionArgs) {
     return { ok: true };
   }
 
-  if (intent === "set-note") {
-    if (!UUID_RE.test(instanceId)) return { error: "Invalid instance." };
-    const raw = String(form.get("note") ?? "");
-    const trimmed = raw.trim();
+  if (action.intent === "set-note") {
+    const trimmed = action.note.trim();
     const value: string | null = trimmed.length === 0 ? null : trimmed;
     // Notes are editable in BOTH draft and in-stock (not after cooking).
     await db()
@@ -121,7 +163,7 @@ export async function action({ request }: Route.ActionArgs) {
       .set({ note: value })
       .where(
         and(
-          eq(recipeInstances.id, instanceId),
+          eq(recipeInstances.id, action.instanceId),
           eq(recipeInstances.flatId, ctx.flat.id),
           isNull(recipeInstances.cookedAt),
         ),
@@ -129,18 +171,8 @@ export async function action({ request }: Route.ActionArgs) {
     return { ok: true };
   }
 
-  if (intent === "reorder") {
-    const lane = String(form.get("lane") ?? "");
-    const ids = String(form.get("instanceIds") ?? "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    if (lane !== "draft" && lane !== "stock") {
-      return { error: "Invalid lane." };
-    }
-    if (ids.length === 0 || !ids.every((id) => UUID_RE.test(id))) {
-      return { error: "Invalid order." };
-    }
+  if (action.intent === "reorder") {
+    const { lane, instanceIds: ids } = action;
     const laneCond =
       lane === "draft"
         ? isNull(recipeInstances.finalisedAt)
@@ -183,7 +215,7 @@ export async function action({ request }: Route.ActionArgs) {
     return { ok: true };
   }
 
-  if (intent === "finalise") {
+  if (action.intent === "finalise") {
     // Bulk: move every draft row to in-stock. Renumber positions to
     // append after current in-stock max — preserves draft order, dodges
     // the partial unique index on (flat_id, position) WHERE in-stock.
@@ -236,14 +268,13 @@ export async function action({ request }: Route.ActionArgs) {
     return redirect(`/h/${ctx.flat.id}`);
   }
 
-  if (intent === "mark-cooked") {
-    if (!UUID_RE.test(instanceId)) return { error: "Invalid instance." };
+  if (action.intent === "mark-cooked") {
     const updated = await db()
       .update(recipeInstances)
       .set({ cookedAt: new Date(), cookedBy: ctx.user.id })
       .where(
         and(
-          eq(recipeInstances.id, instanceId),
+          eq(recipeInstances.id, action.instanceId),
           eq(recipeInstances.flatId, ctx.flat.id),
           isNotNull(recipeInstances.finalisedAt),
           isNull(recipeInstances.cookedAt),
@@ -256,74 +287,67 @@ export async function action({ request }: Route.ActionArgs) {
     return { ok: true };
   }
 
-  if (intent === "move") {
-    if (!UUID_RE.test(instanceId)) return { error: "Invalid instance." };
-    const direction = String(form.get("direction") ?? "");
-    if (direction !== "up" && direction !== "down") {
-      return { error: "Invalid direction." };
-    }
-    const rows = await db()
-      .select({
-        id: recipeInstances.id,
-        position: recipeInstances.position,
-        finalisedAt: recipeInstances.finalisedAt,
-        cookedAt: recipeInstances.cookedAt,
-      })
-      .from(recipeInstances)
-      .where(
-        and(
-          eq(recipeInstances.id, instanceId),
-          eq(recipeInstances.flatId, ctx.flat.id),
-        ),
-      )
-      .limit(1);
-    if (rows.length === 0) return { error: "Not found." };
-    const row = rows[0];
-    if (row.cookedAt !== null) return { error: "Cooked entries can't move." };
-    const inDraft = row.finalisedAt === null;
-    const laneCond = inDraft
-      ? isNull(recipeInstances.finalisedAt)
-      : and(
-          isNotNull(recipeInstances.finalisedAt),
-          isNull(recipeInstances.cookedAt),
-        );
+  // move
+  const { instanceId, direction } = action;
+  const rows = await db()
+    .select({
+      id: recipeInstances.id,
+      position: recipeInstances.position,
+      finalisedAt: recipeInstances.finalisedAt,
+      cookedAt: recipeInstances.cookedAt,
+    })
+    .from(recipeInstances)
+    .where(
+      and(
+        eq(recipeInstances.id, instanceId),
+        eq(recipeInstances.flatId, ctx.flat.id),
+      ),
+    )
+    .limit(1);
+  if (rows.length === 0) return { error: "Not found." };
+  const row = rows[0];
+  if (row.cookedAt !== null) return { error: "Cooked entries can't move." };
+  const inDraft = row.finalisedAt === null;
+  const laneCond = inDraft
+    ? isNull(recipeInstances.finalisedAt)
+    : and(
+        isNotNull(recipeInstances.finalisedAt),
+        isNull(recipeInstances.cookedAt),
+      );
 
-    const neighbours = await db()
-      .select({ id: recipeInstances.id, position: recipeInstances.position })
-      .from(recipeInstances)
-      .where(
-        and(
-          eq(recipeInstances.flatId, ctx.flat.id),
-          laneCond,
-          direction === "up"
-            ? sql`${recipeInstances.position} < ${row.position}`
-            : sql`${recipeInstances.position} > ${row.position}`,
-        ),
-      )
-      .orderBy(direction === "up" ? sql`position desc` : sql`position asc`)
-      .limit(1);
-    if (neighbours.length === 0) return { ok: true }; // already at edge
-    const neighbour = neighbours[0];
+  const neighbours = await db()
+    .select({ id: recipeInstances.id, position: recipeInstances.position })
+    .from(recipeInstances)
+    .where(
+      and(
+        eq(recipeInstances.flatId, ctx.flat.id),
+        laneCond,
+        direction === "up"
+          ? sql`${recipeInstances.position} < ${row.position}`
+          : sql`${recipeInstances.position} > ${row.position}`,
+      ),
+    )
+    .orderBy(direction === "up" ? sql`position desc` : sql`position asc`)
+    .limit(1);
+  if (neighbours.length === 0) return { ok: true }; // already at edge
+  const neighbour = neighbours[0];
 
-    // 2-phase swap to avoid violating partial unique on position.
-    await db().transaction(async (tx) => {
-      await tx
-        .update(recipeInstances)
-        .set({ position: -1 - row.position })
-        .where(eq(recipeInstances.id, row.id));
-      await tx
-        .update(recipeInstances)
-        .set({ position: row.position })
-        .where(eq(recipeInstances.id, neighbour.id));
-      await tx
-        .update(recipeInstances)
-        .set({ position: neighbour.position })
-        .where(eq(recipeInstances.id, row.id));
-    });
-    return { ok: true };
-  }
-
-  return { error: "Unknown action." };
+  // 2-phase swap to avoid violating partial unique on position.
+  await db().transaction(async (tx) => {
+    await tx
+      .update(recipeInstances)
+      .set({ position: -1 - row.position })
+      .where(eq(recipeInstances.id, row.id));
+    await tx
+      .update(recipeInstances)
+      .set({ position: row.position })
+      .where(eq(recipeInstances.id, neighbour.id));
+    await tx
+      .update(recipeInstances)
+      .set({ position: neighbour.position })
+      .where(eq(recipeInstances.id, row.id));
+  });
+  return { ok: true };
 }
 
 export default function Kitchen({ loaderData }: Route.ComponentProps) {

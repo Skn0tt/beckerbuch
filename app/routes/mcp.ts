@@ -14,7 +14,7 @@ import {
 } from "../lib/recipes";
 import { importKptncookRecipe } from "../lib/kptncook";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_SCHEMA = z.guid("Recipe id must be a UUID.");
 
 const ingredientSchema = z.object({
   amount: z.string().optional(),
@@ -43,10 +43,7 @@ const addRecipeInput = {
     .describe("Public image URL; server will fetch and store it"),
 };
 
-const recipeIdSchema = z
-  .string()
-  .regex(UUID_RE, "Recipe id must be a UUID.")
-  .describe("Recipe id");
+const recipeIdSchema = UUID_SCHEMA.describe("Recipe id");
 
 const searchRecipesInput = {
   query: z
@@ -198,7 +195,7 @@ async function handle(request: Request): Promise<Response> {
       inputSchema: getRecipeInput,
     },
     async (args) => {
-      if (!UUID_RE.test(args.id)) return toolError("Recipe id must be a UUID.");
+      if (!UUID_SCHEMA.safeParse(args.id).success) return toolError("Recipe id must be a UUID.");
       const recipe = await getRecipeForFlat({ flatId: ctx.flat.id, id: args.id });
       if (!recipe) return toolError("Recipe not found.");
       return jsonResult(recipePayload(recipe, request));
@@ -214,7 +211,7 @@ async function handle(request: Request): Promise<Response> {
       inputSchema: editRecipeInput,
     },
     async (args) => {
-      if (!UUID_RE.test(args.id)) return toolError("Recipe id must be a UUID.");
+      if (!UUID_SCHEMA.safeParse(args.id).success) return toolError("Recipe id must be a UUID.");
       if (args.photoUrl && args.removePhoto) {
         return toolError("photoUrl and removePhoto cannot be used together.");
       }

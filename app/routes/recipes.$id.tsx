@@ -15,6 +15,7 @@ import {
 import { useDisclosure } from "@mantine/hooks";
 import { and, eq, asc, count, isNotNull, isNull, max, sql } from "drizzle-orm";
 import { data, Form, Link, redirect, useActionData, useFetcher } from "react-router";
+import { z } from "zod";
 import type { Route } from "./+types/recipes.$id";
 import { db } from "../db/client";
 import { ingredients, recipeInstances, recipes } from "../db/schema";
@@ -25,18 +26,31 @@ import { csrfFieldName } from "../auth/csrf-shared";
 import { isSameOrigin } from "../auth/origin";
 import { deletePhoto } from "../blobs";
 import { formatIngredient } from "../lib/scale";
+import { firstMessage, formDataToObject, parseParams } from "../lib/form";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ParamsSchema = z.object({ id: z.guid() });
+
+const ActionSchema = z.discriminatedUnion("intent", [
+  z.object({ intent: z.literal("add-to-draft") }),
+  z.object({
+    intent: z.literal("update-quantity"),
+    targetQuantity: z.coerce
+      .number({ message: "Portions must be between 1 and 1000." })
+      .int("Portions must be between 1 and 1000.")
+      .min(1, "Portions must be between 1 and 1000.")
+      .max(1000, "Portions must be between 1 and 1000."),
+  }),
+  z.object({ intent: z.literal("mark-cooked") }),
+  z.object({ intent: z.literal("delete") }),
+]);
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const ctx = await requireFlatMember(request);
-  if (!UUID_RE.test(params.id)) {
-    throw data("Recipe not found.", { status: 404 });
-  }
+  const { id } = parseParams(ParamsSchema, params, "Recipe not found.");
   const [recipe] = await db()
     .select()
     .from(recipes)
-    .where(eq(recipes.id, params.id))
+    .where(eq(recipes.id, id))
     .limit(1);
   if (!recipe || recipe.flatId !== ctx.flat.id) {
     throw data("Recipe not found.", { status: 404 });
@@ -94,13 +108,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     throw new Response("Bad origin.", { status: 403 });
   }
   const ctx = await requireFlatMember(request);
-  if (!UUID_RE.test(params.id)) {
-    throw data("Recipe not found.", { status: 404 });
-  }
+  const { id } = parseParams(ParamsSchema, params, "Recipe not found.");
   const [recipe] = await db()
     .select()
     .from(recipes)
-    .where(eq(recipes.id, params.id))
+    .where(eq(recipes.id, id))
     .limit(1);
   if (!recipe || recipe.flatId !== ctx.flat.id) {
     throw data("Recipe not found.", { status: 404 });
@@ -108,9 +120,12 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   await requireCsrf(request, ctx.session.id);
   const form = await request.formData();
-  const intent = String(form.get("intent") ?? "");
+  const parsed = ActionSchema.safeParse(formDataToObject(form));
+  if (!parsed.success) {
+    return { error: firstMessage(parsed.error) };
+  }
 
-  if (intent === "add-to-draft") {
+  if (parsed.data.intent === "add-to-draft") {
     const flatId = ctx.flat.id;
     // One draft instance per recipe — clicking add again is a no-op.
     const existing = await db()
@@ -157,14 +172,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { error: "Couldn't add to draft. Please try again." };
   }
 
-  if (intent === "update-quantity") {
-    const target = Number.parseInt(String(form.get("targetQuantity") ?? ""), 10);
-    if (!Number.isFinite(target) || target < 1 || target > 1000) {
-      return { error: "Portions must be between 1 and 1000." };
-    }
+  if (parsed.data.intent === "update-quantity") {
     await db()
       .update(recipeInstances)
-      .set({ targetQuantity: target })
+      .set({ targetQuantity: parsed.data.targetQuantity })
       .where(
         and(
           eq(recipeInstances.flatId, ctx.flat.id),
@@ -175,7 +186,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { ok: true as const };
   }
 
-  if (intent === "mark-cooked") {
+  if (parsed.data.intent === "mark-cooked") {
     const updated = await db()
       .update(recipeInstances)
       .set({ cookedAt: new Date(), cookedBy: ctx.user.id })
@@ -194,8 +205,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { ok: true as const };
   }
 
-  if (intent !== "delete") return { error: "Unknown action." };
-
+  // delete
   const [{ value: usageCount }] = await db()
     .select({ value: count() })
     .from(recipeInstances)

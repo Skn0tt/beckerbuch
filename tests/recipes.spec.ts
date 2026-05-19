@@ -89,6 +89,11 @@ test("recipes are scoped to the flat — other flat's recipe → 404", async ({
   expect(res?.status()).toBe(404);
 });
 
+test("malformed UUID in /r/:id → 404", async ({ page }) => {
+  const res = await page.goto("/r/lol");
+  expect(res?.status()).toBe(404);
+});
+
 async function createPasta(page: import("@playwright/test").Page) {
   await page.getByRole("link", { name: "+ New recipe" }).click();
   await page.getByLabel("Name").fill("Pasta al limone");

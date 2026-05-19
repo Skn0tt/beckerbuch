@@ -14,6 +14,7 @@ import {
 } from "@mantine/core";
 import { Form, redirect, useActionData } from "react-router";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { z } from "zod";
 import type { Route } from "./+types/flat.settings";
 import { db } from "../db/client";
 import { flatMembers, invites, users } from "../db/schema";
@@ -24,6 +25,18 @@ import { CsrfField } from "../auth/csrf-field";
 import { generateInviteToken } from "../auth/invite";
 import { UserAvatar } from "../components/user-avatar";
 import { deleteAvatar, storeAvatar, validateAvatar } from "../lib/avatars";
+import { firstMessage, formDataToObject } from "../lib/form";
+
+const ActionSchema = z.discriminatedUnion("intent", [
+  z.object({ intent: z.literal("rotate-invite") }),
+  z.object({
+    intent: z.literal("upload-avatar"),
+    avatar: z
+      .instanceof(File, { message: "Please choose an image file." })
+      .refine((f) => f.size > 0, "Please choose an image file."),
+  }),
+  z.object({ intent: z.literal("remove-avatar") }),
+]);
 
 type Member = {
   id: string;
@@ -91,8 +104,12 @@ export async function action({ request }: Route.ActionArgs) {
   await requireCsrf(request, ctx.session.id);
 
   const form = await request.formData();
-  const intent = form.get("intent");
-  if (intent === "rotate-invite") {
+  const parsed = ActionSchema.safeParse(formDataToObject(form));
+  if (!parsed.success) {
+    return { error: firstMessage(parsed.error) };
+  }
+
+  if (parsed.data.intent === "rotate-invite") {
     await db().transaction(async (tx) => {
       // Expire all current usable invites for this flat.
       await tx
@@ -122,11 +139,8 @@ export async function action({ request }: Route.ActionArgs) {
     .limit(1);
   if (!me) throw new Response("User not found", { status: 404 });
 
-  if (intent === "upload-avatar") {
-    const avatarFile = form.get("avatar");
-    if (!(avatarFile instanceof File) || avatarFile.size === 0) {
-      return { error: "Please choose an image file." };
-    }
+  if (parsed.data.intent === "upload-avatar") {
+    const avatarFile = parsed.data.avatar;
     const v = validateAvatar(avatarFile);
     if (!v.ok) return { error: v.error };
 
@@ -139,16 +153,13 @@ export async function action({ request }: Route.ActionArgs) {
     return redirect("/flat/settings");
   }
 
-  if (intent === "remove-avatar") {
-    if (me.avatarBlobKey) await deleteAvatar(me.avatarBlobKey);
-    await db()
-      .update(users)
-      .set({ avatarBlobKey: null })
-      .where(eq(users.id, ctx.user.id));
-    return redirect("/flat/settings");
-  }
-
-  throw new Response("Unknown intent", { status: 400 });
+  // remove-avatar
+  if (me.avatarBlobKey) await deleteAvatar(me.avatarBlobKey);
+  await db()
+    .update(users)
+    .set({ avatarBlobKey: null })
+    .where(eq(users.id, ctx.user.id));
+  return redirect("/flat/settings");
 }
 
 export default function FlatSettings({ loaderData }: Route.ComponentProps) {
