@@ -15,12 +15,17 @@ import { dedup, hashInput, type DedupInput } from "./dedup";
 import { scaleAmount } from "./scale";
 
 export async function buildDedupInput(flatId: string): Promise<DedupInput> {
-  const [latestFinalised] = await db()
-    .select({ at: sql<Date | null>`max(${recipeInstances.finalisedAt})` })
-    .from(recipeInstances)
-    .where(eq(recipeInstances.flatId, flatId));
-
-  if (latestFinalised.at === null) return { items: [] };
+  // Subquery instead of round-tripping max(finalised_at) through JS:
+  // raw SQL expressions don't go through drizzle's column-aware type
+  // mapping, so `max(timestamptz)` came back as a string in some
+  // runtimes and then blew up when we tried to feed it back into an
+  // `eq(timestampColumn, ...)` whose mapToDriverValue calls
+  // `value.toISOString()`. Keeping it in SQL sidesteps the issue.
+  const latestFinalisedSubquery = sql<Date>`(
+    select max(${recipeInstances.finalisedAt})
+    from ${recipeInstances}
+    where ${recipeInstances.flatId} = ${flatId}
+  )`;
 
   const rows = await db()
     .select({
@@ -34,7 +39,7 @@ export async function buildDedupInput(flatId: string): Promise<DedupInput> {
     .where(
       and(
         eq(recipeInstances.flatId, flatId),
-        eq(recipeInstances.finalisedAt, latestFinalised.at),
+        sql`${recipeInstances.finalisedAt} = ${latestFinalisedSubquery}`,
         isNull(recipeInstances.cookedAt),
       ),
     )

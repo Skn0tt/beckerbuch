@@ -62,31 +62,31 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!flat) {
     throw data("Not found.", { status: 404 });
   }
-  const [latestFinalised] = await db()
-    .select({ at: sql<Date | null>`max(${recipeInstances.finalisedAt})` })
+  // Subquery instead of round-tripping `max(finalised_at)` through JS
+  // — see the comment in lib/dedup-snapshot.ts.
+  const latestFinalisedSubquery = sql<Date>`(
+    select max(${recipeInstances.finalisedAt})
+    from ${recipeInstances}
+    where ${recipeInstances.flatId} = ${flat.id}
+  )`;
+  const rows = await db()
+    .select({
+      id: recipeInstances.id,
+      recipeId: recipes.id,
+      recipeName: recipes.name,
+      baseQuantity: recipes.baseQuantity,
+      targetQuantity: recipeInstances.targetQuantity,
+    })
     .from(recipeInstances)
-    .where(eq(recipeInstances.flatId, flat.id));
-  const rows =
-    latestFinalised.at === null
-      ? []
-      : await db()
-          .select({
-            id: recipeInstances.id,
-            recipeId: recipes.id,
-            recipeName: recipes.name,
-            baseQuantity: recipes.baseQuantity,
-            targetQuantity: recipeInstances.targetQuantity,
-          })
-          .from(recipeInstances)
-          .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
-          .where(
-            and(
-              eq(recipeInstances.flatId, flat.id),
-              eq(recipeInstances.finalisedAt, latestFinalised.at),
-              isNull(recipeInstances.cookedAt),
-            ),
-          )
-          .orderBy(asc(recipeInstances.position));
+    .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
+    .where(
+      and(
+        eq(recipeInstances.flatId, flat.id),
+        sql`${recipeInstances.finalisedAt} = ${latestFinalisedSubquery}`,
+        isNull(recipeInstances.cookedAt),
+      ),
+    )
+    .orderBy(asc(recipeInstances.position));
 
   const url = new URL(request.url);
   const origin = url.origin;
