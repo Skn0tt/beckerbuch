@@ -16,7 +16,8 @@ cookies. See [TECH.md §10](../TECH.md) for the full testing model.
 The app's HTTP boundary is the only seam tests use — there's no direct
 DB access from the test process. `globalSetup` owns the Postgres
 testcontainer and the schema; each Playwright worker owns its own
-`netlify dev`.
+Vite dev server (with `@netlify/vite-plugin` providing the Blobs/etc.
+emulation that we'd otherwise need `netlify dev` for).
 
 ## Conventions
 
@@ -32,9 +33,7 @@ testcontainer and the schema; each Playwright worker owns its own
   endpoints, guarded by `ADMIN_TOKEN`. Tests hit those via Playwright's
   `request` fixture — never via direct DB writes.
 - `fullyParallel: true` — per-test flats make data isolation safe by
-  construction. **Currently pinned to `workers: 1`** because per-worker
-  `netlify dev` boot is slow; see the comment in `playwright.config.ts`.
-  No `retries`: if a test fails it's a real bug, not a flake.
+  construction. No `retries`: if a test fails it's a real bug, not a flake.
 
 ## Running
 
@@ -61,7 +60,7 @@ OpenAI (shopping-list dedup). Both are mocked at the HTTP layer by a
 [mockttp](https://github.com/httptoolkit/mockttp) proxy that the
 `mockttp` worker fixture (`tests/fixtures.ts`) starts **once per
 Playwright worker**. The `server` worker fixture wires the
-worker's `netlify dev` to it via `HTTPS_PROXY` +
+worker's Vite dev server to it via `HTTPS_PROXY` +
 `NODE_USE_ENV_PROXY=1` + `NODE_EXTRA_CA_CERTS`, so Node's global
 `fetch` natively routes through the proxy and trusts its generated
 CA. **App code calls real production URLs**

@@ -553,15 +553,19 @@ The test process owns the database lifecycle end-to-end:
   No `docker-compose.yml`, no orchestration script,
   no `.env.development`. The container's connection string is
   written into `process.env.DATABASE_URL` so worker fixtures
-  inherit it when spawning `netlify dev`.
+  inherit it when spawning the Vite dev server.
 - **Schema** is applied with `drizzle-kit push` immediately after
   the container is ready.
-- **App** runs through `netlify dev`, spawned **per Playwright
-  worker** by the `server` fixture (`tests/fixtures.ts`). It's
-  started with `--port 0` so each worker gets a free port assigned
-  by the CLI; the actual `baseURL` is parsed out of the "Local dev
-  server ready: …" line on stdout. Same code, same Function runtime
-  as production.
+- **App** runs through Vite's dev server (`npx vite`), spawned
+  **per Playwright worker** by the `server` fixture
+  (`tests/fixtures.ts`). Vite walks from port 5173 when busy, so
+  each worker gets its own free port automatically; the actual
+  `baseURL` is parsed out of the `Local: http://…` line on stdout.
+  The dev server includes `@netlify/vite-plugin`, which emulates
+  Netlify Blobs (used for recipe photos and avatars) and the rest
+  of the Netlify platform primitives — so we no longer need
+  `netlify dev` (or `netlify-cli`) at test time. Production deploy
+  still goes through `netlify.toml` + `@netlify/vite-plugin-react-router`.
 - Locally, `TESTCONTAINERS_REUSE_ENABLE=true` is honoured for fast
   iteration; CI always cold-starts.
 
@@ -658,9 +662,10 @@ That's it. `npm test` is `playwright test`, which:
 1. Runs `tests/global-setup.ts` — boots a `postgres:16` container
    via Testcontainers, applies the schema with `drizzle-kit push`,
    exports `DATABASE_URL`.
-2. Starts a `netlify dev` per Playwright worker via the `server`
+2. Starts a Vite dev server per Playwright worker via the `server`
    worker fixture (`tests/fixtures.ts`) — same React Router app,
-   same Function runtime as production, pointed at the container.
+   plus `@netlify/vite-plugin` for the Netlify primitives (Blobs,
+   etc.) the app uses at runtime, pointed at the container.
    Each worker also gets its own `mockttp` proxy (worker fixture),
    which specs configure on-demand through the opt-in `proxy` test
    fixture (`tests/proxy/mocks.ts`).

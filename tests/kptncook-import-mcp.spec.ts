@@ -1,6 +1,11 @@
 import { test, expect } from "./fixtures";
 import { login } from "./login";
-import { runOAuthFlow, mcpClient, jsonFromToolResult } from "./mcp-helpers";
+import {
+  runOAuthFlow,
+  mcpClient,
+  jsonFromToolResult,
+  setMcpBaseUrl,
+} from "./mcp-helpers";
 import { MOCK_RECIPES } from "./proxy/fixtures";
 import { mockKptncook } from "./proxy/mocks";
 
@@ -17,7 +22,8 @@ type FetchResult = {
 const SHARE_URL = `https://share.kptncook.com/${MOCK_RECIPES.cinnamonBuns.shareToken}`;
 
 test.describe("MCP kptncook_fetch_recipe", () => {
-  test.beforeEach(async ({ httpMocks }) => {
+  test.beforeEach(async ({ httpMocks, baseURL }) => {
+    setMcpBaseUrl(baseURL!);
     await mockKptncook(httpMocks, [MOCK_RECIPES.cinnamonBuns]);
   });
 

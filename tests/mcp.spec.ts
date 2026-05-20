@@ -6,7 +6,14 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { test, expect } from "./fixtures";
 import { login } from "./login";
 
-const BASE_URL = "http://localhost:8888";
+// Set per-test from the `baseURL` fixture. Lives at module scope so
+// the many helpers below don't all need plumbing — see beforeEach.
+let BASE_URL = "";
+
+test.beforeEach(({ baseURL }) => {
+  if (!baseURL) throw new Error("baseURL fixture not set");
+  BASE_URL = baseURL;
+});
 
 // Smallest possible valid PNG: 1x1 transparent pixel.
 const TINY_PNG = Buffer.from(

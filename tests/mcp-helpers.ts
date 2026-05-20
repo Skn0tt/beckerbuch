@@ -4,7 +4,14 @@ import type { Page } from "@playwright/test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-const BASE_URL = "http://localhost:8888";
+// Set per-test from outside via setMcpBaseUrl(); see callsites'
+// test.beforeEach. Keeping it module-scope avoids threading baseURL
+// through every helper signature.
+let BASE_URL = "";
+
+export function setMcpBaseUrl(url: string) {
+  BASE_URL = url;
+}
 
 function base64url(buf: Buffer): string {
   return buf.toString("base64url");

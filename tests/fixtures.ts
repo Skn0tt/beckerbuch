@@ -93,45 +93,44 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   ],
 
   // ---------------------------------------------------------------
-  // Worker-scoped: one `netlify dev` per worker, wired to mockttp.
+  // Worker-scoped: one Vite dev server per worker, wired to mockttp.
+  // We rely on `@netlify/vite-plugin` for Netlify primitive emulation
+  // (Blobs is the one we actually use — recipe photos round-trip
+  // through it). Vite is much faster to boot than `netlify dev`, and
+  // unlike the CLI it doesn't clobber OPENAI_API_KEY or inject an
+  // AI-Gateway base URL behind our backs.
   server: [
     async ({ mockttp }, use, workerInfo) => {
-      // `netlify dev --port 0` makes the CLI pick a free port itself
-      // (the underlying `get-port` lib starts from a random high port
-      // and walks until it finds something free). We parse the actual
-      // bound port out of stdout — "Local dev server ready:
-      // http://localhost:NNNNN".
-      const child = spawn(
-        "npx",
-        ["netlify", "dev", "--port", "0", "--no-open"],
-        {
-          stdio: ["ignore", "pipe", "pipe"],
-          // Put the child in its own process group so we can kill the
-          // whole tree on teardown — npx → netlify → react-router dev
-          // → vite are otherwise easy to leak.
-          detached: true,
-          env: {
-            ...process.env,
-            // globalSetup writes DATABASE_URL into process.env.
-            DATABASE_URL: process.env.DATABASE_URL,
-            NODE_ENV: process.env.NODE_ENV ?? "test",
-            SESSION_SECRET:
-              process.env.SESSION_SECRET ??
-              "test-only-not-a-secret-but-long-enough",
-            ADMIN_TOKEN: process.env.ADMIN_TOKEN ?? ADMIN_TOKEN,
-            // kptncook still wants an API key — the mock helper
-            // checks for this exact value and rejects anything else.
-            KPTNCOOK_API_KEY: process.env.KPTNCOOK_API_KEY ?? KPTNCOOK_TEST_API_KEY,
-            // The OpenAI SDK refuses to construct without an API
-            // key. The mock helper accepts any value.
-            OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "test-openai-key",
-            // Route all outbound HTTP(S) through this worker's
-            // mockttp proxy and trust its CA. Without these the app
-            // would hit the real internet.
-            ...mockttp.proxyEnv,
-          },
+      // Vite walks ports starting from `server.port` (default 5173)
+      // when the requested one is busy, so we don't need to allocate
+      // ourselves; the actual bound URL is parsed out of stdout.
+      const child = spawn("npx", ["vite"], {
+        stdio: ["ignore", "pipe", "pipe"],
+        // Put the child in its own process group so we can kill the
+        // whole tree on teardown — npx → vite (→ worker threads,
+        // optimizer subprocesses) are otherwise easy to leak.
+        detached: true,
+        env: {
+          ...process.env,
+          // globalSetup writes DATABASE_URL into process.env.
+          DATABASE_URL: process.env.DATABASE_URL,
+          NODE_ENV: process.env.NODE_ENV ?? "test",
+          SESSION_SECRET:
+            process.env.SESSION_SECRET ??
+            "test-only-not-a-secret-but-long-enough",
+          ADMIN_TOKEN: process.env.ADMIN_TOKEN ?? ADMIN_TOKEN,
+          // kptncook still wants an API key — the mock helper
+          // checks for this exact value and rejects anything else.
+          KPTNCOOK_API_KEY: process.env.KPTNCOOK_API_KEY ?? KPTNCOOK_TEST_API_KEY,
+          // The OpenAI SDK refuses to construct without an API
+          // key. The mock helper accepts any value.
+          OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "test-openai-key",
+          // Route all outbound HTTP(S) through this worker's
+          // mockttp proxy and trust its CA. Without these the app
+          // would hit the real internet.
+          ...mockttp.proxyEnv,
         },
-      );
+      });
 
       const baseURLPromise = readyURLFromStdout(child, 180_000);
 
@@ -139,7 +138,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         child.once("exit", (code, signal) => {
           reject(
             new Error(
-              `netlify dev (worker ${workerInfo.parallelIndex}) exited unexpectedly (code=${code} signal=${signal})`,
+              `vite (worker ${workerInfo.parallelIndex}) exited unexpectedly (code=${code} signal=${signal})`,
             ),
           );
         });
@@ -300,7 +299,8 @@ function readyURLFromStdout(
     }
     let buffer = "";
     let settled = false;
-    const re = /Local dev server ready:\s+(https?:\/\/[^\s│]+)/;
+    // Vite prints: "  ➜  Local:   http://localhost:NNNN/"
+    const re = /Local:\s+(https?:\/\/\S+?)\/?\s*$/m;
     // eslint-disable-next-line no-control-regex
     const ansi = /\x1B\[[0-?]*[ -/]*[@-~]/g;
     const timer = setTimeout(() => {
@@ -308,7 +308,7 @@ function readyURLFromStdout(
       settled = true;
       reject(
         new Error(
-          `Timed out waiting for netlify dev ready line. Last stdout:\n${buffer.slice(-2000)}`,
+          `Timed out waiting for vite ready line. Last stdout:\n${buffer.slice(-2000)}`,
         ),
       );
     }, timeoutMs);
