@@ -1,6 +1,15 @@
 import { expect, test } from "./fixtures";
 import { login } from "./login";
 import type { Page } from "@playwright/test";
+import { mockOpenAiDedup } from "./proxy/mocks";
+
+test.beforeEach(async ({ httpMocks }) => {
+  // Default dedup behaviour: group by lowercased item name with
+  // trailing "s" stripped, emit merges for any group of ≥2 ids. The
+  // helper derives this from the request body when `merges` is
+  // omitted — matches what the previous static OpenAI handler did.
+  await mockOpenAiDedup(httpMocks);
+});
 
 /**
  * Create a recipe with a single ingredient via the new-recipe form,

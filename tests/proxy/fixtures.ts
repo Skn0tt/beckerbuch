@@ -1,5 +1,5 @@
-// Test fixtures for the mockttp proxy handlers. Imported both by the
-// proxy handlers (which serve these payloads) and by the specs (which
+// Test fixtures for the mockttp proxy mocks. Imported both by the
+// mock helpers (which serve these payloads) and by the specs (which
 // assert against them), so they stay the single source of truth.
 
 // Smallest possible valid JPEG: 1×1 white pixel. The kptncook photo
@@ -21,11 +21,18 @@ export const TINY_JPEG = Buffer.from(
   "hex",
 );
 
-// Test API key the kptncook handler accepts. dev.mjs sets this as
-// KPTNCOOK_API_KEY on the netlify-dev child env.
+// Test API key the kptncook helper accepts. Worker fixtures set this
+// as KPTNCOOK_API_KEY on the netlify-dev child env.
 export const KPTNCOOK_TEST_API_KEY = "test-kptn-api-key";
 
-const cinnamonBuns = {
+export interface MockKptncookRecipe {
+  oid: string;
+  uid: string;
+  shareToken: string;
+  payload: Record<string, unknown>;
+}
+
+const cinnamonBuns: MockKptncookRecipe = {
   oid: "0123456789abcdef01234567",
   uid: "BUN12345",
   shareToken: "BUN12345",
@@ -101,4 +108,3 @@ const cinnamonBuns = {
 };
 
 export const MOCK_RECIPES = { cinnamonBuns };
-export const ALL_KPTNCOOK_RECIPES = [cinnamonBuns];

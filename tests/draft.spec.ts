@@ -1,5 +1,12 @@
 import { expect, test } from "./fixtures";
 import { login } from "./login";
+import { mockOpenAiDedup } from "./proxy/mocks";
+
+// Finalise triggers dedup → OpenAI. Mock it so tests don't hit the
+// real API (which they couldn't, anyway — no real key in test).
+test.beforeEach(async ({ httpMocks }) => {
+  await mockOpenAiDedup(httpMocks);
+});
 
 async function createPasta(page: import("@playwright/test").Page) {
   await page.getByRole("link", { name: "+ New recipe" }).click();

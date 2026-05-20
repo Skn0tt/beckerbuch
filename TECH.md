@@ -437,8 +437,10 @@ trust model.
 Backend selection: `DEDUP_MODEL` overrides the model name passed to
 the OpenAI SDK (default `gpt-5-mini`, via the Netlify AI Gateway —
 no key configured in code, Netlify injects `OPENAI_API_KEY` /
-`OPENAI_BASE_URL`). During `npm test` the dev rig points the app at
-a mockttp proxy (`tests/proxy/`) which intercepts the call to
+`OPENAI_BASE_URL`). During `npm test` each Playwright worker runs a
+mockttp proxy; specs that exercise dedup opt in to the `proxy`
+fixture and register `mockOpenAiDedup(proxy, …)` from
+`tests/proxy/mocks.ts`, which intercepts the call to
 `api.openai.com` and returns a deterministic merge plan, so tests
 never hit a real LLM.
 
@@ -545,17 +547,21 @@ specific bug genuinely needs the smaller scope.
 
 The test process owns the database lifecycle end-to-end:
 
-- **Postgres** is launched by Playwright `globalSetup` via
-  Testcontainers (`@testcontainers/postgresql`, image pinned to
-  `postgres:16`). No `docker-compose.yml`, no orchestration script,
+- **Postgres** is launched by Playwright `globalSetup`
+  (`tests/global-setup.ts`) via Testcontainers
+  (`@testcontainers/postgresql`, image pinned to `postgres:16`).
+  No `docker-compose.yml`, no orchestration script,
   no `.env.development`. The container's connection string is
-  written into `process.env.DATABASE_URL` before the web server
-  boots. `globalTeardown` stops the container.
+  written into `process.env.DATABASE_URL` so worker fixtures
+  inherit it when spawning `netlify dev`.
 - **Schema** is applied with `drizzle-kit push` immediately after
   the container is ready.
-- **App** runs through `netlify dev` (Playwright `webServer` config),
-  pointing at the container. Same code, same Function runtime as
-  production.
+- **App** runs through `netlify dev`, spawned **per Playwright
+  worker** by the `server` fixture (`tests/fixtures.ts`). It's
+  started with `--port 0` so each worker gets a free port assigned
+  by the CLI; the actual `baseURL` is parsed out of the "Local dev
+  server ready: …" line on stdout. Same code, same Function runtime
+  as production.
 - Locally, `TESTCONTAINERS_REUSE_ENABLE=true` is honoured for fast
   iteration; CI always cold-starts.
 
@@ -632,14 +638,6 @@ No Postgres `services:` block in the workflow — Testcontainers
 handles it. The runner needs a Docker daemon, which GitHub-hosted
 Linux runners ship with.
 
-**Neon-branch-per-PR parity** runs as a separate workflow
-(`.github/workflows/neon-parity.yml`): per PR it creates an ephemeral
-Neon branch, applies migrations against it, and runs the full
-Playwright suite pointed at the branch URL (via `SKIP_TESTCONTAINER=1`
-in `dev.mjs`). Requires repo vars `NEON_PROJECT_ID` and secret
-`NEON_API_KEY`; the job is skipped if they're not set, so forks still
-get a green CI signal from the main workflow.
-
 ---
 
 ## 11. Local development = the E2E loop
@@ -660,13 +658,19 @@ That's it. `npm test` is `playwright test`, which:
 1. Runs `tests/global-setup.ts` — boots a `postgres:16` container
    via Testcontainers, applies the schema with `drizzle-kit push`,
    exports `DATABASE_URL`.
-2. Starts the web server (`netlify dev`) via Playwright's `webServer`
-   config — same React Router app, same Function runtime as
-   production, pointed at the container.
+2. Starts a `netlify dev` per Playwright worker via the `server`
+   worker fixture (`tests/fixtures.ts`) — same React Router app,
+   same Function runtime as production, pointed at the container.
+   Each worker also gets its own `mockttp` proxy (worker fixture),
+   which specs configure on-demand through the opt-in `proxy` test
+   fixture (`tests/proxy/mocks.ts`).
 3. Runs the suite. Each test that asks for a tenant gets a fresh
    user/flat via the `tenant` fixture (§10.3) and logs in via the
    real form using the `login()` helper.
-4. The teardown function returned by `globalSetup` stops the container (no separate `global-teardown.ts` file).
+4. No teardown — the `postgres:16` container is started with
+   `withReuse()`, so it survives across `playwright test` invocations
+   on a developer machine for fast iteration. CI cold-starts each
+   run.
 
 Local Postgres ↔ production parity is enforced the same way it is
 in CI (§11.2): same `pg` driver, same extensions, pinned major.

@@ -1,5 +1,10 @@
 import { expect, test } from "./fixtures";
 import { login } from "./login";
+import { mockOpenAiDedup } from "./proxy/mocks";
+
+test.beforeEach(async ({ httpMocks }) => {
+  await mockOpenAiDedup(httpMocks);
+});
 
 async function createPasta(page: import("@playwright/test").Page) {
   await page.getByRole("link", { name: "+ New recipe" }).click();

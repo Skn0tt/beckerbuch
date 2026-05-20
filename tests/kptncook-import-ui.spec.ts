@@ -1,10 +1,15 @@
 import { test, expect } from "./fixtures";
 import { login } from "./login";
-import { MOCK_RECIPES } from "./proxy/fixtures.mjs";
+import { MOCK_RECIPES } from "./proxy/fixtures";
+import { mockKptncook } from "./proxy/mocks";
 
 const SHARE_URL = `https://share.kptncook.com/${MOCK_RECIPES.cinnamonBuns.shareToken}`;
 
 test.describe("kptncook import", () => {
+  test.beforeEach(async ({ httpMocks }) => {
+    await mockKptncook(httpMocks, [MOCK_RECIPES.cinnamonBuns]);
+  });
+
   test("UI: paste share URL → form prefilled → save creates the recipe", async ({
     page,
     flat,
