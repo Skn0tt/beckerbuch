@@ -147,7 +147,21 @@ test("designated cook picker — assign self, then unassign", async ({ page, fla
   const setUnassigned = page.getByLabel("Set cook to unassigned for Pasta al limone");
 
   await expect(setUnassigned).toHaveAttribute("aria-pressed", "true");
+
+  // submitCook uses a fire-and-forget useFetcher — wait for the POST
+  // to land before reloading, otherwise the reload races/cancels it.
+  // React Router posts fetcher submissions to <route>.data.
+  const waitForSetCook = () =>
+    page.waitForResponse(
+      (r) =>
+        r.request().method() === "POST" &&
+        r.url().endsWith("/kitchen.data") &&
+        r.status() < 400,
+    );
+
+  let cookSubmitted = waitForSetCook();
   await setSelf.click();
+  await cookSubmitted;
 
   // Reload — choice persisted.
   await page.reload();
@@ -159,7 +173,9 @@ test("designated cook picker — assign self, then unassign", async ({ page, fla
 
   // Unassign.
   await page.getByLabel("Choose cook for Pasta al limone").click();
+  cookSubmitted = waitForSetCook();
   await page.getByLabel("Set cook to unassigned for Pasta al limone").click();
+  await cookSubmitted;
   await page.reload();
   await page.getByLabel("Choose cook for Pasta al limone").click();
   await expect(
