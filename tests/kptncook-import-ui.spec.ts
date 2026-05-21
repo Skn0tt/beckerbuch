@@ -1,13 +1,29 @@
 import { test, expect } from "./fixtures";
 import { login } from "./login";
-import { MOCK_RECIPES } from "./proxy/fixtures";
-import { mockKptncook } from "./proxy/mocks";
+import { MOCK_RECIPES } from "./mock-data";
+import {
+  kptncookShareRedirectHandler,
+  kptncookSearchHandler,
+  kptncookImagesHandler,
+} from "./mock-handlers";
 
 const SHARE_URL = `https://share.kptncook.com/${MOCK_RECIPES.cinnamonBuns.shareToken}`;
 
 test.describe("kptncook import", () => {
-  test.beforeEach(async ({ httpMocks }) => {
-    await mockKptncook(httpMocks, [MOCK_RECIPES.cinnamonBuns]);
+  test.beforeEach(async ({ mocks }) => {
+    const recipes = [MOCK_RECIPES.cinnamonBuns];
+    await mocks.route(
+      /^https:\/\/share\.kptncook\.com\/[^/]+$/,
+      kptncookShareRedirectHandler(recipes),
+    );
+    await mocks.route(
+      "https://mobile.kptncook.com/recipes/search**",
+      kptncookSearchHandler(recipes),
+    );
+    await mocks.route(
+      /^https:\/\/mobile\.kptncook\.com\/images\/.+/,
+      kptncookImagesHandler(),
+    );
   });
 
   test("UI: paste share URL → form prefilled → save creates the recipe", async ({

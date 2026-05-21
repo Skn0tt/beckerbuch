@@ -1,4 +1,4 @@
-// Test fixtures for the mockttp proxy mocks. Imported both by the
+// Test fixtures for the HTTPS-MITM mock proxy. Imported both by the
 // mock helpers (which serve these payloads) and by the specs (which
 // assert against them), so they stay the single source of truth.
 
@@ -22,7 +22,7 @@ export const TINY_JPEG = Buffer.from(
 );
 
 // Test API key the kptncook helper accepts. Worker fixtures set this
-// as KPTNCOOK_API_KEY on the netlify-dev child env.
+// as KPTNCOOK_API_KEY on the vite-dev child env.
 export const KPTNCOOK_TEST_API_KEY = "test-kptn-api-key";
 
 export interface MockKptncookRecipe {

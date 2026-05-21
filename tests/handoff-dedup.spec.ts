@@ -1,14 +1,12 @@
 import { expect, test } from "./fixtures";
 import { login } from "./login";
 import type { Page } from "@playwright/test";
-import { mockOpenAiDedup } from "./proxy/mocks";
+import { openAiDedupHandler } from "./mock-handlers";
 
-test.beforeEach(async ({ httpMocks }) => {
-  // Default dedup behaviour: group by lowercased item name with
-  // trailing "s" stripped, emit merges for any group of ≥2 ids. The
-  // helper derives this from the request body when `merges` is
-  // omitted — matches what the previous static OpenAI handler did.
-  await mockOpenAiDedup(httpMocks);
+const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
+
+test.beforeEach(async ({ mocks }) => {
+  await mocks.route(OPENAI_CHAT_URL, openAiDedupHandler());
 });
 
 /**

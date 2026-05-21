@@ -1,9 +1,9 @@
 import { expect, test } from "./fixtures";
 import { login } from "./login";
-import { mockOpenAiDedup } from "./proxy/mocks";
+import { openAiDedupHandler } from "./mock-handlers";
 
-test.beforeEach(async ({ httpMocks }) => {
-  await mockOpenAiDedup(httpMocks);
+test.beforeEach(async ({ mocks }) => {
+  await mocks.route("https://api.openai.com/v1/chat/completions", openAiDedupHandler());
 });
 
 async function createPasta(page: import("@playwright/test").Page) {

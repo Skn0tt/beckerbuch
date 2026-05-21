@@ -6,8 +6,12 @@ import {
   jsonFromToolResult,
   setMcpBaseUrl,
 } from "./mcp-helpers";
-import { MOCK_RECIPES } from "./proxy/fixtures";
-import { mockKptncook } from "./proxy/mocks";
+import { MOCK_RECIPES } from "./mock-data";
+import {
+  kptncookShareRedirectHandler,
+  kptncookSearchHandler,
+  kptncookImagesHandler,
+} from "./mock-handlers";
 
 type FetchResult = {
   name: string;
@@ -22,9 +26,21 @@ type FetchResult = {
 const SHARE_URL = `https://share.kptncook.com/${MOCK_RECIPES.cinnamonBuns.shareToken}`;
 
 test.describe("MCP kptncook_fetch_recipe", () => {
-  test.beforeEach(async ({ httpMocks, baseURL }) => {
+  test.beforeEach(async ({ mocks, baseURL }) => {
     setMcpBaseUrl(baseURL!);
-    await mockKptncook(httpMocks, [MOCK_RECIPES.cinnamonBuns]);
+    const recipes = [MOCK_RECIPES.cinnamonBuns];
+    await mocks.route(
+      /^https:\/\/share\.kptncook\.com\/[^/]+$/,
+      kptncookShareRedirectHandler(recipes),
+    );
+    await mocks.route(
+      "https://mobile.kptncook.com/recipes/search**",
+      kptncookSearchHandler(recipes),
+    );
+    await mocks.route(
+      /^https:\/\/mobile\.kptncook\.com\/images\/.+/,
+      kptncookImagesHandler(),
+    );
   });
 
   test("returns normalized payload for a share URL", async ({ page, flat }) => {

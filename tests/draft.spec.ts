@@ -1,11 +1,11 @@
 import { expect, test } from "./fixtures";
 import { login } from "./login";
-import { mockOpenAiDedup } from "./proxy/mocks";
+import { openAiDedupHandler } from "./mock-handlers";
 
 // Finalise triggers dedup → OpenAI. Mock it so tests don't hit the
 // real API (which they couldn't, anyway — no real key in test).
-test.beforeEach(async ({ httpMocks }) => {
-  await mockOpenAiDedup(httpMocks);
+test.beforeEach(async ({ mocks }) => {
+  await mocks.route("https://api.openai.com/v1/chat/completions", openAiDedupHandler());
 });
 
 async function createPasta(page: import("@playwright/test").Page) {

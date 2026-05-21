@@ -438,11 +438,11 @@ Backend selection: `DEDUP_MODEL` overrides the model name passed to
 the OpenAI SDK (default `gpt-5-mini`, via the Netlify AI Gateway —
 no key configured in code, Netlify injects `OPENAI_API_KEY` /
 `OPENAI_BASE_URL`). During `npm test` each Playwright worker runs a
-mockttp proxy; specs that exercise dedup opt in to the `proxy`
-fixture and register `mockOpenAiDedup(proxy, …)` from
-`tests/proxy/mocks.ts`, which intercepts the call to
-`api.openai.com` and returns a deterministic merge plan, so tests
-never hit a real LLM.
+bespoke HTTPS-MITM forward proxy (`tests/proxy/`); specs that exercise
+dedup opt in to the `mocks` fixture and register an OpenAI route via
+`mocks.route("https://api.openai.com/v1/chat/completions", openAiDedupHandler())`
+(from `tests/mock-handlers.ts`), which returns a deterministic merge
+plan, so tests never hit a real LLM.
 
 ---
 
@@ -666,9 +666,10 @@ That's it. `npm test` is `playwright test`, which:
    worker fixture (`tests/fixtures.ts`) — same React Router app,
    plus `@netlify/vite-plugin` for the Netlify primitives (Blobs,
    etc.) the app uses at runtime, pointed at the container.
-   Each worker also gets its own `mockttp` proxy (worker fixture),
-   which specs configure on-demand through the opt-in `proxy` test
-   fixture (`tests/proxy/mocks.ts`).
+   Each worker also gets its own HTTPS-MITM forward proxy (worker
+   fixture), which specs configure on-demand through the opt-in
+   `mocks` test fixture using `mocks.route(pattern, handler)` and the
+   factories in `tests/mock-handlers.ts`.
 3. Runs the suite. Each test that asks for a tenant gets a fresh
    user/flat via the `tenant` fixture (§10.3) and logs in via the
    real form using the `login()` helper.
