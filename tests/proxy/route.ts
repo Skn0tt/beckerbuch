@@ -1,10 +1,13 @@
-// Playwright-shaped Route: wraps the decrypted incoming HTTP request
-// inside the proxy, and gives the handler a fetch-API Request plus
-// fulfill/continue/abort/fetch knobs. Mirrors the shape of
-// page.route() in Playwright so specs feel familiar.
+// Playwright-shaped Route + ProxyRequest/ProxyResponse pair. The same
+// ProxyRequest wrapper is emitted on the proxy's "request" event and
+// returned from route.request(). ProxyResponse mirrors Playwright's
+// Response (url/status/statusText/headers/body/text/json/request).
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Agent } from "undici";
+
+// --------------------------------------------------------------------
+// Public types
 
 export interface FulfillOptions {
   status?: number;
@@ -27,13 +30,94 @@ export interface ContinueOptions {
 
 export type RouteHandler = (route: Route) => void | Promise<void>;
 
-// Internal: dispatcher used for outbound fetch from inside the proxy.
-// Must NOT use ProxyAgent — otherwise we'd recurse through ourselves.
-// Threaded from createProxy so tests can configure trusted CAs.
+/**
+ * Playwright-shape Request. Returned from `route.request()` AND emitted
+ * on the proxy's "request" event.
+ */
+export interface ProxyRequest {
+  url(): string;
+  method(): string;
+  /** Lower-cased keys, multi-value joined with `,` (Playwright shape). */
+  headers(): Record<string, string>;
+  /** Body as utf-8 text, or null if the request had no body. */
+  postData(): string | null;
+  /** Body as a Buffer, or null if the request had no body. */
+  postDataBuffer(): Buffer | null;
+  /** Body parsed as JSON. Throws if invalid JSON / no body. */
+  postDataJSON(): unknown;
+}
+
+/** Playwright-shape Response, fired on the proxy's "response" event. */
+export interface ProxyResponse {
+  url(): string;
+  status(): number;
+  statusText(): string;
+  headers(): Record<string, string>;
+  body(): Promise<Buffer>;
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+  request(): ProxyRequest;
+}
+
+/** What we send back to the client. Used to build a ProxyResponse. */
+export interface ResponseSnapshot {
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: Buffer;
+}
+
+// --------------------------------------------------------------------
+// ProxyRequest
+
+export function buildProxyRequest(
+  req: IncomingMessage,
+  absoluteUrl: string,
+  bodyBuf: Buffer,
+): ProxyRequest {
+  const method = req.method ?? "GET";
+  const headers = normaliseHeaders(req.rawHeaders);
+  const hasBody = bodyBuf.length > 0;
+  return {
+    url: () => absoluteUrl,
+    method: () => method,
+    headers: () => ({ ...headers }),
+    postData: () => (hasBody ? bodyBuf.toString("utf8") : null),
+    postDataBuffer: () => (hasBody ? Buffer.from(bodyBuf) : null),
+    postDataJSON: () => {
+      if (!hasBody) throw new Error("postDataJSON: request had no body");
+      return JSON.parse(bodyBuf.toString("utf8")) as unknown;
+    },
+  };
+}
+
+export function buildProxyResponse(
+  request: ProxyRequest,
+  snapshot: ResponseSnapshot,
+): ProxyResponse {
+  const headersLower: Record<string, string> = {};
+  for (const [k, v] of Object.entries(snapshot.headers)) {
+    headersLower[k.toLowerCase()] = v;
+  }
+  return {
+    url: () => request.url(),
+    status: () => snapshot.status,
+    statusText: () => snapshot.statusText,
+    headers: () => ({ ...headersLower }),
+    body: async () => Buffer.from(snapshot.body),
+    text: async () => snapshot.body.toString("utf8"),
+    json: async () => JSON.parse(snapshot.body.toString("utf8")) as unknown,
+    request: () => request,
+  };
+}
+
+// --------------------------------------------------------------------
+// Route
 
 export class Route {
   private settled = false;
-  private readonly _request: Request;
+  /** Recorded outbound response, populated by fulfill()/continue(). null = aborted. */
+  private snapshot: ResponseSnapshot | null = null;
 
   constructor(
     private readonly req: IncomingMessage,
@@ -42,12 +126,11 @@ export class Route {
     private readonly absoluteUrl: string,
     private readonly bodyBuf: Buffer,
     private readonly dispatcher: Agent,
-  ) {
-    this._request = buildRequest(req, absoluteUrl, bodyBuf);
-  }
+    private readonly _request: ProxyRequest,
+  ) {}
 
-  /** The intercepted request, as a fetch Request. */
-  request(): Request {
+  /** The intercepted request (Playwright-shape). */
+  request(): ProxyRequest {
     return this._request;
   }
 
@@ -69,7 +152,6 @@ export class Route {
       status = options.response.status;
       statusText = statusText ?? options.response.statusText;
       options.response.headers.forEach((v, k) => {
-        // Skip hop-by-hop + body-framing headers that Node sets itself.
         if (HOP_BY_HOP.has(k.toLowerCase())) return;
         if (k.toLowerCase() === "content-length") return;
         headers[k] = v;
@@ -98,6 +180,13 @@ export class Route {
 
     this.res.writeHead(status, statusText, headers);
     this.res.end(body);
+
+    this.snapshot = {
+      status,
+      statusText: statusText ?? defaultStatusText(status),
+      headers: flattenHeaders(headers),
+      body,
+    };
   }
 
   async continue(options: ContinueOptions = {}): Promise<void> {
@@ -114,6 +203,17 @@ export class Route {
     this.assertUnsettled();
     this.settled = true;
     this.res.socket?.destroy(new Error(`route.abort: ${reason}`));
+    // snapshot stays null → no "response" event emitted.
+  }
+
+  /** Has the route been fulfilled/continued/aborted? */
+  isSettled(): boolean {
+    return this.settled;
+  }
+
+  /** Captured snapshot of what we sent back, or null if aborted/not settled. */
+  responseSnapshot(): ResponseSnapshot | null {
+    return this.snapshot;
   }
 
   private async doFetch(options: ContinueOptions): Promise<Response> {
@@ -154,11 +254,6 @@ export class Route {
     } as RequestInit & { dispatcher: unknown });
   }
 
-  /** Has the route been fulfilled/continued/aborted? */
-  isSettled(): boolean {
-    return this.settled;
-  }
-
   private assertUnsettled(): void {
     if (this.settled) {
       throw new Error("Route already settled (fulfilled/continued/aborted)");
@@ -166,45 +261,65 @@ export class Route {
   }
 }
 
-function buildRequest(
-  req: IncomingMessage,
-  absoluteUrl: string,
-  bodyBuf: Buffer,
-): Request {
-  const headers = new Headers();
-  for (let i = 0; i < req.rawHeaders.length; i += 2) {
-    const k = req.rawHeaders[i];
-    const v = req.rawHeaders[i + 1];
-    if (k.toLowerCase() === "host") continue;
-    headers.append(k, v);
+// --------------------------------------------------------------------
+// Helpers
+
+function normaliseHeaders(rawHeaders: string[]): Record<string, string> {
+  // Multi-value headers are joined with `, ` to match Playwright's shape.
+  const out: Record<string, string> = {};
+  for (let i = 0; i < rawHeaders.length; i += 2) {
+    const k = rawHeaders[i].toLowerCase();
+    const v = rawHeaders[i + 1];
+    out[k] = k in out ? `${out[k]}, ${v}` : v;
   }
-  const init: RequestInit = {
-    method: req.method ?? "GET",
-    headers,
-  };
-  if (methodHasBody(req.method ?? "GET") && bodyBuf.length > 0) {
-    init.body = toUint8(bodyBuf) as unknown as BodyInit;
-    // Required by undici for streaming bodies; harmless for buffers.
-    (init as { duplex?: string }).duplex = "half";
-  }
-  return new Request(absoluteUrl, init);
+  return out;
 }
+
+function flattenHeaders(
+  headers: Record<string, string | string[]>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers)) {
+    out[k.toLowerCase()] = Array.isArray(v) ? v.join(", ") : v;
+  }
+  return out;
+}
+
+function defaultStatusText(status: number): string {
+  // Tiny subset is enough — Node fills the rest, but our snapshot must
+  // be a plain string when no statusText was supplied.
+  return STATUS_TEXTS[status] ?? "";
+}
+
+const STATUS_TEXTS: Record<number, string> = {
+  200: "OK",
+  201: "Created",
+  204: "No Content",
+  301: "Moved Permanently",
+  302: "Found",
+  304: "Not Modified",
+  400: "Bad Request",
+  401: "Unauthorized",
+  403: "Forbidden",
+  404: "Not Found",
+  500: "Internal Server Error",
+  502: "Bad Gateway",
+  503: "Service Unavailable",
+};
 
 function toUint8(buf: string | Buffer | Uint8Array): Uint8Array {
   if (typeof buf === "string") return new TextEncoder().encode(buf);
-  // Copy into a plain ArrayBuffer-backed Uint8Array to avoid the
-  // SharedArrayBuffer-flavour incompatibility in BodyInit types.
   const out = new Uint8Array(buf.byteLength);
   out.set(buf);
   return out;
 }
 
-function methodHasBody(method: string): boolean {
+export function methodHasBody(method: string): boolean {
   const m = method.toUpperCase();
   return m !== "GET" && m !== "HEAD" && m !== "DELETE" && m !== "OPTIONS";
 }
 
-const HOP_BY_HOP = new Set([
+export const HOP_BY_HOP = new Set([
   "connection",
   "keep-alive",
   "proxy-authenticate",
@@ -228,8 +343,9 @@ function hasHeader(
 export type RoutePattern = string | RegExp | ((url: URL) => boolean);
 
 export function matchPattern(pattern: RoutePattern, urlStr: string): boolean {
-  const url = new URL(urlStr);
-  if (typeof pattern === "function") return pattern(url);
+  if (typeof pattern === "function") {
+    return pattern(new URL(urlStr));
+  }
   if (pattern instanceof RegExp) return pattern.test(urlStr);
   return globMatch(pattern, urlStr);
 }

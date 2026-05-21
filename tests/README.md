@@ -103,13 +103,47 @@ between tests on the same worker.
 The factories don't touch the proxy; specs hand the returned handler
 to `mocks.route(...)` themselves, keeping setup local to the test.
 
+### Events and waiters
+
+`mocks` also exposes Playwright-shape events and waiters so specs can
+**observe** outbound traffic without intercepting it:
+
+```ts
+test("dedup posts the right items", async ({ page, mocks, flat }) => {
+  await mocks.route(OPENAI_URL, openAiDedupHandler());
+
+  // race-free: subscribe BEFORE the trigger
+  const [req] = await Promise.all([
+    mocks.waitForRequest(OPENAI_URL, { timeout: 5_000 }),
+    page.getByRole("button", { name: "Finalise" }).click(),
+  ]);
+  expect(req.postDataJSON()).toMatchObject({ model: /gpt/ });
+
+  // or just listen
+  mocks.on("response", (res) => console.log(res.url(), res.status()));
+});
+```
+
+- `mocks.on("request" | "response", listener)` / `.once(...)` / `.off(...)` —
+  fire for every intercepted exchange (mocked or passthrough).
+- `mocks.waitForRequest(urlOrPredicate, { timeout? = 30_000 })` —
+  resolves with a `ProxyRequest` (url/method/headers/postData/
+  postDataBuffer/postDataJSON).
+- `mocks.waitForResponse(urlOrPredicate, { timeout? = 30_000 })` —
+  resolves with a `ProxyResponse` (url/status/statusText/headers/
+  body/text/json + back-link via `.request()`).
+- The matcher is the same shape as `route()`: string glob, RegExp, or
+  predicate. Predicates for `waitForResponse` receive the response.
+- The `mocks` fixture calls `removeAllListeners()` on teardown so
+  subscribers don't leak between tests.
+
 Layout under `tests/proxy/`:
 
 | File             | What it does                                             |
 | ---------------- | -------------------------------------------------------- |
 | `ca.ts`          | Per-worker root CA (RSA-2048 via `node-forge`).          |
 | `cert-cache.ts`  | LRU-cached per-host leaf certs minted on demand.         |
-| `server.ts`      | HTTP/CONNECT proxy: terminates TLS with the synthetic cert, parses the decrypted request, dispatches to the registered route or falls through to real-network passthrough. |
-| `route.ts`       | `Route` (Playwright-shaped) + glob/RegExp/predicate matcher. |
+| `server.ts`      | HTTP/CONNECT proxy: terminates TLS with the synthetic cert, parses the decrypted request, dispatches to the registered route or falls through to real-network passthrough. Emits `request`/`response` events and exposes `waitForRequest`/`waitForResponse`. |
+| `route.ts`       | `Route` + `ProxyRequest` + `ProxyResponse` + glob/RegExp/predicate matcher. |
 | `index.ts`       | Public exports.                                          |
 

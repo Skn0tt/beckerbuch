@@ -58,7 +58,7 @@ export function kptncookSearchHandler(recipes: MockKptncookRecipe[]): RouteHandl
     }
     let body: unknown;
     try {
-      body = await route.request().json();
+      body = route.request().postDataJSON();
     } catch {
       body = null;
     }
@@ -156,7 +156,7 @@ export function openAiDedupHandler(options: OpenAiDedupOptions = {}): RouteHandl
     type DedupRequestBody = { messages?: unknown; model?: unknown };
     let body: DedupRequestBody | null = null;
     try {
-      const json = (await route.request().json()) as unknown;
+      const json = route.request().postDataJSON() as unknown;
       if (json && typeof json === "object") body = json as DedupRequestBody;
     } catch {
       body = null;

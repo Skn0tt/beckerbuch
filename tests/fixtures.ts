@@ -151,6 +151,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   mocks: async ({ workerProxy }, use) => {
     await use(workerProxy);
     workerProxy.unrouteAll();
+    workerProxy.removeAllListeners();
   },
 
   /**
