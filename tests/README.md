@@ -10,7 +10,8 @@ cookies. See [TECH.md §10](../TECH.md) for the full testing model.
 | `global-setup.ts`       | Boots a `postgres:16` Testcontainer, enables extensions, runs `drizzle-kit push`, and writes `DATABASE_URL` into `process.env` so worker fixtures inherit it. |
 | `fixtures.ts`           | Playwright `test` extended with worker fixtures (`workerProxy`, `server`, `baseURL` override) and test fixtures (`flat`, opt-in `mocks`). Also exports `generateInvite(page, user)` for tests that need an invite URL — it logs the user in, drives the `/flat/settings` UI, and returns the freshly minted link. The `flat` fixture provisions a flat via the admin endpoint, then redeems the bootstrap invite via the public form to mint a real first user. |
 | `login.ts`              | Thin `login(page, user)` helper that fills the real form.     |
-| `proxy/`                | Bespoke HTTPS-MITM forward proxy + Playwright-shaped `Route` API. See [Mocking external APIs](#mocking-external-apis) below. |
+| `playwright-mocks/`     | Vendored library: Playwright-shaped `Route`/`ProxyRequest`/`ProxyResponse` facade on top of [`mockttp`](https://github.com/httptoolkit/mockttp), plus the `workerProxy` + `mocks` fixtures consumed via `mergeTests`. See [`playwright-mocks/README.md`](./playwright-mocks/README.md) for the full API. |
+| `mockttp-fixture/`      | Sibling library: the bare-minimum mockttp + Playwright integration (`workerProxy` + raw `Mockttp` as `mocks`). Reference artifact for comparison — not consumed by this repo's tests. See [`mockttp-fixture/README.md`](./mockttp-fixture/README.md). |
 | `mock-handlers.ts`      | Closure-factory helpers that build reusable `route` handlers (kptncook share/search/images, OpenAI dedup) without registering them — specs hand the returned handler to `mocks.route(...)` themselves. |
 | `mock-data.ts`          | Shared test payloads (cinnamon-buns recipe, tiny 1×1 JPEG, kptncook API key). |
 | `*.spec.ts`             | Specs. Import `test`/`expect` from `./fixtures`.              |
@@ -58,22 +59,17 @@ CI cold-starts.
 ## Mocking external APIs
 
 The app calls two external services: kptncook (recipe import) and
-OpenAI (shopping-list dedup). Both are mocked at the HTTP layer by a
-small bespoke HTTPS-MITM forward proxy under `tests/proxy/` that the
-`workerProxy` worker fixture starts **once per Playwright worker**.
-The `server` worker fixture wires the worker's Vite dev server to it
-via `HTTPS_PROXY` + `NODE_USE_ENV_PROXY=1` + `NODE_EXTRA_CA_CERTS`,
-so Node's global `fetch` natively routes through the proxy and
-trusts its generated CA. **App code calls real production URLs**
-(`https://mobile.kptncook.com`, `https://api.openai.com`, …) — there
-is no test-only base-URL env var or `if (test)` branch in `app/`.
+OpenAI (shopping-list dedup). Both are mocked at the HTTP layer by
+the vendored **[`playwright-mocks/`](./playwright-mocks/README.md)**
+library — a Playwright-shape facade over
+[mockttp](https://github.com/httptoolkit/mockttp). The library exposes
+its `workerProxy` + `mocks` fixtures, which this repo's
+`tests/fixtures.ts` composes with the rest via `mergeTests`. **App
+code calls real production URLs** — there is no test-only base-URL
+env var or `if (test)` branch in `app/`.
 
-The test-facing API is shaped like Playwright's `page.route()`:
-specs opt in to the test-scoped **`mocks` fixture** and call
-`mocks.route(pattern, handler)` directly. `pattern` is a glob string
-(`*`, `**`), a `RegExp`, or a `(url: URL) => boolean` predicate. The
-handler receives a `Route` with `request()`, `url()`, and
-`fulfill / continue / abort / fetch` — mirroring Playwright.
+Specs opt in to the test-scoped **`mocks` fixture** and call
+`mocks.route(pattern, handler, options?)` directly:
 
 ```ts
 import { test, expect } from "./fixtures";
@@ -85,65 +81,23 @@ test("import a recipe", async ({ page, flat, mocks }) => {
     /^https:\/\/share\.kptncook\.com\/[^/]+$/,
     kptncookShareRedirectHandler([MOCK_RECIPES.cinnamonBuns]),
   );
-  // …or write the handler inline:
   await mocks.route("https://api.openai.com/v1/chat/completions", async (route) => {
     await route.fulfill({ status: 200, json: { /* … */ } });
   });
 });
 ```
 
-There are **no auto-registered default handlers**: any request not
-matched by a route falls through to a real-network passthrough. The
-`mocks` fixture clears routes on teardown, so handlers never leak
-between tests on the same worker.
+`mock-handlers.ts` exposes closure factories that return ready-to-use
+route callbacks — specs hand them to `mocks.route(...)` themselves so
+setup stays local to the test.
 
-`mock-handlers.ts` exposes closure factories — `openAiDedupHandler`,
-`kptncookShareRedirectHandler`, `kptncookSearchHandler`,
-`kptncookImagesHandler` — that return a ready-to-use route callback.
-The factories don't touch the proxy; specs hand the returned handler
-to `mocks.route(...)` themselves, keeping setup local to the test.
+The proxy fixture clears routes + listeners on teardown, so handlers
+never leak between tests on the same worker. Unmatched requests fall
+through to a real-network passthrough.
 
-### Events and waiters
+**See [`playwright-mocks/README.md`](./playwright-mocks/README.md)
+for the full API** — `Route` methods, events, `waitForRequest` /
+`waitForResponse`, handler chains, `{ times }`, glob syntax, and the
+gaps vs Playwright.
 
-`mocks` also exposes Playwright-shape events and waiters so specs can
-**observe** outbound traffic without intercepting it:
-
-```ts
-test("dedup posts the right items", async ({ page, mocks, flat }) => {
-  await mocks.route(OPENAI_URL, openAiDedupHandler());
-
-  // race-free: subscribe BEFORE the trigger
-  const [req] = await Promise.all([
-    mocks.waitForRequest(OPENAI_URL, { timeout: 5_000 }),
-    page.getByRole("button", { name: "Finalise" }).click(),
-  ]);
-  expect(req.postDataJSON()).toMatchObject({ model: /gpt/ });
-
-  // or just listen
-  mocks.on("response", (res) => console.log(res.url(), res.status()));
-});
-```
-
-- `mocks.on("request" | "response", listener)` / `.once(...)` / `.off(...)` —
-  fire for every intercepted exchange (mocked or passthrough).
-- `mocks.waitForRequest(urlOrPredicate, { timeout? = 30_000 })` —
-  resolves with a `ProxyRequest` (url/method/headers/postData/
-  postDataBuffer/postDataJSON).
-- `mocks.waitForResponse(urlOrPredicate, { timeout? = 30_000 })` —
-  resolves with a `ProxyResponse` (url/status/statusText/headers/
-  body/text/json + back-link via `.request()`).
-- The matcher is the same shape as `route()`: string glob, RegExp, or
-  predicate. Predicates for `waitForResponse` receive the response.
-- The `mocks` fixture calls `removeAllListeners()` on teardown so
-  subscribers don't leak between tests.
-
-Layout under `tests/proxy/`:
-
-| File             | What it does                                             |
-| ---------------- | -------------------------------------------------------- |
-| `ca.ts`          | Per-worker root CA (RSA-2048 via `node-forge`).          |
-| `cert-cache.ts`  | LRU-cached per-host leaf certs minted on demand.         |
-| `server.ts`      | HTTP/CONNECT proxy: terminates TLS with the synthetic cert, parses the decrypted request, dispatches to the registered route or falls through to real-network passthrough. Emits `request`/`response` events and exposes `waitForRequest`/`waitForResponse`. |
-| `route.ts`       | `Route` + `ProxyRequest` + `ProxyResponse` + glob/RegExp/predicate matcher. |
-| `index.ts`       | Public exports.                                          |
 

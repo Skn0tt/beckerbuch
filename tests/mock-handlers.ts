@@ -3,7 +3,7 @@
 // `mocks.route(...)` inline. Helpers don't *register* anything — that
 // stays in the spec, next to the assertions.
 
-import type { RouteHandler } from "./proxy";
+import type { RouteHandler } from "./playwright-mocks/src";
 import {
   KPTNCOOK_TEST_API_KEY,
   TINY_JPEG,

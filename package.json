@@ -51,6 +51,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "mockttp": "^4.4.2",
     "node-forge": "^1.4.0",
     "postcss": "^8.5.14",
     "postcss-preset-mantine": "^1.18.0",

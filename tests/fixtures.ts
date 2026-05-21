@@ -1,9 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { test as base, expect, type Page } from "@playwright/test";
+import {
+  test as base,
+  expect,
+  mergeTests,
+  type Page,
+} from "@playwright/test";
 import { login } from "./login";
 import { KPTNCOOK_TEST_API_KEY } from "./mock-data";
-import { createProxy, type Proxy } from "./proxy";
+import {
+  test as mocksTest,
+  type MocksTestFixtures,
+  type MocksWorkerFixtures,
+} from "./playwright-mocks/src";
 
 const ADMIN_TOKEN = "test-admin-token";
 
@@ -27,41 +36,18 @@ export type ServerHandle = {
   baseURL: string;
 };
 
-export type WorkerFixtures = {
-  workerProxy: Proxy;
+export type AppWorkerFixtures = {
   server: ServerHandle;
 };
 
-export type TestFixtures = {
+export type AppTestFixtures = {
   flat: Flat;
-  /**
-   * Opt-in handle to the worker's MITM proxy. Asking for this fixture
-   * means: "I will register some mocks." The fixture clears any routes
-   * the test registered on teardown so the next test starts clean.
-   * Tests that don't list `mocks` in their args neither reset nor incur
-   * any per-test proxy cost.
-   *
-   * API mirrors Playwright's page.route():
-   *   `mocks.route(urlPattern, async route => …)`
-   *
-   * Named `mocks` rather than `proxy` to avoid colliding with
-   * Playwright's built-in `proxy` browser-context option.
-   */
-  mocks: Proxy;
 };
 
-export const test = base.extend<TestFixtures, WorkerFixtures>({
-  // ---------------------------------------------------------------
-  // Worker-scoped: one MITM proxy per worker.
-  workerProxy: [
-    async ({}, use) => {
-      const proxy = await createProxy();
-      await use(proxy);
-      await proxy.close();
-    },
-    { scope: "worker" },
-  ],
+export type WorkerFixtures = AppWorkerFixtures & MocksWorkerFixtures;
+export type TestFixtures = AppTestFixtures & MocksTestFixtures;
 
+const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixtures>({
   // ---------------------------------------------------------------
   // Worker-scoped: one Vite dev server per worker, wired to the proxy.
   // We rely on `@netlify/vite-plugin` for Netlify primitive emulation
@@ -144,16 +130,6 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     await use(server.baseURL);
   },
 
-  // ---------------------------------------------------------------
-  // Test-scoped, opt-in: hand the worker proxy to the spec, then
-  // clear the routes it registered on teardown. Specs that don't list
-  // `mocks` don't trigger any reset work.
-  mocks: async ({ workerProxy }, use) => {
-    await use(workerProxy);
-    workerProxy.unrouteAll();
-    workerProxy.removeAllListeners();
-  },
-
   /**
    * Provision a fresh flat plus a real first user. Talks to the admin
    * endpoint via Playwright's `request` fixture (so it shares the test
@@ -196,6 +172,12 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     await use({ id: body.flat.id, name: body.flat.name, user });
   },
 });
+
+// Compose the proxy fixtures (workerProxy + mocks) from the library
+// with this app's fixtures. `server` depends on `workerProxy` across
+// the merge — Playwright resolves cross-fixture deps because both
+// extensions chain off the same `base`.
+export const test = mergeTests(mocksTest, appTest);
 
 export { expect };
 
