@@ -96,7 +96,7 @@ export async function searchRecipes(input: {
           sql`${recipes.searchVector} @@ to_tsquery('simple', ${tsq})`,
         ),
       )
-      .orderBy(desc(rankExpr), desc(recipes.updatedAt));
+      .orderBy(desc(rankExpr), desc(recipes.updatedAt), asc(recipes.id));
     return limit === undefined ? query : query.limit(limit);
   }
 
@@ -109,7 +109,7 @@ export async function searchRecipes(input: {
     })
     .from(recipes)
     .where(eq(recipes.flatId, input.flatId))
-    .orderBy(desc(recipes.updatedAt));
+    .orderBy(desc(recipes.updatedAt), asc(recipes.id));
   return limit === undefined ? query : query.limit(limit);
 }
 
