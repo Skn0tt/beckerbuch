@@ -41,6 +41,7 @@ import { UserAvatar } from "./user-avatar";
 import type { KitchenEntry, KitchenMember } from "../lib/kitchen-data";
 
 type Lane = "draft" | "stock";
+const kitchenMobileQuery = "(max-width: 48em)";
 
 function NoteEditor({
   entry,
@@ -311,7 +312,7 @@ export function DraftCard({
       : entry.targetQuantity;
 
   const removeFetcher = useFetcher();
-  const isMobile = useMediaQuery("(max-width: 48em)");
+  const isMobile = useMediaQuery(kitchenMobileQuery);
   const [confirmRemove, { open: openConfirm, close: closeConfirm }] =
     useDisclosure(false);
 
@@ -368,7 +369,11 @@ export function DraftCard({
           wrap="nowrap"
           style={isMobile ? { flexDirection: "column" } : undefined}
         >
-          <Group gap="xs" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
+          <Group
+            gap="xs"
+            wrap="nowrap"
+            style={{ minWidth: 0, flex: 1, ...(isMobile ? { width: "100%" } : {}) }}
+          >
             {dragHandle ?? (
               <MoveButtons
                 entry={entry}
@@ -476,7 +481,7 @@ export function StockCard({
   formAction?: string;
   dragHandle?: ReactNode;
 }) {
-  const isMobile = useMediaQuery("(max-width: 48em)");
+  const isMobile = useMediaQuery(kitchenMobileQuery);
   const cookFetcher = useFetcher();
   const pendingCookRaw = cookFetcher.formData?.get("cookId");
   const pendingCook =
@@ -521,7 +526,11 @@ export function StockCard({
           wrap="nowrap"
           style={isMobile ? { flexDirection: "column" } : undefined}
         >
-          <Group gap="xs" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
+          <Group
+            gap="xs"
+            wrap="nowrap"
+            style={{ minWidth: 0, flex: 1, ...(isMobile ? { width: "100%" } : {}) }}
+          >
             {dragHandle ?? (
               <MoveButtons
                 entry={entry}

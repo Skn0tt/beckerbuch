@@ -72,12 +72,12 @@ test("mobile kitchen card puts recipe name above controls", async ({
   page,
   flat,
 }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   await login(page, flat.user);
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
   await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
 
-  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/kitchen");
 
   const recipeName = page.getByRole("link", { name: "Pasta al limone" }).first();
