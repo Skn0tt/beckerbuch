@@ -122,7 +122,7 @@ Playwright ships a [`webServer` config option](https://playwright.dev/docs/test-
 // playwright.config.ts
 export default defineConfig({
   webServer: {
-    command: "npm run dev",
+    command: "npm start",
     port: 5173,
   },
 });
