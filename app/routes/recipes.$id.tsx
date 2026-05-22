@@ -14,7 +14,15 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { and, eq, asc, count, isNotNull, isNull, max, sql } from "drizzle-orm";
-import { data, Form, Link, redirect, useActionData, useFetcher } from "react-router";
+import {
+  data,
+  Form,
+  Link,
+  redirect,
+  useActionData,
+  useFetcher,
+  useFetchers,
+} from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/recipes.$id";
 import { db } from "../db/client";
@@ -236,11 +244,7 @@ function DraftControls({
   csrfToken: string;
 }) {
   const qtyFetcher = useFetcher();
-  const pending = qtyFetcher.formData?.get("targetQuantity");
-  const current =
-    typeof pending === "string" && Number.isFinite(Number(pending))
-      ? Number(pending)
-      : targetQuantity;
+  const current = targetQuantity;
 
   const submitTarget = (next: number) => {
     if (next < 1 || next > 1000) return;
@@ -337,12 +341,40 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
   // Add-to-draft uses a fetcher so the loader revalidates and the
   // button flips to the "In draft" state without a full navigation.
   const addFetcher = useFetcher<{ added?: true; error?: string }>();
+  const fetchers = useFetchers();
   const addError = addFetcher.data?.error;
+  const pendingTargets = fetchers
+    .map((f) => f.formData)
+    .map((fd) => {
+      if (!fd) return null;
+      if (fd.get("intent") !== "update-quantity") return null;
+      const targetRaw = fd.get("targetQuantity");
+      if (
+        typeof targetRaw !== "string" ||
+        !Number.isInteger(Number(targetRaw)) ||
+        Number(targetRaw) < 1 ||
+        Number(targetRaw) > 1000
+      ) {
+        return null;
+      }
+      const instanceIdRaw = fd.get("instanceId");
+      if (
+        draftInstance &&
+        typeof instanceIdRaw === "string" &&
+        instanceIdRaw !== draftInstance.id
+      ) {
+        return null;
+      }
+      return Number(targetRaw);
+    });
+  const pendingDraftTarget =
+    [...pendingTargets].reverse().find((n): n is number => n !== null) ?? null;
+  const draftTargetQuantity = pendingDraftTarget ?? draftInstance?.targetQuantity;
   const scaledQuantity =
     stockInstance?.targetQuantity ??
-    draftInstance?.targetQuantity ??
+    draftTargetQuantity ??
     recipe.baseQuantity;
-  const factor = scaledQuantity / recipe.baseQuantity;
+  const factor = recipe.baseQuantity > 0 ? scaledQuantity / recipe.baseQuantity : 1;
   return (
     <Stack gap="md">
       {actionData?.error && (
@@ -376,7 +408,7 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
         ) : draftInstance ? (
           <DraftControls
             recipeName={recipe.name}
-            targetQuantity={draftInstance.targetQuantity}
+            targetQuantity={draftTargetQuantity ?? recipe.baseQuantity}
             csrfToken={csrfToken}
           />
         ) : (
