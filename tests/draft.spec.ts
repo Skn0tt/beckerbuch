@@ -68,6 +68,32 @@ test("kitchen empty state links back to collection", async ({ page, flat }) => {
   await expect(page.getByText(/Draft is empty/)).toBeVisible();
 });
 
+test("mobile kitchen card puts recipe name above controls", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+  await createPasta(page);
+  await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/kitchen");
+
+  const recipeName = page.getByRole("link", { name: "Pasta al limone" }).first();
+  const decrease = page
+    .getByRole("button", { name: "Decrease Pasta al limone portions" })
+    .first();
+  await expect(recipeName).toBeVisible();
+  await expect(decrease).toBeVisible();
+
+  const recipeBox = await recipeName.boundingBox();
+  const decreaseBox = await decrease.boundingBox();
+  expect(recipeBox).not.toBeNull();
+  expect(decreaseBox).not.toBeNull();
+  expect(decreaseBox!.y).toBeGreaterThan(recipeBox!.y + recipeBox!.height - 1);
+});
+
 test("draft is scoped to the flat — other flat's draft is invisible", async ({
   page,
   flat,

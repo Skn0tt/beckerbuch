@@ -14,7 +14,7 @@ import {
   Title,
   UnstyledButton,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
+import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Form, Link, useFetcher, useNavigation } from "react-router";
 import {
@@ -311,6 +311,7 @@ export function DraftCard({
       : entry.targetQuantity;
 
   const removeFetcher = useFetcher();
+  const isMobile = useMediaQuery("(max-width: 48em)");
   const [confirmRemove, { open: openConfirm, close: closeConfirm }] =
     useDisclosure(false);
 
@@ -361,7 +362,12 @@ export function DraftCard({
   return (
     <Card withBorder padding="sm">
       <Stack gap="xs">
-        <Group justify="space-between" align="center" wrap="nowrap">
+        <Group
+          justify="space-between"
+          align={isMobile ? "stretch" : "center"}
+          wrap="nowrap"
+          style={isMobile ? { flexDirection: "column" } : undefined}
+        >
           <Group gap="xs" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
             {dragHandle ?? (
               <MoveButtons
@@ -377,9 +383,13 @@ export function DraftCard({
               to={`/recipes/${entry.recipeId}`}
               fw={500}
               style={{
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
+                ...(isMobile
+                  ? { minWidth: 0, flex: 1 }
+                  : {
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }),
               }}
             >
               {entry.recipeName}
@@ -466,6 +476,7 @@ export function StockCard({
   formAction?: string;
   dragHandle?: ReactNode;
 }) {
+  const isMobile = useMediaQuery("(max-width: 48em)");
   const cookFetcher = useFetcher();
   const pendingCookRaw = cookFetcher.formData?.get("cookId");
   const pendingCook =
@@ -504,7 +515,12 @@ export function StockCard({
   return (
     <Card withBorder padding="sm">
       <Stack gap="xs">
-        <Group justify="space-between" align="center" wrap="nowrap">
+        <Group
+          justify="space-between"
+          align={isMobile ? "stretch" : "center"}
+          wrap="nowrap"
+          style={isMobile ? { flexDirection: "column" } : undefined}
+        >
           <Group gap="xs" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
             {dragHandle ?? (
               <MoveButtons
@@ -520,15 +536,19 @@ export function StockCard({
               to={`/recipes/${entry.recipeId}`}
               fw={500}
               style={{
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
+                ...(isMobile
+                  ? { minWidth: 0, flex: 1 }
+                  : {
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }),
               }}
             >
               {entry.recipeName}
             </Anchor>
           </Group>
-          <Group gap="xs" wrap="nowrap">
+          <Group gap="xs" wrap={isMobile ? "wrap" : "nowrap"}>
             <Text size="sm" c="dimmed">
               {entry.targetQuantity}
             </Text>
