@@ -122,3 +122,19 @@ test("display name is editable inline on settings", async ({ page, flat }) => {
     page.getByRole("listitem").filter({ hasText: flat.user.email }).getByText(nextName),
   ).toBeVisible();
 });
+
+test("display name saves on deselect (blur) in settings", async ({ page, flat }) => {
+  await login(page, flat.user);
+  await page.goto("/flat/settings");
+
+  const nextName = `${flat.user.displayName} Blur`;
+  await page.getByRole("button", { name: flat.user.displayName }).click();
+  const input = page.getByRole("textbox", { name: "Display name" });
+  await input.fill(nextName);
+  await page.getByRole("heading", { name: "Members" }).click();
+
+  await expect(page.getByTestId("current-user")).toHaveText(nextName);
+  await expect(
+    page.getByRole("listitem").filter({ hasText: flat.user.email }).getByText(nextName),
+  ).toBeVisible();
+});

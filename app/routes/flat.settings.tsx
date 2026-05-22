@@ -252,6 +252,7 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
                     onBlur={saveDisplayNameIfChanged}
                     onKeyDown={(e) => {
                       if (e.key === "Escape") {
+                        e.preventDefault();
                         setDisplayNameDraft(user.displayName);
                         setIsEditingName(false);
                       }
