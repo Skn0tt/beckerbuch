@@ -413,6 +413,27 @@ test.describe("MCP server", () => {
     expect(limited.isError).toBeFalsy();
     expect(jsonFromToolResult<{ results: unknown[] }>(limited).results).toHaveLength(2);
 
+    const deterministicA = await client.callTool({
+      name: "kochbuch_search_recipes",
+      arguments: { limit: 10 },
+    });
+    expect(deterministicA.isError).toBeFalsy();
+    const deterministicABody = jsonFromToolResult<{
+      results: Array<{ id: string; name: string }>;
+    }>(deterministicA);
+
+    const deterministicB = await client.callTool({
+      name: "kochbuch_search_recipes",
+      arguments: { limit: 10 },
+    });
+    expect(deterministicB.isError).toBeFalsy();
+    const deterministicBBody = jsonFromToolResult<{
+      results: Array<{ id: string; name: string }>;
+    }>(deterministicB);
+    expect(deterministicBBody.results.map((recipe) => recipe.id)).toEqual(
+      deterministicABody.results.map((recipe) => recipe.id),
+    );
+
     await client.close();
   });
 
