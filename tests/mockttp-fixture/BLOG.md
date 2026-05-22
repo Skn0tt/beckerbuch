@@ -158,17 +158,17 @@ function readyURLFromStdout(child: childProcess.ChildProcess): Promise<string> {
 }
 ```
 
-One practical tip: set `PORT: "0"` so the OS hands the dev server
-a free port — no collisions when workers run in parallel. Then
-parse the actual port out of stdout once the server is up.
+A tour of the env vars we pass in:
 
 *   `mockttp.proxyEnv` gives us `HTTP_PROXY` and `HTTPS_PROXY`
-    pointing at the worker's mockttp. We extend it with two more
-    env vars Node needs:
+    pointing at the worker's mockttp.
 *   `NODE_USE_ENV_PROXY=1` makes Node's built-in `fetch` honor
     `HTTPS_PROXY` (Node 20+).
 *   `NODE_EXTRA_CA_CERTS` only accepts a file path, so we write
     the CA to a temp file.
+*   `PORT: "0"` lets the OS hand the dev server a free port — no
+    collisions when workers run in parallel. We then parse the
+    actual port out of stdout once the server is up.
 
 
 ## Writing a Test
@@ -241,9 +241,9 @@ A few more notes:
 *   **In-process apps need `undici`'s `ProxyAgent`** instead of the
     env vars — the env-variable trick only works for child
     processes.
-*   **mockttp has an admin-server/remote control mode** If you cannot spawn the app from inside your worker process,
+*   **mockttp has an admin-server/remote control mode.** If you cannot spawn the app from inside your worker process,
     you can use this to connect to a mockttp instance running in a separate process.
-*   **`server.reset()` clears everything**, including the
+*   **`mockttp.reset()` clears everything**, including the
     passthrough — re-add it on teardown.
 
 That's it! One fixture, one helper, the full mockttp API at your
