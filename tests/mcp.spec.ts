@@ -175,6 +175,16 @@ function jsonFromToolResult<TResult>(
   return JSON.parse(textFromToolResult(result)) as TResult;
 }
 
+function recipeRefFromToolResult(
+  result: Awaited<ReturnType<Client["callTool"]>>,
+): { id: string; url: string } {
+  const body = jsonFromToolResult<Record<string, unknown>>(result);
+  expect(Object.keys(body).sort()).toEqual(["id", "url"]);
+  expect(body.id).toEqual(expect.any(String));
+  expect(body.url).toEqual(expect.any(String));
+  return body as { id: string; url: string };
+}
+
 async function addRecipeViaMcp(
   client: Client,
   args: {
@@ -195,7 +205,8 @@ async function addRecipeViaMcp(
     },
   });
   expect(callResult.isError).toBeFalsy();
-  const match = textFromToolResult(callResult).match(/\/recipes\/([0-9a-f-]{36})/);
+  const body = recipeRefFromToolResult(callResult);
+  const match = body.url.match(/\/recipes\/([0-9a-f-]{36})/);
   if (!match) throw new Error("tool did not return a recipe url");
   return match[1];
 }
@@ -267,6 +278,8 @@ test.describe("MCP server", () => {
       },
     });
     expect(callResult.isError).toBeFalsy();
+    const addBody = recipeRefFromToolResult(callResult);
+    expect(addBody.url).toContain(`/recipes/${addBody.id}`);
     await client.close();
 
     await page.goto("/");
@@ -495,7 +508,10 @@ test.describe("MCP server", () => {
       arguments: { id: recipeId, name: "New Name" },
     });
     expect(editName.isError).toBeFalsy();
-    expect(jsonFromToolResult<{ name: string }>(editName).name).toBe("New Name");
+    expect(recipeRefFromToolResult(editName)).toEqual({
+      id: recipeId,
+      url: `${BASE_URL}/recipes/${recipeId}`,
+    });
 
     const editIngredients = await client.callTool({
       name: "kochbuch_edit_recipe",
@@ -508,14 +524,10 @@ test.describe("MCP server", () => {
       },
     });
     expect(editIngredients.isError).toBeFalsy();
-    expect(
-      jsonFromToolResult<{
-        ingredients: Array<{ amount: string | null; unit: string | null; item: string }>;
-      }>(editIngredients).ingredients,
-    ).toEqual([
-      { amount: "200", unit: "g", item: "pasta" },
-      { amount: null, unit: null, item: "pepper" },
-    ]);
+    expect(recipeRefFromToolResult(editIngredients)).toEqual({
+      id: recipeId,
+      url: `${BASE_URL}/recipes/${recipeId}`,
+    });
 
     await client.close();
 
@@ -548,7 +560,16 @@ test.describe("MCP server", () => {
         arguments: { id: recipeId, photoUrl: `${baseUrl}/img.png` },
       });
       expect(addPhoto.isError).toBeFalsy();
-      expect(jsonFromToolResult<{ photoUrl: string | null }>(addPhoto).photoUrl).toContain(
+      expect(recipeRefFromToolResult(addPhoto)).toEqual({
+        id: recipeId,
+        url: `${BASE_URL}/recipes/${recipeId}`,
+      });
+      const getAfterAddPhoto = await client.callTool({
+        name: "kochbuch_get_recipe",
+        arguments: { id: recipeId },
+      });
+      expect(getAfterAddPhoto.isError).toBeFalsy();
+      expect(jsonFromToolResult<{ photoUrl: string | null }>(getAfterAddPhoto).photoUrl).toContain(
         `/r/${recipeId}/photo`,
       );
 
@@ -560,7 +581,16 @@ test.describe("MCP server", () => {
         arguments: { id: recipeId, removePhoto: true },
       });
       expect(removePhoto.isError).toBeFalsy();
-      expect(jsonFromToolResult<{ photoUrl: string | null }>(removePhoto).photoUrl).toBeNull();
+      expect(recipeRefFromToolResult(removePhoto)).toEqual({
+        id: recipeId,
+        url: `${BASE_URL}/recipes/${recipeId}`,
+      });
+      const getAfterRemovePhoto = await client.callTool({
+        name: "kochbuch_get_recipe",
+        arguments: { id: recipeId },
+      });
+      expect(getAfterRemovePhoto.isError).toBeFalsy();
+      expect(jsonFromToolResult<{ photoUrl: string | null }>(getAfterRemovePhoto).photoUrl).toBeNull();
       await client.close();
 
       await page.goto(`/recipes/${recipeId}`);
@@ -675,10 +705,19 @@ test.describe("MCP server", () => {
       },
     });
     expect(editBoth.isError).toBeFalsy();
+    expect(recipeRefFromToolResult(editBoth)).toEqual({
+      id: recipeId,
+      url: `${BASE_URL}/recipes/${recipeId}`,
+    });
+    const getEdited = await client.callTool({
+      name: "kochbuch_get_recipe",
+      arguments: { id: recipeId },
+    });
+    expect(getEdited.isError).toBeFalsy();
     const body = jsonFromToolResult<{
       baseQuantity: number;
       ingredients: Array<{ amount: string | null; unit: string | null; item: string }>;
-    }>(editBoth);
+    }>(getEdited);
     expect(body.baseQuantity).toBe(6);
     expect(body.ingredients).toEqual([
       { amount: "1", unit: "cup", item: "rice" },
