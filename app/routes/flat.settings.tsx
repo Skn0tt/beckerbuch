@@ -1,9 +1,11 @@
 import {
   Alert,
   Anchor,
+  Avatar,
   Button,
   Container,
   CopyButton,
+  FileInput,
   Group,
   List,
   Paper,
@@ -12,6 +14,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
+import { useEffect, useMemo, useState } from "react";
 import { Form, redirect, useActionData } from "react-router";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -24,7 +27,12 @@ import { isSameOrigin } from "../auth/origin";
 import { CsrfField } from "../auth/csrf-field";
 import { generateInviteToken } from "../auth/invite";
 import { UserAvatar } from "../components/user-avatar";
-import { deleteAvatar, storeAvatar, validateAvatar } from "../lib/avatars";
+import {
+  AVATAR_MAX_BYTES,
+  deleteAvatar,
+  storeAvatar,
+  validateAvatar,
+} from "../lib/avatars";
 import { firstMessage, formDataToObject } from "../lib/form";
 
 const ActionSchema = z.discriminatedUnion("intent", [
@@ -165,6 +173,17 @@ export async function action({ request }: Route.ActionArgs) {
 export default function FlatSettings({ loaderData }: Route.ComponentProps) {
   const actionData = useActionData<{ error?: string } | undefined>();
   const { members, currentInvite, origin, csrfToken, user } = loaderData;
+  const [pendingAvatar, setPendingAvatar] = useState<File | null>(null);
+  const pendingAvatarUrl = useMemo(
+    () => (pendingAvatar ? URL.createObjectURL(pendingAvatar) : null),
+    [pendingAvatar],
+  );
+  useEffect(
+    () => () => {
+      if (pendingAvatarUrl) URL.revokeObjectURL(pendingAvatarUrl);
+    },
+    [pendingAvatarUrl],
+  );
   const inviteUrl = currentInvite
     ? `${origin}/invite/${currentInvite.token}`
     : null;
@@ -192,14 +211,29 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
                 <Text size="sm" fw={500}>
                   Profile picture
                 </Text>
-                <input
-                  type="file"
+                <FileInput
                   name="avatar"
+                  onChange={setPendingAvatar}
                   aria-label="Profile picture"
                   accept="image/png,image/jpeg,image/webp"
+                  placeholder="Choose an image…"
+                  clearable
                 />
+                <Text c="dimmed" size="xs">
+                  JPEG, PNG, or WebP up to {AVATAR_MAX_BYTES / 1024 / 1024} MB.
+                </Text>
+                {pendingAvatarUrl ? (
+                  <Group gap="sm" wrap="nowrap">
+                    <Avatar
+                      src={pendingAvatarUrl}
+                      alt="Selected profile picture preview"
+                      radius="xl"
+                    />
+                    <Text size="sm">{pendingAvatar?.name ?? ""}</Text>
+                  </Group>
+                ) : null}
                 <Group>
-                  <Button type="submit" variant="default">
+                  <Button type="submit" variant="default" disabled={!pendingAvatar}>
                     Upload
                   </Button>
                 </Group>

@@ -89,13 +89,21 @@ test("upload and remove profile picture in settings", async ({ page, flat }) => 
   await login(page, flat.user);
   await page.goto("/flat/settings");
 
+  const uploadButton = page.getByRole("button", { name: "Upload" });
+  await expect(uploadButton).toBeDisabled();
+
   const profilePicture = page.locator('input[type="file"][name="avatar"]');
   await profilePicture.setInputFiles({
     name: "avatar.png",
     mimeType: "image/png",
     buffer: TINY_PNG,
   });
-  await page.getByRole("button", { name: "Upload" }).click();
+  await expect(uploadButton).toBeEnabled();
+  await expect(
+    page.getByRole("img", { name: "Selected profile picture preview" }),
+  ).toBeVisible();
+  await expect(page.locator("p", { hasText: "avatar.png" })).toBeVisible();
+  await uploadButton.click();
 
   await expect(page.getByRole("button", { name: "Remove picture" })).toBeVisible();
 
