@@ -258,6 +258,8 @@ test("search filters by name + ingredient + source host", async ({ page, flat })
 
   await createRecipe(page, { name: "Pasta al limone", ingredient: "spaghetti" });
   await createRecipe(page, { name: "Chicken curry", ingredient: "chicken" });
+  await createRecipe(page, { name: "Salty noodles", ingredient: "salt" });
+  await createRecipe(page, { name: "Salt crust", ingredient: "salt" });
   await createRecipe(page, {
     name: "Sourdough loaf",
     ingredient: "flour",
@@ -282,6 +284,20 @@ test("search filters by name + ingredient + source host", async ({ page, flat })
   await search.press("Enter");
   await expect(cards).toHaveCount(1);
   await expect(cards.first()).toContainText("Chicken curry");
+
+  // Same query should keep the same result order across repeated searches.
+  await search.fill("salt");
+  await search.press("Enter");
+  await expect(cards).toHaveCount(2);
+  const firstSaltOrder = await cards.evaluateAll((links) =>
+    links.map((link) => (link as HTMLAnchorElement).getAttribute("href")),
+  );
+  await search.fill("salt");
+  await search.press("Enter");
+  const secondSaltOrder = await cards.evaluateAll((links) =>
+    links.map((link) => (link as HTMLAnchorElement).getAttribute("href")),
+  );
+  expect(secondSaltOrder).toEqual(firstSaltOrder);
 
   // Match by source host.
   await search.fill("kingarthur");
