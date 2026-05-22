@@ -1,42 +1,24 @@
 # Mocking Server Side HTTP in Playwright with mockttp
 
-I've been building a little recipe app for my household, and along
-the way I needed to mock out third-party APIs in my Playwright tests.
-This works wonderfully for browser requests with `page.route()`, but not for server-side HTTP calls.
-Initially I had mock-only branches mixed into server code, but that got complicated quickly — especially with multiple APIs, and when the same API needed to be mocked differently in different tests.
-I landed on a setup around an HTTP proxy that intercepts and mocks outgoing traffic from the server,
-configured from the test code.
+I've been building a little recipe app for my household. Along the way I needed to mock out third-party APIs in my Playwright tests. For browser requests that's [`page.route()`](https://playwright.dev/docs/network#handle-requests), and it works wonderfully. For server-side HTTP calls, it doesn't.
+
+I tried mock-only branches inside the server code. That got messy fast, especially when the same API had to behave differently in different tests. So I went looking for something cleaner.
+
+I landed on a forward proxy that intercepts outgoing traffic from the server, configured from the test code. Here's how it works.
 
 ## The Idea
 
-Instead of patching modules or adding a `process.env.TEST` branch, we mock at the **network boundary**.
-Our app makes the same HTTPS calls it always makes; a forward proxy sits in front and decides
-whether to answer with a canned response or pass the request through.
-What makes this work is the `HTTP_PROXY`/`HTTPS_PROXY` env var convention — a de-facto standard
-that almost every HTTP client honours.
+Instead of patching modules or adding `if (process.env.TEST)` branches, we mock at the network boundary. The app makes the same HTTPS calls it always makes. A forward proxy sits in front and decides whether to answer with a canned response or pass the request through.
 
-I use the [**mockttp**](https://github.com/httptoolkit/mockttp) library as the proxy. It:
+What makes this work is the `HTTP_PROXY` / `HTTPS_PROXY` env var convention. Almost every HTTP client honours it.
 
-*   🔐 Generates a CA on the fly
-*   🌐 Runs an HTTP / HTTPS forward proxy in-process
-*   🧱 Provides a fluent rule builder for mocks
+I use [mockttp](https://github.com/httptoolkit/mockttp) as the proxy. It generates a TLS certificate on the fly, runs an HTTP/HTTPS forward proxy in-process, and ships a fluent rule builder for mocks. We start one per Playwright worker, and every test configures it as it likes.
 
-It is started once per Playwright worker, and every test can configure it to its liking.
-
-> The snippets below show a Node dev server, but **none of this is
-> Node-specific** — any language whose HTTP client respects
-> `HTTP_PROXY`/`HTTPS_PROXY` works the same way (Python, Go, Ruby,
-> Rust, .NET; Java needs `-Dhttps.proxyHost`/`-Dhttps.proxyPort`
-> instead of env vars). You'll need to teach each runtime to
-> trust mockttp's auto-generated CA — `SSL_CERT_FILE` for Python
-> and Ruby, `SSL_CERT_DIR` for Go, and so on.
+> The snippets below show a Node dev server, but none of this is Node-specific. Any language whose HTTP client respects `HTTP_PROXY` / `HTTPS_PROXY` works the same way: Python, Go, Ruby, Rust, .NET. Java needs `-Dhttps.proxyHost` / `-Dhttps.proxyPort` instead of env vars. You'll also need to teach each runtime to trust mockttp's certificate: `SSL_CERT_FILE` for Python and Ruby, `SSL_CERT_DIR` for Go, and so on.
 
 ## Setting Up the Fixture
 
-We're setting up mockttp as a [Playwright custom
-fixture](https://playwright.dev/docs/test-fixtures) so every test
-gets a clean, isolated set of mocks. Here's the whole integration
-in one file:
+We set up mockttp as a [Playwright custom fixture](https://playwright.dev/docs/test-fixtures), so every test gets a clean, isolated set of mocks. Here's the whole integration in one file:
 
 ```ts
 // tests/fixtures.ts
@@ -73,18 +55,13 @@ export { expect } from "@playwright/test";
 
 A quick tour of the moving parts:
 
-*   The **`mockttp` fixture is worker-scoped** — one mockttp server
-    and one CA per Playwright worker.
-*   The **`mocks` fixture is test-scoped** — each test gets a
-    clean rule set thanks to `mockttp.reset()` on teardown.
-*   `forUnmatchedRequest().thenPassThrough()` is our **default**
-    so that requests we didn't mock still go through. `reset()`
-    clears it too, so we re-add it after.
+1.  The `mockttp` fixture is **worker-scoped**. One mockttp server and one TLS certificate per Playwright worker.
+2.  The `mocks` fixture is **test-scoped**. Each test gets a clean rule set thanks to `mockttp.reset()` on teardown.
+3.  [`forUnmatchedRequest().thenPassThrough()`](https://httptoolkit.com/docs/mockttp/api/classes/Mockttp/#forunmatchedrequest) is our default, so requests we didn't mock still go through. `reset()` clears it too, so we re-add it after.
 
 ## Why `webServer` in `playwright.config.ts` Doesn't Fit
 
-Playwright ships a [`webServer` config option](https://playwright.dev/docs/test-webserver)
-that boots your app before tests run:
+Playwright ships a [`webServer` config option](https://playwright.dev/docs/test-webserver) that boots your app before tests run:
 
 ```ts
 // playwright.config.ts
@@ -96,17 +73,9 @@ export default defineConfig({
 });
 ```
 
-It's convenient — but it starts **one process for the whole test
-run**, before any worker fixture has a chance to set up. Our
-mockttp instance is **per-worker**, with its own CA and its own
-port, so the `webServer` process can't pick up the right
-`HTTPS_PROXY` and `NODE_EXTRA_CA_CERTS` — those env vars don't
-exist at the time it boots.
+It's convenient, but it starts **one process for the whole test run**, before any worker fixture has a chance to set up. Our mockttp instance is per-worker, with its own certificate and its own port. The `webServer` process can't pick up the right `HTTPS_PROXY` and `NODE_EXTRA_CA_CERTS`. Those env vars don't exist yet at the time it boots.
 
-The fix: spawn the dev server yourself from a worker fixture
-(again, [custom fixtures docs](https://playwright.dev/docs/test-fixtures)),
-pass in the proxy's env, and override `baseURL` so
-`page.goto("/")` still works:
+The fix: spawn the dev server yourself from a worker fixture (again, [custom fixtures docs](https://playwright.dev/docs/test-fixtures)), pass in the proxy's env, and override `baseURL` so `page.goto("/")` still works.
 
 ```ts
 // tests/fixtures.ts (continued)
@@ -155,21 +124,15 @@ test.extend<{}, { devServer: { baseURL: string } }>({
 
 A tour of the env vars we pass in:
 
-*   `mockttp.proxyEnv` gives us `HTTP_PROXY` and `HTTPS_PROXY`
-    pointing at the worker's mockttp.
-*   `NODE_USE_ENV_PROXY=1` makes Node's built-in `fetch` honor
-    `HTTPS_PROXY` (Node 20+).
-*   `NODE_EXTRA_CA_CERTS` only accepts a file path, so we write
-    the CA to a temp file.
-*   `PORT: "0"` lets the OS hand the dev server a free port — no
-    collisions when workers run in parallel. We then parse the
-    actual port out of stdout once the server is up.
+1.  [`mockttp.proxyEnv`](https://httptoolkit.com/docs/mockttp/api/classes/Mockttp/#proxyenv) gives us `HTTP_PROXY` and `HTTPS_PROXY` pointing at the worker's mockttp.
+2.  `NODE_USE_ENV_PROXY=1` makes [Node's built-in `fetch`](https://nodejs.org/api/cli.html#node_use_env_proxy1) honor `HTTPS_PROXY` (Node 20+).
+3.  `NODE_EXTRA_CA_CERTS` only accepts a file path, so we write the certificate to a temp file.
+4.  `PORT: "0"` lets the OS hand the dev server a free port, so workers don't collide. We parse the actual port out of stdout once the server is up.
 
 
 ## Writing a Test
 
-Now the fun part — mocks live right next to the assertions that
-depend on them:
+Now the fun part. Mocks live right next to the assertions that depend on them:
 
 ```ts
 // tests/recipes.spec.ts
@@ -188,17 +151,11 @@ test("summarises a recipe", async ({ page, mocks }) => {
 });
 ```
 
-No shared `mocks/` directory, no "which canned response is this
-test using?" question. **The test owns its mocks.**
+No shared `mocks/` directory, no "which canned response is this test using?" question. The test owns its mocks.
 
 ## Beyond HTTP: A Test Channel for Anything
 
-Here's a fun trick once you have this set up. The proxy isn't just
-for real third-party APIs — it can act as a **general-purpose RPC
-channel between your server code and the test runner**. Anything
-that's awkward to mock (clocks, random IDs, feature flags,
-filesystem state) can be replaced with a small HTTP call to a
-fictitious `http://playwright/...` URL when the app is under test:
+Here's a fun trick once you have this set up. The proxy isn't just for real third-party APIs. It can act as a general-purpose RPC channel between your server code and the test runner. Anything that's awkward to mock (clocks, random IDs, feature flags, filesystem state) can be replaced with a small HTTP call to a fictitious `http://playwright/...` URL when the app is under test:
 
 ```ts
 // app/server/clock.ts
@@ -231,17 +188,9 @@ test("renews subscription on the day it expires", async ({ page, mocks }) => {
 
 A few more notes:
 
-*   **Forgotten mocks hit the real network.** In CI, swap the
-    passthrough default for a loud `thenReply(599, …)`.
-*   **In-process apps need `undici`'s `ProxyAgent`** instead of the
-    env vars — the env-variable trick only works for child
-    processes.
-*   **mockttp has an admin-server/remote control mode.** If you cannot spawn the app from inside your worker process,
-    you can use this to connect to a mockttp instance running in a separate process.
-*   **`mockttp.reset()` clears everything**, including the
-    passthrough — re-add it on teardown.
+1.  **Forgotten mocks hit the real network.** In CI, swap the passthrough default for a loud `thenReply(599, …)`.
+2.  **In-process apps need [`undici`'s `ProxyAgent`](https://undici.nodejs.org/#/docs/api/ProxyAgent)** instead of the env vars. The env-variable trick only works for child processes.
+3.  **mockttp has an [admin-server / remote control mode](https://httptoolkit.com/docs/mockttp/#standalone).** If you can't spawn the app from inside your worker process, you can connect to a mockttp instance running in a separate process.
+4.  **`mockttp.reset()` clears everything**, including the passthrough. Re-add it on teardown.
 
-That's it! Two fixtures, the full mockttp API at your
-fingertips, and no test seams in your production code.
-
-**Happy mocking with Playwright and mockttp!** 🎭
+That's it. Happy mocking!
