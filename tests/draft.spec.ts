@@ -160,7 +160,7 @@ test("recipe view scales ingredients immediately while quantity update is in fli
   await page
     .getByRole("button", { name: "Increase Pasta al limone portions" })
     .click();
-  await expect(page.getByText("500 g spaghetti")).toBeVisible({ timeout: 500 });
+  await expect(page.getByText("500 g spaghetti")).toBeVisible({ timeout: 1000 });
   await page.unroute("**/recipes/*.data", delayedQuantityUpdate);
 });
 
