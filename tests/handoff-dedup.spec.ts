@@ -156,6 +156,35 @@ test("public — anonymous visitor sees combined list and can split", async ({
   await anon.close();
 });
 
+test("LLM failure during finalise: redirect still happens, list renders as singletons", async ({
+  page,
+  flat,
+  mocks,
+}) => {
+  // Force the LLM call to fail. The OpenAI SDK throws on 500, dedup()
+  // catches and returns the all-singletons fallback. Same code path
+  // the 20s AbortController triggers when the real API is too slow.
+  //
+  // In dev the request goes through Netlify's emulated AI Gateway
+  // (NOT api.openai.com), so we match the gateway URL directly.
+  await mocks.route(
+    /\.netlify\/ai\/chat\/completions/,
+    openAiDedupHandler({ fail: true }),
+  );
+
+  await login(page, flat.user);
+  await createRecipeWithIngredient(page, "Pasta al pomodoro", "300", "g", "tomato");
+  await createRecipeWithIngredient(page, "Tomato soup", "300", "g", "tomatos");
+
+  // Finalise must still redirect — no 504, no hang.
+  await finalise(page, flat.id);
+
+  // Both ingredients render as separate rows (singletons), no merge.
+  const combined = page.getByTestId("combined-list");
+  await expect(combined.getByText("300 g tomato", { exact: true })).toBeVisible();
+  await expect(combined.getByText("300 g tomatos", { exact: true })).toBeVisible();
+});
+
 test("stale snapshot: editing a recipe after finalise shows Regenerate; clicking it re-merges", async ({
   page,
   flat,

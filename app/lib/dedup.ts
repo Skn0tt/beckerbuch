@@ -312,41 +312,55 @@ function openaiBackend(model: string): Backend {
         "(e.g. Zwiebel = onion, Knoblauch = garlic). Singletons MUST NOT appear in the " +
         "response — anything you don't list stays ungrouped. Do not invent ids.";
       const userMsg = JSON.stringify({ items: input.items });
-      const completion = await client.chat.completions.create({
-        model,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: userMsg },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "ingredient_merges",
-            strict: true,
-            schema: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                merges: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    additionalProperties: false,
-                    properties: {
-                      ids: {
-                        type: "array",
-                        items: { type: "string" },
+      // Netlify Functions cap at ~30s. The finalise action still
+      // needs to commit + redirect after this returns, so we bail out
+      // well before the platform does. On abort the call throws and
+      // the outer catch in `dedup()` returns the singletons fallback.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20_000);
+      let completion;
+      try {
+        completion = await client.chat.completions.create(
+          {
+            model,
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: userMsg },
+            ],
+            response_format: {
+              type: "json_schema",
+              json_schema: {
+                name: "ingredient_merges",
+                strict: true,
+                schema: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    merges: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        additionalProperties: false,
+                        properties: {
+                          ids: {
+                            type: "array",
+                            items: { type: "string" },
+                          },
+                        },
+                        required: ["ids"],
                       },
                     },
-                    required: ["ids"],
                   },
+                  required: ["merges"],
                 },
               },
-              required: ["merges"],
             },
           },
-        },
-      });
+          { signal: controller.signal },
+        );
+      } finally {
+        clearTimeout(timer);
+      }
       const raw = completion.choices[0]?.message?.content ?? "{}";
       const parsed = JSON.parse(raw) as RawMerges;
       return parsed;
@@ -358,7 +372,7 @@ function backendFor(name: string): Backend {
   // The default and "openai" both map to OpenAI via the AI Gateway.
   const colon = name.indexOf(":");
   if (name === "openai" || colon === -1) {
-    return openaiBackend(process.env.DEDUP_MODEL ?? "gpt-5-mini");
+    return openaiBackend(process.env.DEDUP_MODEL ?? "gpt-4.1-mini");
   }
   // "openai:gpt-5-nano" — explicit model override.
   if (name.startsWith("openai:")) {
