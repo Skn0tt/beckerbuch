@@ -34,7 +34,6 @@ export const test = base.extend<
 >({
   mockttp: [async ({}, use) => {
     const ca = await mockttp.generateCACertificate();
-    // 👉 swap the prefix for your project name if you like
     const dir = await fs.mkdtemp(join(tmpdir(), "mockttp-ca-"));
     const caCertPath = join(dir, "ca.pem");
     await fs.writeFile(caCertPath, ca.cert);
@@ -67,10 +66,19 @@ A quick tour of the moving parts:
 For mocking to work, the dev server has to know about the mockttp instance. It needs `HTTPS_PROXY` pointing at our proxy and `NODE_EXTRA_CA_CERTS` pointing at our certificate, both of which are per-worker. So we spawn it ourselves from a worker fixture, pass in the right env, and override `baseURL` so `page.goto("/")` still works.
 
 ```ts
-// tests/fixtures.ts (continued)
+// tests/fixtures.ts
 import * as childProcess from "node:child_process";
+// ...other imports as above
 
-test.extend<{}, { devServer: { baseURL: string } }>({
+export const test = base.extend<
+  { mocks: mockttp.Mockttp },
+  {
+    mockttp: { server: mockttp.Mockttp; caCertPath: string };
+    devServer: { baseURL: string };
+  }
+>({
+  // ...mockttp and mocks fixtures from above...
+
   devServer: [async ({ mockttp }, use) => {
     const child = childProcess.spawn(
       "npm", ["start"],
