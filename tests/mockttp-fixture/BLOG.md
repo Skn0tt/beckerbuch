@@ -156,7 +156,7 @@ No shared `mocks/` directory, no "which canned response is this test using?" que
 
 ## Beyond HTTP: A Test Channel for Anything
 
-Here's a fun trick once you have this set up. The proxy isn't just for real third-party APIs. It can act as a general-purpose RPC channel between your server code and the test runner. Anything that's awkward to mock (clocks, random IDs, feature flags, filesystem state) can be replaced with a small HTTP call to a fictitious `http://playwright/...` URL when the app is under test:
+Here's a neat trick once you have this set up. The proxy isn't just for real third-party APIs. It can act as a general-purpose RPC channel between your server code and the test runner. Anything that's awkward to mock (clocks, random IDs, feature flags, filesystem state) can be replaced with a small HTTP call to a fictitious `http://playwright/...` URL when the app is under test:
 
 ```ts
 // app/server/clock.ts
