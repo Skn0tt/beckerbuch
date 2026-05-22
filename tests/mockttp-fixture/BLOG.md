@@ -130,7 +130,18 @@ test.extend<{}, { devServer: { baseURL: string } }>({
         },
       },
     );
-    const baseURL = await readyURLFromStdout(child);
+    const baseURL = await new Promise<string>((resolve, reject) => {
+      let buf = "";
+      child.stdout!.on("data", (chunk) => {
+        buf += chunk.toString();
+        // 👉 swap the regex for whatever your dev server prints when ready
+        const m = buf.match(/Listening on (https?:\S+)/);
+        if (m) resolve(m[1]);
+      });
+      child.once("exit", (code) =>
+        reject(new Error(`dev server exited with code ${code}`)),
+      );
+    });
     await use({ baseURL });
     // Assumes the dev server handles SIGTERM cleanly.
     child.kill("SIGTERM");
@@ -140,22 +151,6 @@ test.extend<{}, { devServer: { baseURL: string } }>({
     await use(devServer.baseURL);
   },
 });
-
-// The ugly bit you'd factor out into a helper module.
-function readyURLFromStdout(child: childProcess.ChildProcess): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let buf = "";
-    child.stdout!.on("data", (chunk) => {
-      buf += chunk.toString();
-      // 👉 swap the regex for whatever your dev server prints when ready
-      const m = buf.match(/Listening on (https?:\S+)/);
-      if (m) resolve(m[1]);
-    });
-    child.once("exit", (code) =>
-      reject(new Error(`dev server exited with code ${code}`)),
-    );
-  });
-}
 ```
 
 A tour of the env vars we pass in:
@@ -246,7 +241,7 @@ A few more notes:
 *   **`mockttp.reset()` clears everything**, including the
     passthrough — re-add it on teardown.
 
-That's it! One fixture, one helper, the full mockttp API at your
+That's it! Two fixtures, the full mockttp API at your
 fingertips, and no test seams in your production code.
 
 **Happy mocking with Playwright and mockttp!** 🎭
