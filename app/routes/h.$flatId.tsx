@@ -1,6 +1,5 @@
 import {
   Anchor,
-  Badge,
   Box,
   Button,
   Card,
@@ -373,11 +372,6 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
                               {isRejected ? "Undo split" : "Split"}
                             </Button>
                           </fetcher.Form>
-                        )}
-                        {isMerged && !isRejected && (
-                          <Badge size="xs" variant="light" color="blue" hiddenFrom="sm">
-                            merged
-                          </Badge>
                         )}
                       </Group>
                     </Card>
