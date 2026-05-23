@@ -11,3 +11,7 @@ body,
 html {
   overscroll-behavior-y: none;
 }
+
+:where(input:not([type="hidden"]), textarea, select) {
+  font-size: max(16px, 1rem) !important;
+}
