@@ -152,6 +152,75 @@ test("note: editable on in-stock items too", async ({ page, flat }) => {
   await expect(page.getByTestId("note-text")).toHaveText(/added after finalise/);
 });
 
+test("note: mobile keeps + Note with controls when empty, moves note below once filled", async ({ page, flat }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, flat.user);
+  await addPastaToDraftAndOpenKitchen(page);
+
+  const addNote = page.getByRole("button", { name: "Add note for Pasta al limone" });
+  const decreasePortions = page.getByRole("button", {
+    name: "Decrease Pasta al limone portions",
+  });
+  await expect(addNote).toBeVisible();
+  await expect(decreasePortions).toBeVisible();
+
+  const controlsContainAddNote = await decreasePortions.evaluate(
+    (decreaseEl, addNoteAriaLabel) => {
+      let controlsRow: Element | null = null;
+      let node: Element | null = decreaseEl;
+      while (node) {
+        if (
+          node.matches('[class*="mantine-Group-root"]') &&
+          node.querySelector(
+            'button[aria-label="Choose cook for Pasta al limone"]',
+          ) != null
+        ) {
+          controlsRow = node;
+          break;
+        }
+        node = node.parentElement;
+      }
+      return controlsRow?.querySelector(`button[aria-label="${addNoteAriaLabel}"]`) != null;
+    },
+    "Add note for Pasta al limone",
+  );
+  expect(controlsContainAddNote).toBe(true);
+
+  await addNote.click();
+  await page.getByTestId("note-input").fill("cook first");
+  const waitForSetNote = page.waitForResponse(
+    (r) =>
+      r.request().method() === "POST" &&
+      r.url().endsWith("/kitchen.data") &&
+      r.status() < 400,
+  );
+  await page.getByTestId("note-input").press("Enter");
+  await waitForSetNote;
+  await page.reload();
+  await expect(page).toHaveURL("/kitchen");
+
+  const note = page.getByTestId("note-text");
+  await expect(note).toHaveText(/cook first/);
+  const controlsContainNoteText = await decreasePortions.evaluate((decreaseEl) => {
+    let controlsRow: Element | null = null;
+    let node: Element | null = decreaseEl;
+    while (node) {
+      if (
+        node.matches('[class*="mantine-Group-root"]') &&
+        node.querySelector(
+          'button[aria-label="Choose cook for Pasta al limone"]',
+        ) != null
+      ) {
+        controlsRow = node;
+        break;
+      }
+      node = node.parentElement;
+    }
+    return controlsRow?.querySelector('[data-testid="note-text"]') != null;
+  });
+  expect(controlsContainNoteText).toBe(false);
+});
+
 test("note: does NOT appear on the public /h/:flatId handoff page", async ({
   page,
   flat,

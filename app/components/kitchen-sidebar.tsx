@@ -47,10 +47,12 @@ function NoteEditor({
   entry,
   csrfToken,
   formAction,
+  compactWhenEmpty = false,
 }: {
   entry: KitchenEntry;
   csrfToken: string;
   formAction?: string;
+  compactWhenEmpty?: boolean;
 }) {
   const fetcher = useFetcher({ key: `note-${entry.id}` });
   const submittedNote = fetcher.formData?.get("note");
@@ -131,12 +133,12 @@ function NoteEditor({
   return (
     <Button
       type="button"
-      size="compact-xs"
+      size={compactWhenEmpty ? "xs" : "compact-xs"}
       variant="subtle"
       c="dimmed"
       onClick={startEditing}
       aria-label={`Add note for ${entry.recipeName}`}
-      style={{ alignSelf: "flex-start" }}
+      style={compactWhenEmpty ? undefined : { alignSelf: "flex-start" }}
     >
       + Note
     </Button>
@@ -359,6 +361,7 @@ export function DraftCard({
     fd.set(csrfFieldName(), csrfToken);
     cookFetcher.submit(fd, { method: "post", ...(formAction ? { action: formAction } : {}) });
   };
+  const showInlineAddNote = isMobile && !entry.note;
 
   return (
     <Card withBorder padding="sm">
@@ -430,10 +433,20 @@ export function DraftCard({
               effectiveCookId={effectiveCookId}
               submitCook={submitCook}
             />
+            {showInlineAddNote ? (
+              <NoteEditor
+                entry={entry}
+                csrfToken={csrfToken}
+                formAction={formAction}
+                compactWhenEmpty
+              />
+            ) : null}
           </Group>
         </Group>
 
-        <NoteEditor entry={entry} csrfToken={csrfToken} formAction={formAction} />
+        {!showInlineAddNote ? (
+          <NoteEditor entry={entry} csrfToken={csrfToken} formAction={formAction} />
+        ) : null}
       </Stack>
 
       <Modal
@@ -516,6 +529,7 @@ export function StockCard({
     });
     closeCookedConfirm();
   };
+  const showInlineAddNote = isMobile && !entry.note;
 
   return (
     <Card withBorder padding="sm">
@@ -577,9 +591,19 @@ export function StockCard({
             >
               Mark as cooked
             </Button>
+            {showInlineAddNote ? (
+              <NoteEditor
+                entry={entry}
+                csrfToken={csrfToken}
+                formAction={formAction}
+                compactWhenEmpty
+              />
+            ) : null}
           </Group>
         </Group>
-        <NoteEditor entry={entry} csrfToken={csrfToken} formAction={formAction} />
+        {!showInlineAddNote ? (
+          <NoteEditor entry={entry} csrfToken={csrfToken} formAction={formAction} />
+        ) : null}
       </Stack>
 
       <Modal
