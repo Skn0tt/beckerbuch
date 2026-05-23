@@ -11,3 +11,15 @@ test("home redirects to /login when anonymous", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveURL(/\/login\?redirect=/);
 });
+
+test("hovering + New recipe prefetches its route data", async ({ page, flat }) => {
+  await login(page, flat.user);
+  await page.getByRole("link", { name: "+ New recipe" }).hover();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        !!document.head.querySelector('link[rel="prefetch"][href*="/recipes/new"]'),
+      ),
+    )
+    .toBe(true);
+});

@@ -72,7 +72,7 @@ export default function NewRecipe({ loaderData }: Route.ComponentProps) {
       <Stack gap="md">
         <Group justify="space-between" align="center">
           <Title order={2}>New recipe</Title>
-          <Anchor component={Link} to="/">← Cancel</Anchor>
+          <Anchor component={Link} to="/" prefetch="intent">← Cancel</Anchor>
         </Group>
         <NewRecipeShell
           csrfToken={loaderData.csrfToken}

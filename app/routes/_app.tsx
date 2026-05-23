@@ -46,6 +46,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
           <Anchor
             component={Link}
             to="/"
+            prefetch="intent"
             underline="never"
             c="inherit"
           >
@@ -58,6 +59,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
             <UnstyledButton
               component={Link}
               to="/flat/settings"
+              prefetch="intent"
               aria-label="Settings"
               style={{ display: "inline-flex", borderRadius: "50%" }}
             >
@@ -78,6 +80,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
                 key={item.to}
                 component={Link}
                 to={item.to}
+                prefetch="intent"
                 ta="center"
                 py="sm"
                 style={{

@@ -449,7 +449,7 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
         </Text>
       )}
 
-      <Anchor component={Link} to={`/recipes/${recipe.id}/edit`}>
+      <Anchor component={Link} to={`/recipes/${recipe.id}/edit`} prefetch="intent">
         Edit recipe
       </Anchor>
     </Stack>

@@ -86,7 +86,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
         <Title order={1}>{title}</Title>
         <Text c="dimmed">{body}</Text>
         <Group>
-          <Button component={Link} to="/" variant="filled">
+          <Button component={Link} to="/" prefetch="intent" variant="filled">
             Back to home
           </Button>
         </Group>
