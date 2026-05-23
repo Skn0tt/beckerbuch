@@ -85,20 +85,56 @@ test("settings shows the MCP URL with a copy button and a link to Claude docs", 
   await expect(claudeLink).toHaveAttribute("target", "_blank");
 });
 
-test("upload and remove profile picture in settings", async ({ page, flat }) => {
+test("clicking avatar opens picker and uploads profile picture", async ({
+  page,
+  flat,
+}) => {
   await login(page, flat.user);
   await page.goto("/flat/settings");
 
-  const profilePicture = page.locator('input[type="file"][name="avatar"]');
-  await profilePicture.setInputFiles({
+  const chooserPromise = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Change profile picture" }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles({
     name: "avatar.png",
     mimeType: "image/png",
     buffer: TINY_PNG,
   });
-  await page.getByRole("button", { name: "Upload" }).click();
 
-  await expect(page.getByRole("button", { name: "Remove picture" })).toBeVisible();
+  await expect(
+    page.getByRole("img", { name: flat.user.displayName }).first(),
+  ).toBeVisible();
+});
 
-  await page.getByRole("button", { name: "Remove picture" }).click();
-  await expect(page.getByRole("button", { name: "Remove picture" })).toHaveCount(0);
+test("display name is editable inline on settings", async ({ page, flat }) => {
+  await login(page, flat.user);
+  await page.goto("/flat/settings");
+
+  const nextName = `${flat.user.displayName} Updated`;
+  await page.getByRole("button", { name: flat.user.displayName }).click();
+  const input = page.getByRole("textbox", { name: "Display name" });
+  await expect(input).toBeFocused();
+  await input.fill(nextName);
+  await input.press("Enter");
+
+  await expect(page.getByTestId("current-user")).toHaveText(nextName);
+  await expect(
+    page.getByRole("listitem").filter({ hasText: flat.user.email }).getByText(nextName),
+  ).toBeVisible();
+});
+
+test("display name saves on deselect (blur) in settings", async ({ page, flat }) => {
+  await login(page, flat.user);
+  await page.goto("/flat/settings");
+
+  const nextName = `${flat.user.displayName} Blur`;
+  await page.getByRole("button", { name: flat.user.displayName }).click();
+  const input = page.getByRole("textbox", { name: "Display name" });
+  await input.fill(nextName);
+  await page.getByRole("heading", { name: "Members" }).click();
+
+  await expect(page.getByTestId("current-user")).toHaveText(nextName);
+  await expect(
+    page.getByRole("listitem").filter({ hasText: flat.user.email }).getByText(nextName),
+  ).toBeVisible();
 });

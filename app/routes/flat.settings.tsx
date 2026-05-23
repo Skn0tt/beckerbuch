@@ -5,14 +5,17 @@ import {
   Container,
   CopyButton,
   Group,
+  Loader,
   List,
   Paper,
   Stack,
   Text,
   TextInput,
   Title,
+  UnstyledButton,
 } from "@mantine/core";
-import { Form, redirect, useActionData } from "react-router";
+import { useEffect, useRef, useState, type FocusEvent } from "react";
+import { Form, redirect, useActionData, useNavigation } from "react-router";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Route } from "./+types/flat.settings";
@@ -34,6 +37,14 @@ const ActionSchema = z.discriminatedUnion("intent", [
     avatar: z
       .instanceof(File, { message: "Please choose an image file." })
       .refine((f) => f.size > 0, "Please choose an image file."),
+  }),
+  z.object({
+    intent: z.literal("update-display-name"),
+    displayName: z
+      .string()
+      .trim()
+      .min(1, "Display name 1–80 chars.")
+      .max(80, "Display name 1–80 chars."),
   }),
   z.object({ intent: z.literal("remove-avatar") }),
 ]);
@@ -152,6 +163,13 @@ export async function action({ request }: Route.ActionArgs) {
       .where(eq(users.id, ctx.user.id));
     return redirect("/flat/settings");
   }
+  if (parsed.data.intent === "update-display-name") {
+    await db()
+      .update(users)
+      .set({ displayName: parsed.data.displayName })
+      .where(eq(users.id, ctx.user.id));
+    return redirect("/flat/settings");
+  }
 
   // remove-avatar
   if (me.avatarBlobKey) await deleteAvatar(me.avatarBlobKey);
@@ -164,11 +182,37 @@ export async function action({ request }: Route.ActionArgs) {
 
 export default function FlatSettings({ loaderData }: Route.ComponentProps) {
   const actionData = useActionData<{ error?: string } | undefined>();
+  const navigation = useNavigation();
   const { members, currentInvite, origin, csrfToken, user } = loaderData;
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [displayNameDraft, setDisplayNameDraft] = useState(user.displayName);
+  useEffect(() => {
+    if (!isEditingName || !nameInputRef.current) return;
+    nameInputRef.current.focus();
+    nameInputRef.current.select();
+  }, [isEditingName]);
   const inviteUrl = currentInvite
     ? `${origin}/invite/${currentInvite.token}`
     : null;
   const mcpUrl = `${origin}/mcp`;
+  const isAvatarUploading =
+    navigation.state !== "idle" &&
+    navigation.formData?.get("intent") === "upload-avatar";
+
+  const saveDisplayNameIfChanged = (e: FocusEvent<HTMLInputElement>) => {
+    const form = e.currentTarget.form;
+    if (!form) return;
+    const next = displayNameDraft.trim();
+    if (!next || next === user.displayName) {
+      setDisplayNameDraft(user.displayName);
+      setIsEditingName(false);
+      return;
+    }
+    form.requestSubmit();
+    setIsEditingName(false);
+  };
 
   return (
     <Container size={520} py="xl">
@@ -179,41 +223,81 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
           </Title>
           <Stack gap="xs">
             <Group gap="sm">
-              <UserAvatar user={user} />
-              <Text size="sm" c="dimmed">
-                {user.displayName}
-              </Text>
-            </Group>
-            {actionData?.error ? <Alert color="red">{actionData.error}</Alert> : null}
-            <Form method="post" encType="multipart/form-data">
-              <Stack gap="xs">
+              <Form method="post" encType="multipart/form-data">
                 <CsrfField token={csrfToken} />
                 <input type="hidden" name="intent" value="upload-avatar" />
-                <Text size="sm" fw={500}>
-                  Profile picture
-                </Text>
                 <input
+                  ref={avatarInputRef}
                   type="file"
                   name="avatar"
-                  aria-label="Profile picture"
                   accept="image/png,image/jpeg,image/webp"
+                  aria-label="Profile picture"
+                  style={{ display: "none" }}
+                  onChange={(e) => e.currentTarget.form?.requestSubmit()}
                 />
-                <Group>
-                  <Button type="submit" variant="default">
-                    Upload
-                  </Button>
-                </Group>
-              </Stack>
-            </Form>
-            {user.avatarKey ? (
-              <Form method="post">
-                <CsrfField token={csrfToken} />
-                <input type="hidden" name="intent" value="remove-avatar" />
-                <Button type="submit" variant="subtle" color="red">
-                  Remove picture
-                </Button>
+                <UnstyledButton
+                  type="button"
+                  aria-label="Change profile picture"
+                  aria-busy={isAvatarUploading}
+                  disabled={isAvatarUploading}
+                  onClick={() => avatarInputRef.current?.click()}
+                  style={{ borderRadius: "50%", display: "inline-flex", position: "relative" }}
+                >
+                  <UserAvatar user={user} />
+                  {isAvatarUploading ? (
+                    <span
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "rgba(255, 255, 255, 0.6)",
+                      }}
+                    >
+                      <Loader size="xs" aria-label="Uploading profile picture" />
+                    </span>
+                  ) : null}
+                </UnstyledButton>
               </Form>
-            ) : null}
+              {isEditingName ? (
+                <Form method="post" style={{ flex: 1 }}>
+                  <CsrfField token={csrfToken} />
+                  <input type="hidden" name="intent" value="update-display-name" />
+                  <TextInput
+                    ref={nameInputRef}
+                    name="displayName"
+                    aria-label="Display name"
+                    size="md"
+                    value={displayNameDraft}
+                    onChange={(e) => setDisplayNameDraft(e.currentTarget.value)}
+                    onBlur={saveDisplayNameIfChanged}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        setDisplayNameDraft(user.displayName);
+                        setIsEditingName(false);
+                      }
+                    }}
+                  />
+                </Form>
+              ) : (
+                <UnstyledButton
+                  type="button"
+                  onClick={() => {
+                    setDisplayNameDraft(user.displayName);
+                    setIsEditingName(true);
+                  }}
+                  style={{ textAlign: "left", flex: 1 }}
+                >
+                  <Text size="lg" fw={500}>
+                    {user.displayName}
+                  </Text>
+                </UnstyledButton>
+              )}
+            </Group>
+            {actionData?.error ? <Alert color="red">{actionData.error}</Alert> : null}
           </Stack>
         </section>
 
