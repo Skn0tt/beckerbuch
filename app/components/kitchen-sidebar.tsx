@@ -375,6 +375,7 @@ export function DraftCard({
             <Anchor
               component={Link}
               to={`/recipes/${entry.recipeId}`}
+              prefetch="intent"
               fw={500}
               style={{
                 overflow: "hidden",
@@ -518,6 +519,7 @@ export function StockCard({
             <Anchor
               component={Link}
               to={`/recipes/${entry.recipeId}`}
+              prefetch="intent"
               fw={500}
               style={{
                 overflow: "hidden",

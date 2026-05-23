@@ -384,7 +384,7 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
           draft.length === 0 ? (
             <Text c="dimmed">
               Draft is empty — add recipes from the{" "}
-              <Anchor component={Link} to="/">collection</Anchor>.
+              <Anchor component={Link} to="/" prefetch="intent">collection</Anchor>.
             </Text>
           ) : (
             <Stack gap="xs">
