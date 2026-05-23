@@ -570,42 +570,8 @@ export function StockCard({
               {entry.recipeName}
             </Anchor>
           </Group>
-          {isMobile ? (
-            <Stack gap={6} style={{ width: "100%" }}>
-              <Group align="center" gap="xs" wrap="nowrap">
-                <Text size="sm" c="dimmed">
-                  {entry.targetQuantity}
-                </Text>
-                <CookPicker
-                  entry={entry}
-                  members={members}
-                  effectiveCookId={effectiveCookId}
-                  submitCook={submitCook}
-                />
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <NoteEditor
-                    entry={entry}
-                    csrfToken={csrfToken}
-                    formAction={formAction}
-                    compactWhenEmpty
-                  />
-                </div>
-              </Group>
-              <Group justify="flex-end" align="center" gap="xs" wrap="nowrap">
-                <ActionIcon
-                  type="button"
-                  variant="outline"
-                  color="green"
-                  size="sm"
-                  onClick={openCookedConfirm}
-                  aria-label={`Mark ${entry.recipeName} as cooked`}
-                >
-                  ✓
-                </ActionIcon>
-              </Group>
-            </Stack>
-          ) : (
-            <Group gap="xs" wrap="nowrap">
+          <Stack gap={6} style={isMobile ? { width: "100%" } : undefined}>
+            <Group align="center" gap="xs" wrap="nowrap">
               <Text size="sm" c="dimmed">
                 {entry.targetQuantity}
               </Text>
@@ -615,22 +581,29 @@ export function StockCard({
                 effectiveCookId={effectiveCookId}
                 submitCook={submitCook}
               />
-              <Button
+              <div style={{ minWidth: 0, flex: "0 1 auto" }}>
+                <NoteEditor
+                  entry={entry}
+                  csrfToken={csrfToken}
+                  formAction={formAction}
+                  compactWhenEmpty
+                />
+              </div>
+            </Group>
+            <Group justify="flex-end" align="center" gap="xs" wrap="nowrap">
+              <ActionIcon
                 type="button"
                 variant="outline"
                 color="green"
-                size="xs"
+                size="sm"
                 onClick={openCookedConfirm}
                 aria-label={`Mark ${entry.recipeName} as cooked`}
               >
-                Mark as cooked
-              </Button>
+                ✓
+              </ActionIcon>
             </Group>
-          )}
+          </Stack>
         </Group>
-        {!isMobile ? (
-          <NoteEditor entry={entry} csrfToken={csrfToken} formAction={formAction} />
-        ) : null}
       </Stack>
 
       <Modal

@@ -266,6 +266,53 @@ test("note: mobile stock card keeps quantity/avatar left of note and cooked acti
   expect(cookPickerRect.x).toBeLessThan(addNoteRect.x);
 });
 
+test("note: desktop stock card matches two-line layout with compact cooked action", async ({
+  page,
+  flat,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await login(page, flat.user);
+  await addPastaToDraftAndOpenKitchen(page);
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(`/h/${flat.id}`);
+  await page.goto("/kitchen?lane=stock");
+
+  const stockCard = page
+    .getByRole("link", { name: "Pasta al limone" })
+    .locator("xpath=ancestor::*[contains(@class, 'mantine-Card-root')][1]");
+  const quantity = stockCard.getByText("4", { exact: true });
+  const cookPicker = stockCard.getByRole("button", {
+    name: "Choose cook for Pasta al limone",
+  });
+  const addNote = stockCard.getByRole("button", {
+    name: "Add note for Pasta al limone",
+  });
+  const markCooked = stockCard.getByRole("button", {
+    name: "Mark Pasta al limone as cooked",
+  });
+
+  await expect(quantity).toBeVisible();
+  await expect(cookPicker).toBeVisible();
+  await expect(addNote).toBeVisible();
+  await expect(markCooked).toHaveText("✓");
+
+  const cardRect = await stockCard.evaluate((el) => el.getBoundingClientRect());
+  const quantityRect = await quantity.evaluate((el) => el.getBoundingClientRect());
+  const cookPickerRect = await cookPicker.evaluate((el) => el.getBoundingClientRect());
+  const addNoteRect = await addNote.evaluate((el) => el.getBoundingClientRect());
+  const markCookedRect = await markCooked.evaluate((el) => el.getBoundingClientRect());
+
+  expect(markCookedRect.y).toBeGreaterThan(addNoteRect.y + 2);
+  expect(quantityRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
+  expect(addNoteRect.y).toBeLessThan(quantityRect.y + quantityRect.height);
+  expect(cookPickerRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
+  expect(addNoteRect.y).toBeLessThan(cookPickerRect.y + cookPickerRect.height);
+  expect(quantityRect.x).toBeLessThan(addNoteRect.x);
+  expect(cookPickerRect.x).toBeLessThan(addNoteRect.x);
+  expect(addNoteRect.width).toBeLessThan(cardRect.width * 0.5);
+});
+
 test("note: does NOT appear on the public /h/:flatId handoff page", async ({
   page,
   flat,
