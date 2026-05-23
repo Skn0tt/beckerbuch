@@ -221,7 +221,7 @@ test("note: mobile keeps + Note with controls when empty, moves note below once 
   expect(controlsContainNoteText).toBe(false);
 });
 
-test("note: mobile stock card keeps quantity/avatar on top-right and note/cooked actions on bottom row", async ({
+test("note: mobile stock card keeps quantity/avatar left of note and cooked action on second row", async ({
   page,
   flat,
 }) => {
@@ -257,11 +257,13 @@ test("note: mobile stock card keeps quantity/avatar on top-right and note/cooked
   const addNoteRect = await addNote.evaluate((el) => el.getBoundingClientRect());
   const markCookedRect = await markCooked.evaluate((el) => el.getBoundingClientRect());
 
-  expect(quantityRect.y).toBeLessThan(addNoteRect.y);
-  expect(cookPickerRect.y).toBeLessThan(addNoteRect.y);
-  expect(markCookedRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
-  expect(addNoteRect.y).toBeLessThan(markCookedRect.y + markCookedRect.height);
-  expect(addNoteRect.x).toBeLessThan(markCookedRect.x);
+  expect(markCookedRect.y).toBeGreaterThan(addNoteRect.y + 2);
+  expect(quantityRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
+  expect(addNoteRect.y).toBeLessThan(quantityRect.y + quantityRect.height);
+  expect(cookPickerRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
+  expect(addNoteRect.y).toBeLessThan(cookPickerRect.y + cookPickerRect.height);
+  expect(quantityRect.x).toBeLessThan(addNoteRect.x);
+  expect(cookPickerRect.x).toBeLessThan(addNoteRect.x);
 });
 
 test("note: does NOT appear on the public /h/:flatId handoff page", async ({

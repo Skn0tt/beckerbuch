@@ -572,7 +572,7 @@ export function StockCard({
           </Group>
           {isMobile ? (
             <Stack gap={6} style={{ width: "100%" }}>
-              <Group justify="flex-end" gap="xs" wrap="nowrap">
+              <Group align="center" gap="xs" wrap="nowrap">
                 <Text size="sm" c="dimmed">
                   {entry.targetQuantity}
                 </Text>
@@ -582,8 +582,6 @@ export function StockCard({
                   effectiveCookId={effectiveCookId}
                   submitCook={submitCook}
                 />
-              </Group>
-              <Group justify="space-between" align="center" gap="xs" wrap="nowrap">
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <NoteEditor
                     entry={entry}
@@ -592,6 +590,8 @@ export function StockCard({
                     compactWhenEmpty
                   />
                 </div>
+              </Group>
+              <Group justify="flex-end" align="center" gap="xs" wrap="nowrap">
                 <ActionIcon
                   type="button"
                   variant="outline"
