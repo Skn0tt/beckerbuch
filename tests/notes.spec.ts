@@ -221,6 +221,49 @@ test("note: mobile keeps + Note with controls when empty, moves note below once 
   expect(controlsContainNoteText).toBe(false);
 });
 
+test("note: mobile stock card keeps quantity/avatar on top-right and note/cooked actions on bottom row", async ({
+  page,
+  flat,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, flat.user);
+  await addPastaToDraftAndOpenKitchen(page);
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(`/h/${flat.id}`);
+  await page.goto("/kitchen?lane=stock");
+
+  const stockCard = page
+    .getByRole("link", { name: "Pasta al limone" })
+    .locator("xpath=ancestor::*[contains(@class, 'mantine-Card-root')][1]");
+  const quantity = stockCard.getByText("4", { exact: true });
+  const cookPicker = stockCard.getByRole("button", {
+    name: "Choose cook for Pasta al limone",
+  });
+  const addNote = stockCard.getByRole("button", {
+    name: "Add note for Pasta al limone",
+  });
+  const markCooked = stockCard.getByRole("button", {
+    name: "Mark Pasta al limone as cooked",
+  });
+
+  await expect(quantity).toBeVisible();
+  await expect(cookPicker).toBeVisible();
+  await expect(addNote).toBeVisible();
+  await expect(markCooked).toHaveText("✓");
+
+  const quantityRect = await quantity.evaluate((el) => el.getBoundingClientRect());
+  const cookPickerRect = await cookPicker.evaluate((el) => el.getBoundingClientRect());
+  const addNoteRect = await addNote.evaluate((el) => el.getBoundingClientRect());
+  const markCookedRect = await markCooked.evaluate((el) => el.getBoundingClientRect());
+
+  expect(quantityRect.y).toBeLessThan(addNoteRect.y);
+  expect(cookPickerRect.y).toBeLessThan(addNoteRect.y);
+  expect(markCookedRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
+  expect(addNoteRect.y).toBeLessThan(markCookedRect.y + markCookedRect.height);
+  expect(addNoteRect.x).toBeLessThan(markCookedRect.x);
+});
+
 test("note: does NOT appear on the public /h/:flatId handoff page", async ({
   page,
   flat,

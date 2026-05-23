@@ -529,7 +529,6 @@ export function StockCard({
     });
     closeCookedConfirm();
   };
-  const showInlineAddNote = isMobile && !entry.note;
 
   return (
     <Card withBorder padding="sm">
@@ -571,37 +570,65 @@ export function StockCard({
               {entry.recipeName}
             </Anchor>
           </Group>
-          <Group gap="xs" wrap={isMobile ? "wrap" : "nowrap"}>
-            <Text size="sm" c="dimmed">
-              {entry.targetQuantity}
-            </Text>
-            <CookPicker
-              entry={entry}
-              members={members}
-              effectiveCookId={effectiveCookId}
-              submitCook={submitCook}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              color="green"
-              size="xs"
-              onClick={openCookedConfirm}
-              aria-label={`Mark ${entry.recipeName} as cooked`}
-            >
-              Mark as cooked
-            </Button>
-            {showInlineAddNote ? (
-              <NoteEditor
+          {isMobile ? (
+            <Stack gap={6} style={{ width: "100%" }}>
+              <Group justify="flex-end" gap="xs" wrap="nowrap">
+                <Text size="sm" c="dimmed">
+                  {entry.targetQuantity}
+                </Text>
+                <CookPicker
+                  entry={entry}
+                  members={members}
+                  effectiveCookId={effectiveCookId}
+                  submitCook={submitCook}
+                />
+              </Group>
+              <Group justify="space-between" align="center" gap="xs" wrap="nowrap">
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <NoteEditor
+                    entry={entry}
+                    csrfToken={csrfToken}
+                    formAction={formAction}
+                    compactWhenEmpty
+                  />
+                </div>
+                <ActionIcon
+                  type="button"
+                  variant="outline"
+                  color="green"
+                  size="sm"
+                  onClick={openCookedConfirm}
+                  aria-label={`Mark ${entry.recipeName} as cooked`}
+                >
+                  ✓
+                </ActionIcon>
+              </Group>
+            </Stack>
+          ) : (
+            <Group gap="xs" wrap="nowrap">
+              <Text size="sm" c="dimmed">
+                {entry.targetQuantity}
+              </Text>
+              <CookPicker
                 entry={entry}
-                csrfToken={csrfToken}
-                formAction={formAction}
-                compactWhenEmpty
+                members={members}
+                effectiveCookId={effectiveCookId}
+                submitCook={submitCook}
               />
-            ) : null}
-          </Group>
+              <Button
+                type="button"
+                variant="outline"
+                color="green"
+                size="xs"
+                onClick={openCookedConfirm}
+                aria-label={`Mark ${entry.recipeName} as cooked`}
+              >
+                Mark as cooked
+              </Button>
+            </Group>
+          )}
         </Group>
-        {!showInlineAddNote ? (
+        {!isMobile ? (
           <NoteEditor entry={entry} csrfToken={csrfToken} formAction={formAction} />
         ) : null}
       </Stack>
