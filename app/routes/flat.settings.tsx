@@ -5,6 +5,7 @@ import {
   Container,
   CopyButton,
   Group,
+  Loader,
   List,
   Paper,
   Stack,
@@ -14,7 +15,7 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 import { useEffect, useRef, useState, type FocusEvent } from "react";
-import { Form, redirect, useActionData } from "react-router";
+import { Form, redirect, useActionData, useNavigation } from "react-router";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Route } from "./+types/flat.settings";
@@ -181,6 +182,7 @@ export async function action({ request }: Route.ActionArgs) {
 
 export default function FlatSettings({ loaderData }: Route.ComponentProps) {
   const actionData = useActionData<{ error?: string } | undefined>();
+  const navigation = useNavigation();
   const { members, currentInvite, origin, csrfToken, user } = loaderData;
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
@@ -195,6 +197,9 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
     ? `${origin}/invite/${currentInvite.token}`
     : null;
   const mcpUrl = `${origin}/mcp`;
+  const isAvatarUploading =
+    navigation.state !== "idle" &&
+    navigation.formData?.get("intent") === "upload-avatar";
 
   const saveDisplayNameIfChanged = (e: FocusEvent<HTMLInputElement>) => {
     const form = e.currentTarget.form;
@@ -233,10 +238,27 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
                 <UnstyledButton
                   type="button"
                   aria-label="Change profile picture"
+                  aria-busy={isAvatarUploading}
+                  disabled={isAvatarUploading}
                   onClick={() => avatarInputRef.current?.click()}
-                  style={{ borderRadius: "50%", display: "inline-flex" }}
+                  style={{ borderRadius: "50%", display: "inline-flex", position: "relative" }}
                 >
                   <UserAvatar user={user} />
+                  {isAvatarUploading ? (
+                    <span
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "rgba(255, 255, 255, 0.6)",
+                      }}
+                    >
+                      <Loader size="xs" aria-label="Uploading profile picture" />
+                    </span>
+                  ) : null}
                 </UnstyledButton>
               </Form>
               {isEditingName ? (
@@ -247,6 +269,7 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
                     ref={nameInputRef}
                     name="displayName"
                     aria-label="Display name"
+                    size="md"
                     value={displayNameDraft}
                     onChange={(e) => setDisplayNameDraft(e.currentTarget.value)}
                     onBlur={saveDisplayNameIfChanged}
@@ -268,7 +291,7 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
                   }}
                   style={{ textAlign: "left", flex: 1 }}
                 >
-                  <Text size="sm" c="dimmed">
+                  <Text size="lg" fw={500}>
                     {user.displayName}
                   </Text>
                 </UnstyledButton>
