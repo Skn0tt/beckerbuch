@@ -89,6 +89,40 @@ test("recipes are scoped to the flat — other flat's recipe → 404", async ({
   expect(res?.status()).toBe(404);
 });
 
+test("rapid double-click on Save creates only one recipe", async ({ page, flat }) => {
+  await login(page, flat.user);
+  await page.getByRole("link", { name: "+ New recipe" }).click();
+
+  await page.getByLabel("Name").fill("Double click test");
+  await page.getByLabel("Ingredient 1 item").fill("water");
+
+  // Delay the POST so the user has time to click again while the first
+  // submission is still in flight. Count POSTs to prove the second click
+  // never reaches the server.
+  let postCount = 0;
+  await page.route(/\/recipes\/new(\.data)?$/, async (route) => {
+    if (route.request().method() === "POST") {
+      postCount += 1;
+      await new Promise((r) => setTimeout(r, 800));
+    }
+    await route.continue();
+  });
+
+  const save = page.getByRole("button", { name: "Save recipe" });
+  await save.click();
+  // Second click happens while the first POST is mid-flight.
+  await save.click({ force: true, noWaitAfter: true }).catch(() => {});
+  await expect(save).toBeDisabled();
+
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
+  expect(postCount).toBe(1);
+
+  await page.goto("/");
+  await expect(
+    page.getByRole("link", { name: /Double click test/ }),
+  ).toHaveCount(1);
+});
+
 test("malformed UUID in /r/:id → 404", async ({ page }) => {
   const res = await page.goto("/r/lol");
   expect(res?.status()).toBe(404);
