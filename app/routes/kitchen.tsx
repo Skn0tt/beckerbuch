@@ -1,5 +1,6 @@
 import {
   Anchor,
+  Card,
   Container,
   SegmentedControl,
   Stack,
@@ -15,12 +16,15 @@ import { requireFlatMember } from "../auth/require";
 import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { isSameOrigin } from "../auth/origin";
 import { loadKitchen } from "../lib/kitchen-data";
+import { planIngredients } from "../lib/planned-ingredients";
 import { snapshotDedupForFlat } from "../lib/dedup-snapshot";
 import {
   FinaliseButton,
   SortableLane,
 } from "../components/kitchen-sidebar";
 import { firstMessage, formDataToObject } from "../lib/form";
+
+type Lane = "draft" | "stock" | "ingredients";
 
 const uuid = z.guid("Invalid instance.");
 
@@ -77,7 +81,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requireFlatMember(request);
   const url = new URL(request.url);
   const laneParam = url.searchParams.get("lane");
-  const lane: "draft" | "stock" = laneParam === "stock" ? "stock" : "draft";
+  const lane: Lane =
+    laneParam === "stock"
+      ? "stock"
+      : laneParam === "ingredients"
+        ? "ingredients"
+        : "draft";
 
   const data = await loadKitchen(ctx.flat.id);
   return {
@@ -85,6 +94,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     draft: data.draft,
     stock: data.stock,
     members: data.members,
+    plannedIngredients: planIngredients(data.stock),
     csrfToken: csrfTokenForSession(ctx.session.id),
   };
 }
@@ -351,14 +361,23 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Kitchen({ loaderData }: Route.ComponentProps) {
-  const { lane, draft, stock, csrfToken, members } = loaderData;
+  const { lane, draft, stock, csrfToken, members, plannedIngredients } =
+    loaderData;
   const navigate = useNavigate();
   return (
     <Container size="sm" py="md">
       <Stack gap="md">
         <SegmentedControl
           value={lane}
-          onChange={(v) => navigate(v === "stock" ? "?lane=stock" : "?lane=draft")}
+          onChange={(v) =>
+            navigate(
+              v === "stock"
+                ? "?lane=stock"
+                : v === "ingredients"
+                  ? "?lane=ingredients"
+                  : "?lane=draft",
+            )
+          }
           aria-label="Kitchen lane"
           data={[
             {
@@ -374,6 +393,17 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
               label: (
                 <>
                   In stock <Text span c="dimmed" inherit>{stock.length}</Text>
+                </>
+              ),
+            },
+            {
+              value: "ingredients",
+              label: (
+                <>
+                  Ingredients{" "}
+                  <Text span c="dimmed" inherit>
+                    {plannedIngredients.length}
+                  </Text>
                 </>
               ),
             },
@@ -401,17 +431,46 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
               />
             </Stack>
           )
-        ) : stock.length === 0 ? (
+        ) : lane === "stock" ? (
+          stock.length === 0 ? (
+            <Text c="dimmed">
+              Nothing in stock yet — finalise the draft to start cooking.
+            </Text>
+          ) : (
+            <SortableLane
+              lane="stock"
+              entries={stock}
+              members={members}
+              csrfToken={csrfToken}
+            />
+          )
+        ) : plannedIngredients.length === 0 ? (
           <Text c="dimmed">
-            Nothing in stock yet — finalise the draft to start cooking.
+            No ingredients planned — nothing is in stock yet.
           </Text>
         ) : (
-          <SortableLane
-            lane="stock"
-            entries={stock}
-            members={members}
-            csrfToken={csrfToken}
-          />
+          <Stack gap="xs" data-testid="planned-ingredients">
+            <Text size="sm" c="dimmed">
+              Ingredients reserved by recipes still to cook. Everything else
+              in the kitchen is free to use.
+            </Text>
+            {plannedIngredients.map((ing) => (
+              <Card
+                key={`${ing.item.toLowerCase()}\u0000${ing.unit?.toLowerCase() ?? ""}`}
+                withBorder
+                padding="sm"
+              >
+                <Stack gap={2}>
+                  <Text size="sm" fw={500}>
+                    {ing.displayText}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    {ing.recipes.join(", ")}
+                  </Text>
+                </Stack>
+              </Card>
+            ))}
+          </Stack>
         )}
       </Stack>
     </Container>
