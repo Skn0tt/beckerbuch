@@ -221,7 +221,7 @@ test("note: mobile keeps + Note with controls when empty, moves note below once 
   expect(controlsContainNoteText).toBe(false);
 });
 
-test("note: mobile stock card keeps quantity/avatar left of note and cooked action on second row", async ({
+test("note: mobile stock card keeps title top, quantity top-right, and avatar/note/cooked on one row", async ({
   page,
   flat,
 }) => {
@@ -236,6 +236,7 @@ test("note: mobile stock card keeps quantity/avatar left of note and cooked acti
   const stockCard = page
     .getByRole("link", { name: "Pasta al limone" })
     .locator("xpath=ancestor::*[contains(@class, 'mantine-Card-root')][1]");
+  const recipeTitle = stockCard.getByRole("link", { name: "Pasta al limone" });
   const quantity = stockCard.getByText("4", { exact: true });
   const cookPicker = stockCard.getByRole("button", {
     name: "Choose cook for Pasta al limone",
@@ -252,21 +253,24 @@ test("note: mobile stock card keeps quantity/avatar left of note and cooked acti
   await expect(addNote).toBeVisible();
   await expect(markCooked).toHaveText("✓");
 
+  const titleRect = await recipeTitle.evaluate((el) => el.getBoundingClientRect());
   const quantityRect = await quantity.evaluate((el) => el.getBoundingClientRect());
   const cookPickerRect = await cookPicker.evaluate((el) => el.getBoundingClientRect());
   const addNoteRect = await addNote.evaluate((el) => el.getBoundingClientRect());
   const markCookedRect = await markCooked.evaluate((el) => el.getBoundingClientRect());
 
-  expect(markCookedRect.y).toBeGreaterThan(addNoteRect.y + 2);
-  expect(quantityRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
-  expect(addNoteRect.y).toBeLessThan(quantityRect.y + quantityRect.height);
+  expect(titleRect.y).toBeLessThan(cookPickerRect.y - 2);
+  expect(quantityRect.y).toBeLessThan(cookPickerRect.y - 2);
+  expect(titleRect.x).toBeLessThan(quantityRect.x);
   expect(cookPickerRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
   expect(addNoteRect.y).toBeLessThan(cookPickerRect.y + cookPickerRect.height);
-  expect(quantityRect.x).toBeLessThan(addNoteRect.x);
+  expect(markCookedRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
+  expect(addNoteRect.y).toBeLessThan(markCookedRect.y + markCookedRect.height);
   expect(cookPickerRect.x).toBeLessThan(addNoteRect.x);
+  expect(addNoteRect.x).toBeLessThan(markCookedRect.x);
 });
 
-test("note: desktop stock card matches two-line layout with compact cooked action", async ({
+test("note: desktop stock card keeps title top, quantity top-right, and avatar/note/cooked on one row", async ({
   page,
   flat,
 }) => {
@@ -281,6 +285,7 @@ test("note: desktop stock card matches two-line layout with compact cooked actio
   const stockCard = page
     .getByRole("link", { name: "Pasta al limone" })
     .locator("xpath=ancestor::*[contains(@class, 'mantine-Card-root')][1]");
+  const recipeTitle = stockCard.getByRole("link", { name: "Pasta al limone" });
   const quantity = stockCard.getByText("4", { exact: true });
   const cookPicker = stockCard.getByRole("button", {
     name: "Choose cook for Pasta al limone",
@@ -297,20 +302,21 @@ test("note: desktop stock card matches two-line layout with compact cooked actio
   await expect(addNote).toBeVisible();
   await expect(markCooked).toHaveText("✓");
 
-  const cardRect = await stockCard.evaluate((el) => el.getBoundingClientRect());
+  const titleRect = await recipeTitle.evaluate((el) => el.getBoundingClientRect());
   const quantityRect = await quantity.evaluate((el) => el.getBoundingClientRect());
   const cookPickerRect = await cookPicker.evaluate((el) => el.getBoundingClientRect());
   const addNoteRect = await addNote.evaluate((el) => el.getBoundingClientRect());
   const markCookedRect = await markCooked.evaluate((el) => el.getBoundingClientRect());
 
-  expect(markCookedRect.y).toBeGreaterThan(addNoteRect.y + 2);
-  expect(quantityRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
-  expect(addNoteRect.y).toBeLessThan(quantityRect.y + quantityRect.height);
+  expect(titleRect.y).toBeLessThan(cookPickerRect.y - 2);
+  expect(quantityRect.y).toBeLessThan(cookPickerRect.y - 2);
+  expect(titleRect.x).toBeLessThan(quantityRect.x);
   expect(cookPickerRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
   expect(addNoteRect.y).toBeLessThan(cookPickerRect.y + cookPickerRect.height);
-  expect(quantityRect.x).toBeLessThan(addNoteRect.x);
+  expect(markCookedRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
+  expect(addNoteRect.y).toBeLessThan(markCookedRect.y + markCookedRect.height);
   expect(cookPickerRect.x).toBeLessThan(addNoteRect.x);
-  expect(addNoteRect.width).toBeLessThan(cardRect.width * 0.5);
+  expect(addNoteRect.x).toBeLessThan(markCookedRect.x);
 });
 
 test("note: does NOT appear on the public /h/:flatId handoff page", async ({
