@@ -1,7 +1,7 @@
-// Per-run bootstrap: Postgres testcontainer + drizzle schema push.
-// Runs once before any worker starts; sets `DATABASE_URL` on
-// `process.env` so worker fixtures inherit it when spawning their
-// per-worker `netlify dev`.
+// Per-run bootstrap: Postgres testcontainer + drizzle schema push +
+// a production build of the app. Runs once before any worker starts;
+// sets `DATABASE_URL` on `process.env` so worker fixtures inherit it
+// when spawning their per-worker `react-router-serve` process.
 //
 // With `withReuse()`, the container survives across `playwright test`
 // invocations on a developer machine; CI cold-starts.
@@ -42,6 +42,13 @@ export default async function globalSetup() {
     stdio: "inherit",
     env: { ...process.env, DATABASE_URL: databaseUrl },
   });
+
+  // Tests run against the production build (one `react-router-serve`
+  // process per worker), not the Vite dev server. This eliminates the
+  // typegen-on-boot race that bites when multiple workers boot Vite
+  // in parallel, and matches what gets deployed to Netlify.
+  console.log("[global-setup] Building app (react-router build)…");
+  execSync("npm run build", { stdio: "inherit" });
 
   process.env.DATABASE_URL = databaseUrl;
 }

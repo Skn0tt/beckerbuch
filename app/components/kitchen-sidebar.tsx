@@ -389,6 +389,7 @@ export function DraftCard({
             <Anchor
               component={Link}
               to={`/recipes/${entry.recipeId}`}
+              prefetch="intent"
               fw={500}
               style={{
                 ...(isMobile
@@ -533,11 +534,7 @@ export function StockCard({
   return (
     <Card withBorder padding="sm">
       <Stack gap="xs">
-        <Group
-          gap="xs"
-          wrap="nowrap"
-          style={{ minWidth: 0, width: "100%" }}
-        >
+        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0, width: "100%" }}>
           {dragHandle ?? (
             <MoveButtons
               entry={entry}
@@ -550,6 +547,7 @@ export function StockCard({
           <Anchor
             component={Link}
             to={`/recipes/${entry.recipeId}`}
+            prefetch="intent"
             fw={500}
             style={{
               ...flexFillStyle,

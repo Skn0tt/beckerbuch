@@ -13,7 +13,7 @@ import {
   Title,
 } from "@mantine/core";
 import { useState, type ReactNode } from "react";
-import { Form } from "react-router";
+import { Form, useNavigation } from "react-router";
 import { CsrfField } from "../auth/csrf-field";
 
 export type IngredientRow = { amount: string; unit: string; item: string };
@@ -51,6 +51,11 @@ export function RecipeForm({
       ? initial.ingredients
       : [blankRow(), blankRow(), blankRow()];
   const [rows, setRows] = useState<IngredientRow[]>(initialRows);
+  const navigation = useNavigation();
+  // Prevents double-submit (rapid second click, mobile double-tap, repeated
+  // Enter) creating duplicate recipes. Mantine's `loading` doesn't set the
+  // underlying DOM `disabled`, so set both.
+  const isSubmitting = navigation.state !== "idle";
 
   const setRow = (i: number, patch: Partial<IngredientRow>) => {
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -182,7 +187,9 @@ export function RecipeForm({
 
         <Group justify="space-between">
           {secondaryAction ?? <span />}
-          <Button type="submit">{submitLabel}</Button>
+          <Button type="submit" loading={isSubmitting} disabled={isSubmitting}>
+            {submitLabel}
+          </Button>
         </Group>
       </Stack>
     </Form>

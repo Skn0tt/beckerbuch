@@ -160,6 +160,36 @@ test("change target portions → ingredients re-scale", async ({ page, flat }) =
   await expect(page.getByText("100 g spaghetti")).toBeVisible();
 });
 
+test("recipe view scales ingredients immediately while quantity update is in flight", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+  await createPasta(page);
+  await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
+  await expect(page.getByText("400 g spaghetti")).toBeVisible();
+
+  const delayedQuantityUpdate = async (
+    route: import("@playwright/test").Route,
+  ) => {
+    if (
+      route.request().method() === "POST" &&
+      route.request().postData()?.includes("intent=update-quantity")
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    await route.continue();
+  };
+  await page.route("**/recipes/*.data", delayedQuantityUpdate);
+
+  await page
+    .getByRole("button", { name: "Increase Pasta al limone portions" })
+    .click();
+  await expect(page.getByText("500 g spaghetti")).toBeVisible({ timeout: 1000 });
+  await page.unroute("**/recipes/*.data", delayedQuantityUpdate);
+});
+
 test("designated cook picker — assign self, then unassign", async ({ page, flat }) => {
   await login(page, flat.user);
   await createPasta(page);
@@ -223,9 +253,18 @@ test("designated cook can be edited in stock lane", async ({ page, flat }) => {
   await page.goto("/kitchen?lane=stock");
 
   await page.getByLabel("Choose cook for Pasta al limone").click();
+  // Fire-and-forget useFetcher — wait for the POST to land before
+  // reloading, otherwise the reload cancels the in-flight submission.
+  const cookSubmitted = page.waitForResponse(
+    (r) =>
+      r.request().method() === "POST" &&
+      /\/kitchen\.data(\?|$)/.test(r.url()) &&
+      r.status() < 400,
+  );
   await page
     .getByLabel(`Set cook to ${flat.user.displayName} for Pasta al limone`)
     .click();
+  await cookSubmitted;
   await page.reload();
   await page.getByLabel("Choose cook for Pasta al limone").click();
   await expect(

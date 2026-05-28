@@ -153,16 +153,7 @@ async function handle(request: Request): Promise<Response> {
         photo,
       });
 
-      const url = new URL(request.url);
-      const recipeUrl = `${url.origin}/recipes/${id}`;
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Added "${args.name}". View it at ${recipeUrl}`,
-          },
-        ],
-      };
+      return jsonResult(recipeRefPayload(id, request));
     },
   );
 
@@ -207,7 +198,7 @@ async function handle(request: Request): Promise<Response> {
     {
       title: "Edit a recipe",
       description:
-        "Patch fields on an existing recipe in the authenticated user's flat.",
+        "Patch fields on an existing recipe in the authenticated user's flat. Returns the recipe id and a URL to view it.",
       inputSchema: editRecipeInput,
     },
     async (args) => {
@@ -237,7 +228,7 @@ async function handle(request: Request): Promise<Response> {
         },
       });
       if (!recipe) return toolError("Recipe not found.");
-      return jsonResult(recipePayload(recipe, request));
+      return jsonResult(recipeRefPayload(recipe.id, request));
     },
   );
 
@@ -367,6 +358,14 @@ function recipeListPayload(recipe: RecipeListItem, request: Request) {
     updatedAt: recipe.updatedAt.toISOString(),
     url: `${origin}/recipes/${recipe.id}`,
     publicUrl: `${origin}/r/${recipe.id}`,
+  };
+}
+
+function recipeRefPayload(recipeId: string, request: Request) {
+  const origin = new URL(request.url).origin;
+  return {
+    id: recipeId,
+    url: `${origin}/recipes/${recipeId}`,
   };
 }
 

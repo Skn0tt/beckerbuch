@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
+import { createServer } from "node:net";
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
+import { BlobsServer } from "@netlify/blobs/server";
 import {
   test as base,
   expect,
@@ -32,7 +36,7 @@ export type Flat = {
 };
 
 export type ServerHandle = {
-  /** Base URL of this worker's vite dev server. */
+  /** Base URL of this worker's react-router-serve process. */
   baseURL: string;
 };
 
@@ -49,52 +53,98 @@ export type TestFixtures = AppTestFixtures & MocksTestFixtures;
 
 const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixtures>({
   // ---------------------------------------------------------------
-  // Worker-scoped: one Vite dev server per worker, wired to the proxy.
-  // We rely on `@netlify/vite-plugin` for Netlify primitive emulation
-  // (Blobs is the one we actually use — recipe photos round-trip
-  // through it). Vite is much faster to boot than `netlify dev`, and
-  // unlike the CLI it doesn't clobber OPENAI_API_KEY or inject an
-  // AI-Gateway base URL behind our backs.
+  // Worker-scoped: one `react-router-serve` process per worker,
+  // wired to the proxy, running the production build that
+  // global-setup produced. We deliberately don't use Vite here —
+  // tests then exercise the exact bundle Netlify deploys, and we
+  // sidestep the typegen-on-boot race that fires when multiple
+  // Vite workers rebuild `.react-router/types` in parallel.
+  //
+  // Netlify primitive emulation (Blobs — recipe photos round-trip
+  // through it) is provided by a per-worker BlobsServer below;
+  // see the `NETLIFY_BLOBS_CONTEXT` env var.
   server: [
     async ({ workerProxy }, use, workerInfo) => {
-      // Vite walks ports starting from `server.port` (default 5173)
-      // when the requested one is busy, so we don't need to allocate
-      // ourselves; the actual bound URL is parsed out of stdout.
-      const child = spawn("npx", ["vite"], {
-        stdio: ["ignore", "pipe", "pipe"],
-        // Put the child in its own process group so we can kill the
-        // whole tree on teardown — npx → vite (→ worker threads,
-        // optimizer subprocesses) are otherwise easy to leak.
-        detached: true,
-        env: {
-          ...process.env,
-          // globalSetup writes DATABASE_URL into process.env.
-          DATABASE_URL: process.env.DATABASE_URL,
-          NODE_ENV: process.env.NODE_ENV ?? "test",
-          SESSION_SECRET:
-            process.env.SESSION_SECRET ??
-            "test-only-not-a-secret-but-long-enough",
-          ADMIN_TOKEN: process.env.ADMIN_TOKEN ?? ADMIN_TOKEN,
-          // kptncook still wants an API key — the mock helper
-          // checks for this exact value and rejects anything else.
-          KPTNCOOK_API_KEY: process.env.KPTNCOOK_API_KEY ?? KPTNCOOK_TEST_API_KEY,
-          // The OpenAI SDK refuses to construct without an API
-          // key. The mock helper accepts any value.
-          OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "test-openai-key",
-          // Route all outbound HTTP(S) through this worker's proxy
-          // and trust its CA. Without these the app would hit the
-          // real internet.
-          ...workerProxy.env,
-        },
-      });
+      const port = await findFreePort();
 
-      const baseURLPromise = readyURLFromStdout(child, 180_000);
+      // Spin up a per-worker Netlify Blobs server so `@netlify/blobs`
+      // calls in the app (recipe photos, avatars) hit a local store
+      // instead of trying to reach production. Mirrors what
+      // `@netlify/dev` does when wiring up Netlify primitives — see
+      // node_modules/@netlify/dev/dist/main.js getRuntime() — but
+      // standalone so we don't need `netlify dev` (which clobbers
+      // OPENAI_API_KEY and injects an AI-Gateway base URL behind
+      // our backs).
+      //
+      // Lives under the project's Playwright output dir so it's
+      // inspectable after a failure and gets cleaned up on the next
+      // run alongside the rest of test-results/.
+      const blobsDir = path.join(
+        workerInfo.project.outputDir,
+        `.netlify-blobs-worker-${workerInfo.parallelIndex}`,
+      );
+      await mkdir(blobsDir, { recursive: true });
+      const blobsToken = randomUUID();
+      const blobs = new BlobsServer({ directory: blobsDir, token: blobsToken });
+      const blobsDetails = await blobs.start();
+      const blobsEdgeURL = `http://localhost:${blobsDetails.port}`;
+      const blobsContext = Buffer.from(
+        JSON.stringify({
+          deployID: `cookbook-test-deploy-${workerInfo.parallelIndex}`,
+          edgeURL: blobsEdgeURL,
+          primaryRegion: "us-east-2",
+          siteID: `cookbook-test-site-${workerInfo.parallelIndex}`,
+          token: blobsToken,
+          uncachedEdgeURL: blobsEdgeURL,
+        }),
+        "utf8",
+      ).toString("base64");
+
+      const child = spawn(
+        "npx",
+        ["react-router-serve", "build/server/server-build.js"],
+        {
+          stdio: ["ignore", "pipe", "pipe"],
+          // Own process group so we can kill the whole tree on
+          // teardown.
+          detached: true,
+          env: {
+            ...process.env,
+            PORT: String(port),
+            // globalSetup writes DATABASE_URL into process.env.
+            DATABASE_URL: process.env.DATABASE_URL,
+            // Match what Netlify runs in production. The bin script
+            // also defaults to "production" when unset, but we set
+            // it explicitly so React picks the prod bundle here too.
+            NODE_ENV: "production",
+            SESSION_SECRET:
+              process.env.SESSION_SECRET ??
+              "test-only-not-a-secret-but-long-enough",
+            ADMIN_TOKEN: process.env.ADMIN_TOKEN ?? ADMIN_TOKEN,
+            // kptncook still wants an API key — the mock helper
+            // checks for this exact value and rejects anything else.
+            KPTNCOOK_API_KEY: process.env.KPTNCOOK_API_KEY ?? KPTNCOOK_TEST_API_KEY,
+            // The OpenAI SDK refuses to construct without an API
+            // key. The mock helper accepts any value.
+            OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "test-openai-key",
+            // `@netlify/blobs` reads this to route store ops to the
+            // local BlobsServer above.
+            NETLIFY_BLOBS_CONTEXT: blobsContext,
+            // Route all outbound HTTP(S) through this worker's proxy
+            // and trust its CA. Without these the app would hit the
+            // real internet.
+            ...workerProxy.env,
+          },
+        },
+      );
+
+      const baseURLPromise = readyURLFromStdout(child, 60_000);
 
       const exited = new Promise<never>((_, reject) => {
         child.once("exit", (code, signal) => {
           reject(
             new Error(
-              `vite (worker ${workerInfo.parallelIndex}) exited unexpectedly (code=${code} signal=${signal})`,
+              `react-router-serve (worker ${workerInfo.parallelIndex}) exited unexpectedly (code=${code} signal=${signal})`,
             ),
           );
         });
@@ -105,6 +155,7 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
         baseURL = await Promise.race([baseURLPromise, exited]);
       } catch (err) {
         killTree(child);
+        await blobs.stop().catch(() => undefined);
         throw err;
       }
 
@@ -118,14 +169,19 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
         }
         child.once("exit", () => resolve());
       });
+      await blobs.stop().catch(() => undefined);
+      // Don't `rm` blobsDir — it sits under workerInfo.outputDir, so
+      // Playwright handles cleanup on the next run and the contents
+      // stay around for post-mortem inspection.
     },
     { scope: "worker", timeout: 180_000 },
   ],
 
   // Override Playwright's built-in `baseURL` (test scope, since
   // Playwright defines it that way) so `page` and `request` route to
-  // this worker's vite dev server automatically. The value is identical
-  // for every test in a worker because `server` is worker-scoped.
+  // this worker's react-router-serve process automatically. The value
+  // is identical for every test in a worker because `server` is
+  // worker-scoped.
   baseURL: async ({ server }, use) => {
     await use(server.baseURL);
   },
@@ -229,8 +285,9 @@ function readyURLFromStdout(
     }
     let buffer = "";
     let settled = false;
-    // Vite prints: "  ➜  Local:   http://localhost:NNNN/"
-    const re = /Local:\s+(https?:\/\/\S+?)\/?\s*$/m;
+    // react-router-serve prints:
+    //   "[react-router-serve] http://localhost:NNNN (http://…)"
+    const re = /\[react-router-serve\]\s+(https?:\/\/\S+)/m;
     // eslint-disable-next-line no-control-regex
     const ansi = /\x1B\[[0-?]*[ -/]*[@-~]/g;
     const timer = setTimeout(() => {
@@ -238,7 +295,7 @@ function readyURLFromStdout(
       settled = true;
       reject(
         new Error(
-          `Timed out waiting for vite ready line. Last stdout:\n${buffer.slice(-2000)}`,
+          `Timed out waiting for react-router-serve ready line. Last stdout:\n${buffer.slice(-2000)}`,
         ),
       );
     }, timeoutMs);
@@ -257,5 +314,29 @@ function readyURLFromStdout(
     };
     stdout.on("data", onChunk);
     if (stderr) stderr.on("data", onChunk);
+  });
+}
+
+/**
+ * Ask the kernel for a free TCP port by binding to port 0, reading
+ * the assigned port, and closing immediately. Has a TOCTOU race with
+ * anything else that grabs the port between close and the next bind,
+ * but in practice the window is microseconds and Playwright workers
+ * don't fight over the same port pool.
+ */
+function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.unref();
+    srv.once("error", reject);
+    srv.listen(0, () => {
+      const addr = srv.address();
+      if (typeof addr === "object" && addr && typeof addr.port === "number") {
+        const port = addr.port;
+        srv.close(() => resolve(port));
+      } else {
+        srv.close(() => reject(new Error("could not read assigned port")));
+      }
+    });
   });
 }

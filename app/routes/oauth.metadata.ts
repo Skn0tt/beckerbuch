@@ -7,7 +7,14 @@ function originFromRequest(request: Request): string {
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const origin = originFromRequest(request);
-  if (url.pathname === "/.well-known/oauth-protected-resource") {
+  // RFC 9728 §3.1: clients build the metadata URL by inserting
+  // `/.well-known/oauth-protected-resource` between the host and the resource
+  // path, so for our resource at `/mcp` the path-suffixed form is
+  // `/.well-known/oauth-protected-resource/mcp`. Accept both.
+  if (
+    url.pathname === "/.well-known/oauth-protected-resource" ||
+    url.pathname === "/.well-known/oauth-protected-resource/mcp"
+  ) {
     return json({
       resource: `${origin}/mcp`,
       authorization_servers: [origin],

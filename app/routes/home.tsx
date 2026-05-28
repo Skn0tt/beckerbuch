@@ -41,7 +41,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             aria-label="Search recipes"
             style={{ flex: 1 }}
           />
-          <Button component={Link} to="/recipes/new" variant="default">
+          <Button component={Link} to="/recipes/new" prefetch="intent" variant="default">
             + New recipe
           </Button>
         </Group>
@@ -56,6 +56,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               key={r.id}
               component={Link}
               to={`/recipes/${r.id}`}
+              prefetch="intent"
               label={r.name}
             />
           ))}

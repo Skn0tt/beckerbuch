@@ -175,6 +175,16 @@ function jsonFromToolResult<TResult>(
   return JSON.parse(textFromToolResult(result)) as TResult;
 }
 
+function recipeRefFromToolResult(
+  result: Awaited<ReturnType<Client["callTool"]>>,
+): { id: string; url: string } {
+  const body = jsonFromToolResult<Record<string, unknown>>(result);
+  expect(Object.keys(body).sort()).toEqual(["id", "url"]);
+  expect(body.id).toEqual(expect.any(String));
+  expect(body.url).toEqual(expect.any(String));
+  return body as { id: string; url: string };
+}
+
 async function addRecipeViaMcp(
   client: Client,
   args: {
@@ -195,7 +205,8 @@ async function addRecipeViaMcp(
     },
   });
   expect(callResult.isError).toBeFalsy();
-  const match = textFromToolResult(callResult).match(/\/recipes\/([0-9a-f-]{36})/);
+  const body = recipeRefFromToolResult(callResult);
+  const match = body.url.match(/\/recipes\/([0-9a-f-]{36})/);
   if (!match) throw new Error("tool did not return a recipe url");
   return match[1];
 }
@@ -267,6 +278,8 @@ test.describe("MCP server", () => {
       },
     });
     expect(callResult.isError).toBeFalsy();
+    const addBody = recipeRefFromToolResult(callResult);
+    expect(addBody.url).toContain(`/recipes/${addBody.id}`);
     await client.close();
 
     await page.goto("/");
@@ -413,6 +426,27 @@ test.describe("MCP server", () => {
     expect(limited.isError).toBeFalsy();
     expect(jsonFromToolResult<{ results: unknown[] }>(limited).results).toHaveLength(2);
 
+    const deterministicA = await client.callTool({
+      name: "kochbuch_search_recipes",
+      arguments: { limit: 10 },
+    });
+    expect(deterministicA.isError).toBeFalsy();
+    const deterministicABody = jsonFromToolResult<{
+      results: Array<{ id: string; name: string }>;
+    }>(deterministicA);
+
+    const deterministicB = await client.callTool({
+      name: "kochbuch_search_recipes",
+      arguments: { limit: 10 },
+    });
+    expect(deterministicB.isError).toBeFalsy();
+    const deterministicBBody = jsonFromToolResult<{
+      results: Array<{ id: string; name: string }>;
+    }>(deterministicB);
+    expect(deterministicBBody.results.map((recipe) => recipe.id)).toEqual(
+      deterministicABody.results.map((recipe) => recipe.id),
+    );
+
     await client.close();
   });
 
@@ -495,7 +529,10 @@ test.describe("MCP server", () => {
       arguments: { id: recipeId, name: "New Name" },
     });
     expect(editName.isError).toBeFalsy();
-    expect(jsonFromToolResult<{ name: string }>(editName).name).toBe("New Name");
+    expect(recipeRefFromToolResult(editName)).toEqual({
+      id: recipeId,
+      url: `${BASE_URL}/recipes/${recipeId}`,
+    });
 
     const editIngredients = await client.callTool({
       name: "kochbuch_edit_recipe",
@@ -508,14 +545,10 @@ test.describe("MCP server", () => {
       },
     });
     expect(editIngredients.isError).toBeFalsy();
-    expect(
-      jsonFromToolResult<{
-        ingredients: Array<{ amount: string | null; unit: string | null; item: string }>;
-      }>(editIngredients).ingredients,
-    ).toEqual([
-      { amount: "200", unit: "g", item: "pasta" },
-      { amount: null, unit: null, item: "pepper" },
-    ]);
+    expect(recipeRefFromToolResult(editIngredients)).toEqual({
+      id: recipeId,
+      url: `${BASE_URL}/recipes/${recipeId}`,
+    });
 
     await client.close();
 
@@ -548,7 +581,16 @@ test.describe("MCP server", () => {
         arguments: { id: recipeId, photoUrl: `${baseUrl}/img.png` },
       });
       expect(addPhoto.isError).toBeFalsy();
-      expect(jsonFromToolResult<{ photoUrl: string | null }>(addPhoto).photoUrl).toContain(
+      expect(recipeRefFromToolResult(addPhoto)).toEqual({
+        id: recipeId,
+        url: `${BASE_URL}/recipes/${recipeId}`,
+      });
+      const getAfterAddPhoto = await client.callTool({
+        name: "kochbuch_get_recipe",
+        arguments: { id: recipeId },
+      });
+      expect(getAfterAddPhoto.isError).toBeFalsy();
+      expect(jsonFromToolResult<{ photoUrl: string | null }>(getAfterAddPhoto).photoUrl).toContain(
         `/r/${recipeId}/photo`,
       );
 
@@ -560,7 +602,16 @@ test.describe("MCP server", () => {
         arguments: { id: recipeId, removePhoto: true },
       });
       expect(removePhoto.isError).toBeFalsy();
-      expect(jsonFromToolResult<{ photoUrl: string | null }>(removePhoto).photoUrl).toBeNull();
+      expect(recipeRefFromToolResult(removePhoto)).toEqual({
+        id: recipeId,
+        url: `${BASE_URL}/recipes/${recipeId}`,
+      });
+      const getAfterRemovePhoto = await client.callTool({
+        name: "kochbuch_get_recipe",
+        arguments: { id: recipeId },
+      });
+      expect(getAfterRemovePhoto.isError).toBeFalsy();
+      expect(jsonFromToolResult<{ photoUrl: string | null }>(getAfterRemovePhoto).photoUrl).toBeNull();
       await client.close();
 
       await page.goto(`/recipes/${recipeId}`);
@@ -675,10 +726,19 @@ test.describe("MCP server", () => {
       },
     });
     expect(editBoth.isError).toBeFalsy();
+    expect(recipeRefFromToolResult(editBoth)).toEqual({
+      id: recipeId,
+      url: `${BASE_URL}/recipes/${recipeId}`,
+    });
+    const getEdited = await client.callTool({
+      name: "kochbuch_get_recipe",
+      arguments: { id: recipeId },
+    });
+    expect(getEdited.isError).toBeFalsy();
     const body = jsonFromToolResult<{
       baseQuantity: number;
       ingredients: Array<{ amount: string | null; unit: string | null; item: string }>;
-    }>(editBoth);
+    }>(getEdited);
     expect(body.baseQuantity).toBe(6);
     expect(body.ingredients).toEqual([
       { amount: "1", unit: "cup", item: "rice" },
@@ -698,6 +758,25 @@ test.describe("MCP server", () => {
     const wwwAuth = res.headers.get("www-authenticate") ?? "";
     expect(wwwAuth).toContain("Bearer");
     expect(wwwAuth).toContain("/.well-known/oauth-protected-resource");
+  });
+
+  test("oauth-protected-resource metadata is served at both the bare and path-suffixed URLs", async () => {
+    // RFC 9728 §3.1 / MCP 2025-06-18: clients construct the metadata URL by
+    // appending the resource path to `.well-known/oauth-protected-resource`.
+    for (const path of [
+      "/.well-known/oauth-protected-resource",
+      "/.well-known/oauth-protected-resource/mcp",
+    ]) {
+      const res = await fetch(`${BASE_URL}${path}`);
+      expect(res.status, `${path} should respond 200`).toBe(200);
+      expect(res.headers.get("content-type") ?? "").toContain("application/json");
+      const body = (await res.json()) as {
+        resource: string;
+        authorization_servers: string[];
+      };
+      expect(body.resource).toBe(`${BASE_URL}/mcp`);
+      expect(body.authorization_servers).toEqual([BASE_URL]);
+    }
   });
 
   test("refresh token rotates and revokes the old one", async ({ page, flat }) => {
