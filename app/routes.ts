@@ -24,6 +24,9 @@ export default [
   route(".well-known/oauth-protected-resource", "routes/oauth.metadata.ts", {
     id: "oauth-metadata-protected-resource",
   }),
+  route(".well-known/oauth-protected-resource/mcp", "routes/oauth.metadata.ts", {
+    id: "oauth-metadata-protected-resource-mcp",
+  }),
   route(".well-known/oauth-authorization-server", "routes/oauth.metadata.ts", {
     id: "oauth-metadata-authorization-server",
   }),

@@ -760,6 +760,25 @@ test.describe("MCP server", () => {
     expect(wwwAuth).toContain("/.well-known/oauth-protected-resource");
   });
 
+  test("oauth-protected-resource metadata is served at both the bare and path-suffixed URLs", async () => {
+    // RFC 9728 §3.1 / MCP 2025-06-18: clients construct the metadata URL by
+    // appending the resource path to `.well-known/oauth-protected-resource`.
+    for (const path of [
+      "/.well-known/oauth-protected-resource",
+      "/.well-known/oauth-protected-resource/mcp",
+    ]) {
+      const res = await fetch(`${BASE_URL}${path}`);
+      expect(res.status, `${path} should respond 200`).toBe(200);
+      expect(res.headers.get("content-type") ?? "").toContain("application/json");
+      const body = (await res.json()) as {
+        resource: string;
+        authorization_servers: string[];
+      };
+      expect(body.resource).toBe(`${BASE_URL}/mcp`);
+      expect(body.authorization_servers).toEqual([BASE_URL]);
+    }
+  });
+
   test("refresh token rotates and revokes the old one", async ({ page, flat }) => {
     await login(page, flat.user);
     const result = await runOAuthFlow(page);
