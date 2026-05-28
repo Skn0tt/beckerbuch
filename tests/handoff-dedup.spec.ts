@@ -164,13 +164,7 @@ test("LLM failure during finalise: redirect still happens, list renders as singl
   // Force the LLM call to fail. The OpenAI SDK throws on 500, dedup()
   // catches and returns the all-singletons fallback. Same code path
   // the 20s AbortController triggers when the real API is too slow.
-  //
-  // In dev the request goes through Netlify's emulated AI Gateway
-  // (NOT api.openai.com), so we match the gateway URL directly.
-  await mocks.route(
-    /\.netlify\/ai\/chat\/completions/,
-    openAiDedupHandler({ fail: true }),
-  );
+  await mocks.route(OPENAI_CHAT_URL, openAiDedupHandler({ fail: true }));
 
   await login(page, flat.user);
   await createRecipeWithIngredient(page, "Pasta al pomodoro", "300", "g", "tomato");

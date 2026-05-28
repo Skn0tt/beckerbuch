@@ -227,9 +227,18 @@ test("designated cook can be edited in stock lane", async ({ page, flat }) => {
   await page.goto("/kitchen?lane=stock");
 
   await page.getByLabel("Choose cook for Pasta al limone").click();
+  // Fire-and-forget useFetcher — wait for the POST to land before
+  // reloading, otherwise the reload cancels the in-flight submission.
+  const cookSubmitted = page.waitForResponse(
+    (r) =>
+      r.request().method() === "POST" &&
+      /\/kitchen\.data(\?|$)/.test(r.url()) &&
+      r.status() < 400,
+  );
   await page
     .getByLabel(`Set cook to ${flat.user.displayName} for Pasta al limone`)
     .click();
+  await cookSubmitted;
   await page.reload();
   await page.getByLabel("Choose cook for Pasta al limone").click();
   await expect(
