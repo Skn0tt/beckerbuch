@@ -4,6 +4,10 @@ import { registerClient } from "../auth/oauth";
 type RegisterBody = {
   client_name?: unknown;
   redirect_uris?: unknown;
+  scope?: unknown;
+  token_endpoint_auth_method?: unknown;
+  grant_types?: unknown;
+  response_types?: unknown;
 };
 
 export async function action({ request }: Route.ActionArgs) {
@@ -50,14 +54,20 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const client = await registerClient({ clientName, redirectUris });
+  const scope =
+    typeof body.scope === "string" && body.scope.trim()
+      ? body.scope.trim()
+      : "recipes:write";
   return new Response(
     JSON.stringify({
       client_id: client.clientId,
+      client_id_issued_at: Math.floor(Date.now() / 1000),
       client_name: client.clientName,
       redirect_uris: client.redirectUris,
       token_endpoint_auth_method: "none",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
+      scope,
     }),
     {
       status: 201,

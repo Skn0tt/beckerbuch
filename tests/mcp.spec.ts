@@ -817,9 +817,33 @@ test.describe("MCP server", () => {
         }),
       });
       expect(res.status, `${path} should 201`).toBe(201);
-      const body = (await res.json()) as { client_id: string };
+      const body = (await res.json()) as {
+        client_id: string;
+        client_id_issued_at: number;
+        scope: string;
+      };
       expect(body.client_id).toMatch(/^mcp_/);
+      // RFC 7591 RECOMMENDS client_id_issued_at; some MCP clients (Claude)
+      // abort the flow if the field is missing.
+      expect(typeof body.client_id_issued_at).toBe("number");
+      expect(body.client_id_issued_at).toBeGreaterThan(0);
+      expect(body.scope).toBe("recipes:write");
     }
+  });
+
+  test("registration echoes a requested scope", async () => {
+    const res = await fetch(`${BASE_URL}/oauth/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "scoped",
+        redirect_uris: ["https://example.test/cb"],
+        scope: "recipes:write",
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { scope: string };
+    expect(body.scope).toBe("recipes:write");
   });
 
   test("refresh token rotates and revokes the old one", async ({ page, flat }) => {
