@@ -44,14 +44,14 @@ For visual debugging, use Playwright's CLI flags directly:
 
 Kochbuch exposes a small MCP server at `/mcp` so ChatGPT (and other
 MCP clients) can add recipes on your behalf. It speaks **Streamable
-HTTP** and authenticates with a **per-user long-lived token** in the
-URL — no OAuth flow.
+HTTP** with **OAuth 2.1 + PKCE** and **Dynamic Client Registration**
+(RFC 7591) — the standard remote-connector flow.
 
-Open **Flat settings** in the UI and copy the MCP URL it shows
-(`https://<your-deployment>/mcp?token=<uuid>`). Paste that URL into
-your MCP client as a custom connector. The same UUID is also accepted
-via `Authorization: Bearer <uuid>` for clients that prefer header
-auth. After connecting, the client can call:
+In ChatGPT, add a **custom connector** pointing at
+`https://<your-deployment>/mcp`. ChatGPT will discover the OAuth
+configuration via `/.well-known/oauth-protected-resource`, register
+itself, and walk you through the consent screen (you'll need to be
+signed in to your flat first). After approval it can call:
 
 - `kochbuch_add_recipe` — name, baseQuantity, ingredients, steps,
   optional sourceUrl, optional photoUrl (server fetches the image)

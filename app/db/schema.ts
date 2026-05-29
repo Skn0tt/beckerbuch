@@ -32,10 +32,6 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   displayName: text("display_name").notNull(),
   avatarBlobKey: text("avatar_blob_key"),
-  mcpToken: uuid("mcp_token")
-    .notNull()
-    .unique()
-    .default(sql`gen_random_uuid()`),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -239,3 +235,67 @@ export type Recipe = typeof recipes.$inferSelect;
 export type Ingredient = typeof ingredients.$inferSelect;
 export type RecipeInstance = typeof recipeInstances.$inferSelect;
 
+export const oauthClients = pgTable("oauth_clients", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: text("client_id").notNull().unique(),
+  clientName: text("client_name").notNull(),
+  redirectUris: text("redirect_uris").array().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const oauthAuthorizationCodes = pgTable(
+  "oauth_authorization_codes",
+  {
+    codeHash: text("code_hash").primaryKey(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => oauthClients.clientId, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    redirectUri: text("redirect_uri").notNull(),
+    codeChallenge: text("code_challenge").notNull(),
+    codeChallengeMethod: text("code_challenge_method").notNull(),
+    scope: text("scope").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("oauth_authorization_codes_expires_idx").on(t.expiresAt),
+    check(
+      "oauth_authorization_codes_method_s256",
+      sql`${t.codeChallengeMethod} = 'S256'`,
+    ),
+  ],
+);
+
+export const oauthTokens = pgTable(
+  "oauth_tokens",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    type: text("type").notNull(),
+    clientId: text("client_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    scope: text("scope").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    parentHash: text("parent_hash"),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("oauth_tokens_user_id_idx").on(t.userId),
+    check("oauth_tokens_type", sql`${t.type} in ('access','refresh')`),
+  ],
+);
+
+export type OauthClient = typeof oauthClients.$inferSelect;
+export type OauthToken = typeof oauthTokens.$inferSelect;

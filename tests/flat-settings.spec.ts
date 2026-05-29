@@ -68,10 +68,8 @@ test("settings shows the MCP URL with a copy button and a link to Claude docs", 
   const mcpInput = page.getByLabel("MCP URL");
   await expect(mcpInput).toBeVisible();
   const value = await mcpInput.inputValue();
-  expect(value).toMatch(/\/mcp\?token=[0-9a-f-]{36}$/);
-  const parsed = new URL(value);
-  expect(parsed.pathname).toBe("/mcp");
-  expect(parsed.searchParams.get("token")).toMatch(/^[0-9a-f-]{36}$/);
+  expect(value).toMatch(/\/mcp$/);
+  expect(new URL(value).pathname).toBe("/mcp");
 
   // Copy button sits next to the input; assert one is reachable from the
   // same Paper as the MCP input.
