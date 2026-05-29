@@ -10,7 +10,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { Form, redirect } from "react-router";
+import { redirect } from "react-router";
 import type { Route } from "./+types/oauth.authorize";
 import { tryGetAuthedContext } from "../auth/require";
 import { csrfTokenForSession, requireCsrf } from "../auth/csrf.server";
@@ -196,7 +196,17 @@ export default function Authorize({ loaderData }: Route.ComponentProps) {
               Only approve clients you trust. They will be able to act on your
               behalf until you revoke access.
             </Alert>
-            <Form method="post">
+            {/*
+              Plain <form>, not React Router's <Form>: this is an OAuth
+              authorize endpoint that must respond with a real HTTP 302 to
+              the client's redirect_uri (often cross-origin, e.g. claude.ai).
+              RR's <Form> submits to /oauth/authorize.data via single-fetch,
+              which encodes server redirects as a 202 the client is expected
+              to handle with window.location.assign — fragile in OAuth
+              webviews/popups. A native form submission lets the browser
+              follow the 302 itself.
+            */}
+            <form method="post">
               <CsrfField token={loaderData.csrfToken} />
               <input
                 type="hidden"
@@ -216,7 +226,7 @@ export default function Authorize({ loaderData }: Route.ComponentProps) {
                   Approve
                 </Button>
               </Group>
-            </Form>
+            </form>
             <Anchor href="/" size="xs" c="dimmed">
               Cancel and return home
             </Anchor>

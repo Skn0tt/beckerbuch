@@ -825,4 +825,63 @@ test.describe("MCP server", () => {
       expect(result.error).toBe("access_denied");
     }
   });
+
+  test("authorize approve returns an HTTP 302 to the redirect_uri (not a single-fetch 202)", async ({
+    page,
+    flat,
+  }) => {
+    // Regression test for the OAuth handoff bug where React Router's
+    // <Form> submitted to /oauth/authorize.data and encoded the redirect
+    // to the external redirect_uri (e.g. https://claude.ai/...) as a 202
+    // single-fetch response that webview-based OAuth clients couldn't
+    // follow. The authorize endpoint must respond with a real top-level
+    // HTTP 302 so the browser follows it natively.
+    await login(page, flat.user);
+    const catcher = await startRedirectCatcher();
+    try {
+      const { clientId } = await registerClient(catcher.url);
+      const { challenge } = pkce();
+      const state = base64url(randomBytes(16));
+
+      const params = new URLSearchParams({
+        response_type: "code",
+        client_id: clientId,
+        redirect_uri: catcher.url,
+        state,
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        scope: "recipes:write",
+      });
+
+      // GET the consent page so we can read the CSRF token out of the form.
+      const consentRes = await page.request.get(
+        `/oauth/authorize?${params.toString()}`,
+      );
+      expect(consentRes.status()).toBe(200);
+      const html = await consentRes.text();
+      const csrfMatch = html.match(/name="_csrf"\s+value="([^"]+)"/);
+      if (!csrfMatch) throw new Error("could not find csrf token in consent page");
+      const csrf = csrfMatch[1];
+
+      // POST the approval and ensure we get a top-level 302 redirect to
+      // the redirect_uri carrying the code+state, not a 202 single-fetch
+      // response.
+      const postRes = await page.request.post(
+        `/oauth/authorize?${params.toString()}`,
+        {
+          form: { _csrf: csrf, query_string: params.toString(), decision: "approve" },
+          headers: { origin: BASE_URL },
+          maxRedirects: 0,
+        },
+      );
+      expect(postRes.status()).toBe(302);
+      const location = postRes.headers()["location"] ?? "";
+      const locUrl = new URL(location);
+      expect(`${locUrl.origin}${locUrl.pathname}`).toBe(catcher.url);
+      expect(locUrl.searchParams.get("state")).toBe(state);
+      expect(locUrl.searchParams.get("code")).toBeTruthy();
+    } finally {
+      await catcher.close();
+    }
+  });
 });
