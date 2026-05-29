@@ -109,18 +109,8 @@ const editRecipeInput = {
 async function handle(request: Request): Promise<Response> {
   const ctx = await tryGetMcpContext(request);
   if (!ctx) {
-    logMcp("unauthorized", { method: request.method, url: redactUrl(request.url) });
     return unauthorized();
   }
-
-  const normalized = await normalizeToolCallArgs(request);
-  const reqBody = await readBodySafely(normalized);
-  logMcp("request", {
-    method: normalized.method,
-    url: redactUrl(normalized.url),
-    user: ctx.user.email,
-    body: reqBody.preview,
-  });
 
   const server = new McpServer(
     { name: "kochbuch", version: "1.0.0" },
@@ -292,72 +282,10 @@ async function handle(request: Request): Promise<Response> {
   });
   await server.connect(transport);
   try {
-    const response = await transport.handleRequest(normalized);
-    const resBody = await readResponseBodyForLog(response);
-    logMcp("response", {
-      method: normalized.method,
-      url: redactUrl(normalized.url),
-      user: ctx.user.email,
-      status: response.status,
-      body: resBody.preview,
-    });
-    return response;
+    return await transport.handleRequest(await normalizeToolCallArgs(request));
   } finally {
     await server.close().catch(() => {});
   }
-}
-
-const MAX_LOG_BODY = 4096;
-
-function logMcp(kind: string, fields: Record<string, unknown>) {
-  // Stays a single line so Netlify's log viewer doesn't split it. The
-  // body is already truncated by readBodySafely / readResponseBodyForLog.
-  console.log(`[mcp] ${kind} ${JSON.stringify(fields)}`);
-}
-
-function redactUrl(url: string): string {
-  try {
-    const u = new URL(url);
-    if (u.searchParams.has("token")) u.searchParams.set("token", "<redacted>");
-    return u.pathname + (u.search ? u.search : "");
-  } catch {
-    return url;
-  }
-}
-
-async function readBodySafely(
-  request: Request,
-): Promise<{ preview: string }> {
-  if (request.method === "GET" || request.method === "HEAD" || !request.body) {
-    return { preview: "" };
-  }
-  try {
-    const text = await request.clone().text();
-    return { preview: truncate(text, MAX_LOG_BODY) };
-  } catch (err) {
-    return { preview: `<unreadable: ${(err as Error).message}>` };
-  }
-}
-
-async function readResponseBodyForLog(
-  response: Response,
-): Promise<{ preview: string }> {
-  const ct = (response.headers.get("content-type") ?? "").toLowerCase();
-  // SSE streams keep streaming forever — don't drain them.
-  if (ct.includes("text/event-stream") || !response.body) {
-    return { preview: `<${ct || "no-body"}>` };
-  }
-  try {
-    const text = await response.clone().text();
-    return { preview: truncate(text, MAX_LOG_BODY) };
-  } catch (err) {
-    return { preview: `<unreadable: ${(err as Error).message}>` };
-  }
-}
-
-function truncate(text: string, max: number): string {
-  if (text.length <= max) return text;
-  return `${text.slice(0, max)}…<+${text.length - max}B>`;
 }
 
 /**
