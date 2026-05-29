@@ -22,7 +22,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       scopes_supported: ["recipes:write"],
     });
   }
-  if (url.pathname === "/.well-known/oauth-authorization-server") {
+  if (url.pathname === "/.well-known/oauth-authorization-server" ||
+      url.pathname === "/.well-known/openid-configuration") {
     return json({
       issuer: origin,
       authorization_endpoint: `${origin}/oauth/authorize`,

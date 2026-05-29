@@ -779,6 +779,48 @@ test.describe("MCP server", () => {
     }
   });
 
+  test("authorization-server metadata is served at oauth-authorization-server and openid-configuration", async () => {
+    // Some MCP clients (e.g. Claude) probe /.well-known/openid-configuration
+    // first before falling back to /.well-known/oauth-authorization-server.
+    // Both must return the same AS metadata so DCR can proceed.
+    for (const path of [
+      "/.well-known/oauth-authorization-server",
+      "/.well-known/openid-configuration",
+    ]) {
+      const res = await fetch(`${BASE_URL}${path}`);
+      expect(res.status, `${path} should respond 200`).toBe(200);
+      const body = (await res.json()) as {
+        issuer: string;
+        registration_endpoint: string;
+        authorization_endpoint: string;
+        token_endpoint: string;
+      };
+      expect(body.issuer).toBe(BASE_URL);
+      expect(body.registration_endpoint).toBe(`${BASE_URL}/oauth/register`);
+      expect(body.authorization_endpoint).toBe(`${BASE_URL}/oauth/authorize`);
+      expect(body.token_endpoint).toBe(`${BASE_URL}/oauth/token`);
+    }
+  });
+
+  test("dynamic client registration is reachable at both /oauth/register and /register", async () => {
+    // Some MCP clients (e.g. Claude) hardcode a bare /register endpoint as a
+    // DCR fallback instead of honoring the advertised registration_endpoint.
+    // Both paths must succeed so the OAuth flow can start.
+    for (const path of ["/oauth/register", "/register"]) {
+      const res = await fetch(`${BASE_URL}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          client_name: `probe ${path}`,
+          redirect_uris: ["https://example.test/cb"],
+        }),
+      });
+      expect(res.status, `${path} should 201`).toBe(201);
+      const body = (await res.json()) as { client_id: string };
+      expect(body.client_id).toMatch(/^mcp_/);
+    }
+  });
+
   test("refresh token rotates and revokes the old one", async ({ page, flat }) => {
     await login(page, flat.user);
     const result = await runOAuthFlow(page);
