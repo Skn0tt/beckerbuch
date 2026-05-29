@@ -757,7 +757,8 @@ test.describe("MCP server", () => {
     expect(res.status).toBe(401);
     const wwwAuth = res.headers.get("www-authenticate") ?? "";
     expect(wwwAuth).toContain("Bearer");
-    expect(wwwAuth).toContain("/.well-known/oauth-protected-resource");
+    // RFC 9728 §3.1: resource_metadata is path-suffixed with the resource path.
+    expect(wwwAuth).toContain("/.well-known/oauth-protected-resource/mcp");
   });
 
   test("oauth-protected-resource metadata is served at both the bare and path-suffixed URLs", async () => {

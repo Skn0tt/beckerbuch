@@ -393,13 +393,15 @@ function recipePayload(recipe: FlatRecipe, request: Request) {
 
 function unauthorized(request: Request): Response {
   const origin = new URL(request.url).origin;
+  // RFC 9728 §3.1 / §5.3: the resource_metadata URL is path-suffixed with
+  // the resource path. Our resource is at /mcp.
   return new Response(
     JSON.stringify({ error: "unauthorized", error_description: "Bearer token required" }),
     {
       status: 401,
       headers: {
         "content-type": "application/json",
-        "www-authenticate": `Bearer realm="kochbuch", resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+        "www-authenticate": `Bearer realm="kochbuch", resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`,
       },
     },
   );
