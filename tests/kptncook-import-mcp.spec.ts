@@ -1,8 +1,6 @@
 import { test, expect } from "./fixtures";
-import { login } from "./login";
 import {
-  runOAuthFlow,
-  mcpClient,
+  mcpClientFor,
   jsonFromToolResult,
   setMcpBaseUrl,
 } from "./mcp-helpers";
@@ -44,10 +42,7 @@ test.describe("MCP kptncook_fetch_recipe", () => {
   });
 
   test("returns normalized payload for a share URL", async ({ page, flat }) => {
-    await login(page, flat.user);
-    const oauth = await runOAuthFlow(page);
-    if (!oauth.ok) throw new Error("oauth flow failed");
-    const client = await mcpClient(oauth.tokens.accessToken);
+    const client = await mcpClientFor(page, flat.user);
 
     try {
       const callResult = await client.callTool({
@@ -78,10 +73,7 @@ test.describe("MCP kptncook_fetch_recipe", () => {
   });
 
   test("works with a bare uid", async ({ page, flat }) => {
-    await login(page, flat.user);
-    const oauth = await runOAuthFlow(page);
-    if (!oauth.ok) throw new Error("oauth flow failed");
-    const client = await mcpClient(oauth.tokens.accessToken);
+    const client = await mcpClientFor(page, flat.user);
 
     try {
       const callResult = await client.callTool({
@@ -101,10 +93,7 @@ test.describe("MCP kptncook_fetch_recipe", () => {
     page,
     flat,
   }) => {
-    await login(page, flat.user);
-    const oauth = await runOAuthFlow(page);
-    if (!oauth.ok) throw new Error("oauth flow failed");
-    const client = await mcpClient(oauth.tokens.accessToken);
+    const client = await mcpClientFor(page, flat.user);
 
     try {
       const callResult = await client.callTool({

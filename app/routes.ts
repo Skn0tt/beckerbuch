@@ -21,24 +21,5 @@ export default [
   route("r/:id", "routes/r.$id.tsx"),
   route("r/:id/photo", "routes/r.$id.photo.tsx"),
   route("h/:flatId", "routes/h.$flatId.tsx"),
-  route(".well-known/oauth-protected-resource", "routes/oauth.metadata.ts", {
-    id: "oauth-metadata-protected-resource",
-  }),
-  route(".well-known/oauth-protected-resource/mcp", "routes/oauth.metadata.ts", {
-    id: "oauth-metadata-protected-resource-mcp",
-  }),
-  route(".well-known/oauth-authorization-server", "routes/oauth.metadata.ts", {
-    id: "oauth-metadata-authorization-server",
-  }),
-  route(".well-known/openid-configuration", "routes/oauth.metadata.ts", {
-    id: "oauth-metadata-openid-configuration",
-  }),
-  route("oauth/register", "routes/oauth.register.ts"),
-  // Alias for clients (e.g. some Claude MCP builds) that hardcode a
-  // bare /register DCR endpoint instead of honoring the advertised
-  // registration_endpoint from the AS metadata.
-  route("register", "routes/oauth.register.ts", { id: "oauth-register-alias" }),
-  route("oauth/authorize", "routes/oauth.authorize.tsx"),
-  route("oauth/token", "routes/oauth.token.ts"),
   route("mcp", "routes/mcp.ts"),
 ] satisfies RouteConfig;

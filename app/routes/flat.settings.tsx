@@ -89,9 +89,14 @@ async function getCurrentInvite(flatId: string): Promise<CurrentInvite> {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requireFlatMember(request);
-  const [members, currentInvite] = await Promise.all([
+  const [members, currentInvite, [userRow]] = await Promise.all([
     listMembers(ctx.flat.id),
     getCurrentInvite(ctx.flat.id),
+    db()
+      .select({ mcpToken: users.mcpToken })
+      .from(users)
+      .where(eq(users.id, ctx.user.id))
+      .limit(1),
   ]);
   return {
     flat: ctx.flat,
@@ -99,6 +104,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       id: ctx.user.id,
       displayName: ctx.user.displayName,
       avatarKey: (members.find((m) => m.id === ctx.user.id)?.avatarKey ?? null),
+      mcpToken: userRow?.mcpToken ?? "",
     },
     csrfToken: csrfTokenForSession(ctx.session.id),
     members,
@@ -196,7 +202,7 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
   const inviteUrl = currentInvite
     ? `${origin}/invite/${currentInvite.token}`
     : null;
-  const mcpUrl = `${origin}/mcp`;
+  const mcpUrl = `${origin}/mcp?token=${user.mcpToken}`;
   const isAvatarUploading =
     navigation.state !== "idle" &&
     navigation.formData?.get("intent") === "upload-avatar";

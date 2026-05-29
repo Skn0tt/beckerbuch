@@ -43,6 +43,13 @@
       "when": 1779125013560,
       "tag": "0005_curved_namor",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780059117821,
+      "tag": "0006_big_edwin_jarvis",
+      "breakpoints": true
     }
   ]
 }

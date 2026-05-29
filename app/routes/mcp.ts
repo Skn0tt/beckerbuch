@@ -2,7 +2,7 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { Route } from "./+types/mcp";
-import { tryGetMcpContext } from "../auth/oauth-token";
+import { tryGetMcpContext } from "../auth/mcp-token";
 import {
   createRecipe,
   editRecipe,
@@ -109,7 +109,7 @@ const editRecipeInput = {
 async function handle(request: Request): Promise<Response> {
   const ctx = await tryGetMcpContext(request);
   if (!ctx) {
-    return unauthorized(request);
+    return unauthorized();
   }
 
   const server = new McpServer(
@@ -391,18 +391,16 @@ function recipePayload(recipe: FlatRecipe, request: Request) {
   };
 }
 
-function unauthorized(request: Request): Response {
-  const origin = new URL(request.url).origin;
-  // RFC 9728 §3.1 / §5.3: the resource_metadata URL is path-suffixed with
-  // the resource path. Our resource is at /mcp.
+function unauthorized(): Response {
   return new Response(
-    JSON.stringify({ error: "unauthorized", error_description: "Bearer token required" }),
+    JSON.stringify({
+      error: "unauthorized",
+      error_description:
+        "MCP token required. Pass it as ?token=<uuid> or Authorization: Bearer <uuid>.",
+    }),
     {
       status: 401,
-      headers: {
-        "content-type": "application/json",
-        "www-authenticate": `Bearer realm="kochbuch", resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`,
-      },
+      headers: { "content-type": "application/json" },
     },
   );
 }
