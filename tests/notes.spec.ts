@@ -152,6 +152,173 @@ test("note: editable on in-stock items too", async ({ page, flat }) => {
   await expect(page.getByTestId("note-text")).toHaveText(/added after finalise/);
 });
 
+test("note: mobile keeps + Note with controls when empty, moves note below once filled", async ({ page, flat }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, flat.user);
+  await addPastaToDraftAndOpenKitchen(page);
+
+  const addNote = page.getByRole("button", { name: "Add note for Pasta al limone" });
+  const decreasePortions = page.getByRole("button", {
+    name: "Decrease Pasta al limone portions",
+  });
+  await expect(addNote).toBeVisible();
+  await expect(decreasePortions).toBeVisible();
+
+  const controlsContainAddNote = await decreasePortions.evaluate(
+    (decreaseEl, addNoteAriaLabel) => {
+      let controlsRow: Element | null = null;
+      let node: Element | null = decreaseEl;
+      while (node) {
+        if (
+          node.matches('[class*="mantine-Group-root"]') &&
+          node.querySelector(
+            'button[aria-label="Choose cook for Pasta al limone"]',
+          ) != null
+        ) {
+          controlsRow = node;
+          break;
+        }
+        node = node.parentElement;
+      }
+      return controlsRow?.querySelector(`button[aria-label="${addNoteAriaLabel}"]`) != null;
+    },
+    "Add note for Pasta al limone",
+  );
+  expect(controlsContainAddNote).toBe(true);
+
+  await addNote.click();
+  await page.getByTestId("note-input").fill("cook first");
+  const waitForSetNote = page.waitForResponse(
+    (r) =>
+      r.request().method() === "POST" &&
+      r.url().endsWith("/kitchen.data") &&
+      r.status() < 400,
+  );
+  await page.getByTestId("note-input").press("Enter");
+  await waitForSetNote;
+  await page.reload();
+  await expect(page).toHaveURL("/kitchen");
+
+  const note = page.getByTestId("note-text");
+  await expect(note).toHaveText(/cook first/);
+  const controlsContainNoteText = await decreasePortions.evaluate((decreaseEl) => {
+    let controlsRow: Element | null = null;
+    let node: Element | null = decreaseEl;
+    while (node) {
+      if (
+        node.matches('[class*="mantine-Group-root"]') &&
+        node.querySelector(
+          'button[aria-label="Choose cook for Pasta al limone"]',
+        ) != null
+      ) {
+        controlsRow = node;
+        break;
+      }
+      node = node.parentElement;
+    }
+    return controlsRow?.querySelector('[data-testid="note-text"]') != null;
+  });
+  expect(controlsContainNoteText).toBe(false);
+});
+
+test("note: mobile stock card keeps title top, quantity top-right, and avatar/note/cooked on one row", async ({
+  page,
+  flat,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, flat.user);
+  await addPastaToDraftAndOpenKitchen(page);
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(`/h/${flat.id}`);
+  await page.goto("/kitchen?lane=stock");
+
+  const stockCard = page
+    .getByRole("link", { name: "Pasta al limone" })
+    .locator("xpath=ancestor::*[contains(@class, 'mantine-Card-root')][1]");
+  const recipeTitle = stockCard.getByRole("link", { name: "Pasta al limone" });
+  const quantity = stockCard.getByText("4", { exact: true });
+  const cookPicker = stockCard.getByRole("button", {
+    name: "Choose cook for Pasta al limone",
+  });
+  const addNote = stockCard.getByRole("button", {
+    name: "Add note for Pasta al limone",
+  });
+  const markCooked = stockCard.getByRole("button", {
+    name: "Mark Pasta al limone as cooked",
+  });
+
+  await expect(quantity).toBeVisible();
+  await expect(cookPicker).toBeVisible();
+  await expect(addNote).toBeVisible();
+  await expect(markCooked).toHaveText("✓");
+
+  const titleRect = await recipeTitle.evaluate((el) => el.getBoundingClientRect());
+  const quantityRect = await quantity.evaluate((el) => el.getBoundingClientRect());
+  const cookPickerRect = await cookPicker.evaluate((el) => el.getBoundingClientRect());
+  const addNoteRect = await addNote.evaluate((el) => el.getBoundingClientRect());
+  const markCookedRect = await markCooked.evaluate((el) => el.getBoundingClientRect());
+
+  expect(titleRect.y).toBeLessThan(cookPickerRect.y - 2);
+  expect(quantityRect.y).toBeLessThan(cookPickerRect.y - 2);
+  expect(titleRect.x).toBeLessThan(quantityRect.x);
+  expect(cookPickerRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
+  expect(addNoteRect.y).toBeLessThan(cookPickerRect.y + cookPickerRect.height);
+  expect(markCookedRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
+  expect(addNoteRect.y).toBeLessThan(markCookedRect.y + markCookedRect.height);
+  expect(cookPickerRect.x).toBeLessThan(addNoteRect.x);
+  expect(addNoteRect.x).toBeLessThan(markCookedRect.x);
+});
+
+test("note: desktop stock card keeps title top, quantity top-right, and avatar/note/cooked on one row", async ({
+  page,
+  flat,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await login(page, flat.user);
+  await addPastaToDraftAndOpenKitchen(page);
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(`/h/${flat.id}`);
+  await page.goto("/kitchen?lane=stock");
+
+  const stockCard = page
+    .getByRole("link", { name: "Pasta al limone" })
+    .locator("xpath=ancestor::*[contains(@class, 'mantine-Card-root')][1]");
+  const recipeTitle = stockCard.getByRole("link", { name: "Pasta al limone" });
+  const quantity = stockCard.getByText("4", { exact: true });
+  const cookPicker = stockCard.getByRole("button", {
+    name: "Choose cook for Pasta al limone",
+  });
+  const addNote = stockCard.getByRole("button", {
+    name: "Add note for Pasta al limone",
+  });
+  const markCooked = stockCard.getByRole("button", {
+    name: "Mark Pasta al limone as cooked",
+  });
+
+  await expect(quantity).toBeVisible();
+  await expect(cookPicker).toBeVisible();
+  await expect(addNote).toBeVisible();
+  await expect(markCooked).toHaveText("✓");
+
+  const titleRect = await recipeTitle.evaluate((el) => el.getBoundingClientRect());
+  const quantityRect = await quantity.evaluate((el) => el.getBoundingClientRect());
+  const cookPickerRect = await cookPicker.evaluate((el) => el.getBoundingClientRect());
+  const addNoteRect = await addNote.evaluate((el) => el.getBoundingClientRect());
+  const markCookedRect = await markCooked.evaluate((el) => el.getBoundingClientRect());
+
+  expect(titleRect.y).toBeLessThan(cookPickerRect.y - 2);
+  expect(quantityRect.y).toBeLessThan(cookPickerRect.y - 2);
+  expect(titleRect.x).toBeLessThan(quantityRect.x);
+  expect(cookPickerRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
+  expect(addNoteRect.y).toBeLessThan(cookPickerRect.y + cookPickerRect.height);
+  expect(markCookedRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
+  expect(addNoteRect.y).toBeLessThan(markCookedRect.y + markCookedRect.height);
+  expect(cookPickerRect.x).toBeLessThan(addNoteRect.x);
+  expect(addNoteRect.x).toBeLessThan(markCookedRect.x);
+});
+
 test("note: does NOT appear on the public /h/:flatId handoff page", async ({
   page,
   flat,

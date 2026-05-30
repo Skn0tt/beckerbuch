@@ -14,7 +14,7 @@ import {
   Title,
   UnstyledButton,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
+import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Form, Link, useFetcher, useNavigation } from "react-router";
 import {
@@ -41,15 +41,18 @@ import { UserAvatar } from "./user-avatar";
 import type { KitchenEntry, KitchenMember } from "../lib/kitchen-data";
 
 type Lane = "draft" | "stock";
+const kitchenMobileQuery = "(max-width: 48em)";
 
 function NoteEditor({
   entry,
   csrfToken,
   formAction,
+  compactWhenEmpty = false,
 }: {
   entry: KitchenEntry;
   csrfToken: string;
   formAction?: string;
+  compactWhenEmpty?: boolean;
 }) {
   const fetcher = useFetcher({ key: `note-${entry.id}` });
   const submittedNote = fetcher.formData?.get("note");
@@ -130,12 +133,12 @@ function NoteEditor({
   return (
     <Button
       type="button"
-      size="compact-xs"
+      size={compactWhenEmpty ? "xs" : "compact-xs"}
       variant="subtle"
       c="dimmed"
       onClick={startEditing}
       aria-label={`Add note for ${entry.recipeName}`}
-      style={{ alignSelf: "flex-start" }}
+      style={compactWhenEmpty ? undefined : { alignSelf: "flex-start" }}
     >
       + Note
     </Button>
@@ -311,6 +314,7 @@ export function DraftCard({
       : entry.targetQuantity;
 
   const removeFetcher = useFetcher();
+  const isMobile = useMediaQuery(kitchenMobileQuery);
   const [confirmRemove, { open: openConfirm, close: closeConfirm }] =
     useDisclosure(false);
 
@@ -357,12 +361,22 @@ export function DraftCard({
     fd.set(csrfFieldName(), csrfToken);
     cookFetcher.submit(fd, { method: "post", ...(formAction ? { action: formAction } : {}) });
   };
+  const showInlineAddNote = isMobile && !entry.note;
 
   return (
     <Card withBorder padding="sm">
       <Stack gap="xs">
-        <Group justify="space-between" align="center" wrap="nowrap">
-          <Group gap="xs" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
+        <Group
+          justify="space-between"
+          align={isMobile ? "stretch" : "center"}
+          wrap="nowrap"
+          style={isMobile ? { flexDirection: "column" } : undefined}
+        >
+          <Group
+            gap="xs"
+            wrap="nowrap"
+            style={{ minWidth: 0, flex: 1, ...(isMobile ? { width: "100%" } : {}) }}
+          >
             {dragHandle ?? (
               <MoveButtons
                 entry={entry}
@@ -378,9 +392,13 @@ export function DraftCard({
               prefetch="intent"
               fw={500}
               style={{
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
+                ...(isMobile
+                  ? { minWidth: 0, flex: 1 }
+                  : {
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }),
               }}
             >
               {entry.recipeName}
@@ -416,10 +434,20 @@ export function DraftCard({
               effectiveCookId={effectiveCookId}
               submitCook={submitCook}
             />
+            {showInlineAddNote ? (
+              <NoteEditor
+                entry={entry}
+                csrfToken={csrfToken}
+                formAction={formAction}
+                compactWhenEmpty
+              />
+            ) : null}
           </Group>
         </Group>
 
-        <NoteEditor entry={entry} csrfToken={csrfToken} formAction={formAction} />
+        {!showInlineAddNote ? (
+          <NoteEditor entry={entry} csrfToken={csrfToken} formAction={formAction} />
+        ) : null}
       </Stack>
 
       <Modal
@@ -488,6 +516,7 @@ export function StockCard({
 
   const [confirmCooked, { open: openCookedConfirm, close: closeCookedConfirm }] =
     useDisclosure(false);
+  const flexFillStyle = { minWidth: 0, flex: 1 } as const;
 
   const cookedFetcher = useFetcher();
   const submitCooked = () => {
@@ -505,54 +534,60 @@ export function StockCard({
   return (
     <Card withBorder padding="sm">
       <Stack gap="xs">
-        <Group justify="space-between" align="center" wrap="nowrap">
-          <Group gap="xs" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
-            {dragHandle ?? (
-              <MoveButtons
-                entry={entry}
-                csrfToken={csrfToken}
-                isFirst={isFirst}
-                isLast={isLast}
-                formAction={formAction}
-              />
-            )}
-            <Anchor
-              component={Link}
-              to={`/recipes/${entry.recipeId}`}
-              prefetch="intent"
-              fw={500}
-              style={{
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {entry.recipeName}
-            </Anchor>
-          </Group>
-          <Group gap="xs" wrap="nowrap">
-            <Text size="sm" c="dimmed">
-              {entry.targetQuantity}
-            </Text>
-            <CookPicker
+        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0, width: "100%" }}>
+          {dragHandle ?? (
+            <MoveButtons
               entry={entry}
-              members={members}
-              effectiveCookId={effectiveCookId}
-              submitCook={submitCook}
+              csrfToken={csrfToken}
+              isFirst={isFirst}
+              isLast={isLast}
+              formAction={formAction}
             />
-            <Button
-              type="button"
-              variant="outline"
-              color="green"
-              size="xs"
-              onClick={openCookedConfirm}
-              aria-label={`Mark ${entry.recipeName} as cooked`}
-            >
-              Mark as cooked
-            </Button>
-          </Group>
+          )}
+          <Anchor
+            component={Link}
+            to={`/recipes/${entry.recipeId}`}
+            prefetch="intent"
+            fw={500}
+            style={{
+              ...flexFillStyle,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {entry.recipeName}
+          </Anchor>
+          <Text size="sm" c="dimmed">
+            {entry.targetQuantity}
+          </Text>
         </Group>
-        <NoteEditor entry={entry} csrfToken={csrfToken} formAction={formAction} />
+        <Group align="center" gap="xs" wrap="nowrap" style={{ width: "100%" }}>
+          <CookPicker
+            entry={entry}
+            members={members}
+            effectiveCookId={effectiveCookId}
+            submitCook={submitCook}
+          />
+          <div style={flexFillStyle}>
+            <NoteEditor
+              entry={entry}
+              csrfToken={csrfToken}
+              formAction={formAction}
+              compactWhenEmpty
+            />
+          </div>
+          <ActionIcon
+            type="button"
+            variant="outline"
+            color="green"
+            size="sm"
+            onClick={openCookedConfirm}
+            aria-label={`Mark ${entry.recipeName} as cooked`}
+          >
+            ✓
+          </ActionIcon>
+        </Group>
       </Stack>
 
       <Modal
