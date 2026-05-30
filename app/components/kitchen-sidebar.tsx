@@ -935,6 +935,11 @@ export function KitchenSidebar({
           />
         )}
       </Stack>
+
+      <Stack gap="xs">
+        <Title order={4}>Ingredients</Title>
+        <PlannedIngredients stock={stock} />
+      </Stack>
     </Stack>
   );
 }
