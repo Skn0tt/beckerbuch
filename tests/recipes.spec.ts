@@ -53,6 +53,29 @@ test("recipe form rejects empty name and missing ingredients", async ({ page, fl
   await expect(page.getByRole("alert")).toContainText(/at least one ingredient/i);
 });
 
+test("recipe form keeps one trailing empty ingredient row", async ({ page, flat }) => {
+  await login(page, flat.user);
+  await page.getByRole("link", { name: "+ New recipe" }).click();
+
+  await expect(page.getByRole("button", { name: "+ Add ingredient" })).toHaveCount(0);
+  await expect(page.getByLabel("Ingredient 2 item")).toHaveCount(0);
+
+  await expect(page.getByLabel("Ingredient 1 unit")).toHaveAttribute(
+    "autocapitalize",
+    "none",
+  );
+  await expect(page.getByLabel("Ingredient 1 unit")).toHaveAttribute(
+    "autocorrect",
+    "off",
+  );
+
+  await page.getByLabel("Ingredient 1 item").fill("flour");
+  await expect(page.getByLabel("Ingredient 2 item")).toBeVisible();
+
+  await page.getByLabel("Ingredient 2 item").fill("water");
+  await expect(page.getByLabel("Ingredient 3 item")).toBeVisible();
+});
+
 test("recipes are scoped to the flat — other flat's recipe → 404", async ({
   page,
   flat,
