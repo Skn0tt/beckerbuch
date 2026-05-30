@@ -28,18 +28,19 @@ export type RecipeFormInitial = {
 };
 
 const blankRow = (): IngredientRow => ({ amount: "", unit: "", item: "" });
-const isBlankRow = (row: IngredientRow) =>
-  row.amount.trim() === "" && row.unit.trim() === "" && row.item.trim() === "";
+const isBlankRow = (row: IngredientRow | undefined) => {
+  if (!row) return false;
+  return row.amount.trim() === "" && row.unit.trim() === "" && row.item.trim() === "";
+};
 const ensureTrailingBlankRow = (rows: IngredientRow[]) => {
   const normalized = [...rows];
-  while (
-    normalized.length > 1 &&
-    isBlankRow(normalized[normalized.length - 1]!) &&
-    isBlankRow(normalized[normalized.length - 2]!)
-  ) {
+  while (normalized.length > 1) {
+    const last = normalized.at(-1);
+    const previous = normalized.at(-2);
+    if (!isBlankRow(last) || !isBlankRow(previous)) break;
     normalized.pop();
   }
-  if (normalized.length === 0 || !isBlankRow(normalized[normalized.length - 1]!)) {
+  if (normalized.length === 0 || !isBlankRow(normalized.at(-1))) {
     normalized.push(blankRow());
   }
   return normalized;
