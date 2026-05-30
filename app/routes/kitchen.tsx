@@ -4,6 +4,7 @@ import {
   SegmentedControl,
   Stack,
   Text,
+  Title,
 } from "@mantine/core";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { Link, redirect, useNavigate } from "react-router";
@@ -18,6 +19,7 @@ import { loadKitchen } from "../lib/kitchen-data";
 import { snapshotDedupForFlat } from "../lib/dedup-snapshot";
 import {
   FinaliseButton,
+  PlannedIngredients,
   SortableLane,
 } from "../components/kitchen-sidebar";
 import { firstMessage, formDataToObject } from "../lib/form";
@@ -77,7 +79,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requireFlatMember(request);
   const url = new URL(request.url);
   const laneParam = url.searchParams.get("lane");
-  const lane: "draft" | "stock" = laneParam === "stock" ? "stock" : "draft";
+  const lane: "draft" | "stock" | "ingredients" =
+    laneParam === "stock"
+      ? "stock"
+      : laneParam === "ingredients"
+        ? "ingredients"
+        : "draft";
 
   const data = await loadKitchen(ctx.flat.id);
   return {
@@ -358,7 +365,15 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
       <Stack gap="md">
         <SegmentedControl
           value={lane}
-          onChange={(v) => navigate(v === "stock" ? "?lane=stock" : "?lane=draft")}
+          onChange={(v) =>
+            navigate(
+              v === "stock"
+                ? "?lane=stock"
+                : v === "ingredients"
+                  ? "?lane=ingredients"
+                  : "?lane=draft",
+            )
+          }
           aria-label="Kitchen lane"
           data={[
             {
@@ -376,6 +391,10 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
                   In stock <Text span c="dimmed" inherit>{stock.length}</Text>
                 </>
               ),
+            },
+            {
+              value: "ingredients",
+              label: "Ingredients",
             },
           ]}
         />
@@ -401,17 +420,24 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
               />
             </Stack>
           )
-        ) : stock.length === 0 ? (
-          <Text c="dimmed">
-            Nothing in stock yet — finalise the draft to start cooking.
-          </Text>
+        ) : lane === "stock" ? (
+          stock.length === 0 ? (
+            <Text c="dimmed">
+              Nothing in stock yet — finalise the draft to start cooking.
+            </Text>
+          ) : (
+            <SortableLane
+              lane="stock"
+              entries={stock}
+              members={members}
+              csrfToken={csrfToken}
+            />
+          )
         ) : (
-          <SortableLane
-            lane="stock"
-            entries={stock}
-            members={members}
-            csrfToken={csrfToken}
-          />
+          <Stack gap="xs">
+            <Title order={4}>Planned ingredients</Title>
+            <PlannedIngredients stock={stock} />
+          </Stack>
         )}
       </Stack>
     </Container>

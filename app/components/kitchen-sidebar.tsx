@@ -38,6 +38,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { csrfFieldName } from "../auth/csrf-shared";
 import { CsrfField } from "../auth/csrf-field";
 import { UserAvatar } from "./user-avatar";
+import { formatIngredient } from "../lib/scale";
 import type { KitchenEntry, KitchenMember } from "../lib/kitchen-data";
 
 type Lane = "draft" | "stock";
@@ -840,6 +841,54 @@ export function SortableLane({
 }
 
 /**
+ * Flat list of all ingredients tied up in in-stock (finalised, not yet
+ * cooked) recipe entries, sorted alphabetically by item name.
+ * Each row shows the scaled ingredient text and the recipe it belongs to.
+ */
+export function PlannedIngredients({ stock }: { stock: KitchenEntry[] }) {
+  type Row = { text: string; recipeName: string; key: string };
+  const rows: Row[] = [];
+  for (const entry of stock) {
+    const factor =
+      entry.baseQuantity > 0 ? entry.targetQuantity / entry.baseQuantity : 1;
+    for (const ing of entry.ingredients) {
+      const text = formatIngredient(ing, factor);
+      rows.push({
+        text,
+        recipeName: entry.recipeName,
+        key: `${entry.id}-${ing.position}`,
+      });
+    }
+  }
+  rows.sort((a, b) => a.text.localeCompare(b.text));
+
+  if (rows.length === 0) {
+    return (
+      <Text size="sm" c="dimmed">
+        No planned ingredients — finalise the draft to start cooking.
+      </Text>
+    );
+  }
+
+  return (
+    <List size="sm" spacing={4}>
+      {rows.map((row) => (
+        <List.Item key={row.key}>
+          <Group gap="xs" wrap="nowrap">
+            <Text span style={{ minWidth: 0, flex: 1 }}>
+              {row.text}
+            </Text>
+            <Text span size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+              {row.recipeName}
+            </Text>
+          </Group>
+        </List.Item>
+      ))}
+    </List>
+  );
+}
+
+/**
  * Compact Draft + In-stock + Finalise tree. Rendered as the right
  * sidebar on the desktop home page; the /kitchen route uses the
  * individual cards directly with its own lane switcher.
@@ -860,6 +909,9 @@ export function KitchenSidebar({
   csrfToken: string;
   formAction?: string;
 }) {
+  const [ingredientsOpen, { open: openIngredients, close: closeIngredients }] =
+    useDisclosure(false);
+
   // Layout intent: the sidebar as a whole scrolls when content overflows
   // the viewport. The two lanes flow naturally one after the other rather
   // than each owning its own scroll region.
@@ -904,9 +956,18 @@ export function KitchenSidebar({
       </Stack>
 
       <Stack gap="xs">
-        <Title order={4}>
-          In stock <Text span c="dimmed" inherit>{stock.length}</Text>
-        </Title>
+        <Group justify="space-between" align="center">
+          <Title order={4}>
+            In stock <Text span c="dimmed" inherit>{stock.length}</Text>
+          </Title>
+          <Button
+            variant="subtle"
+            size="xs"
+            onClick={openIngredients}
+          >
+            Ingredients
+          </Button>
+        </Group>
         {stock.length === 0 ? (
           <Text size="sm" c="dimmed">
             Nothing in stock yet — finalise the draft to start cooking.
@@ -921,6 +982,14 @@ export function KitchenSidebar({
           />
         )}
       </Stack>
+
+      <Modal
+        opened={ingredientsOpen}
+        onClose={closeIngredients}
+        title="Planned ingredients"
+      >
+        <PlannedIngredients stock={stock} />
+      </Modal>
     </Stack>
   );
 }
