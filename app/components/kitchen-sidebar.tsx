@@ -874,6 +874,9 @@ export function KitchenSidebar({
   csrfToken: string;
   formAction?: string;
 }) {
+  const [ingredientsOpen, { open: openIngredients, close: closeIngredients }] =
+    useDisclosure(false);
+
   // Layout intent: the sidebar as a whole scrolls when content overflows
   // the viewport. The two lanes flow naturally one after the other rather
   // than each owning its own scroll region.
@@ -918,9 +921,19 @@ export function KitchenSidebar({
       </Stack>
 
       <Stack gap="xs">
-        <Title order={4}>
-          In stock <Text span c="dimmed" inherit>{stock.length}</Text>
-        </Title>
+        <Group justify="space-between" align="center">
+          <Title order={4}>
+            In stock <Text span c="dimmed" inherit>{stock.length}</Text>
+          </Title>
+          <Button
+            variant="subtle"
+            size="xs"
+            onClick={openIngredients}
+            aria-label="Show planned ingredients"
+          >
+            Ingredients
+          </Button>
+        </Group>
         {stock.length === 0 ? (
           <Text size="sm" c="dimmed">
             Nothing in stock yet — finalise the draft to start cooking.
@@ -936,10 +949,13 @@ export function KitchenSidebar({
         )}
       </Stack>
 
-      <Stack gap="xs">
-        <Title order={4}>Ingredients</Title>
+      <Modal
+        opened={ingredientsOpen}
+        onClose={closeIngredients}
+        title="Planned ingredients"
+      >
         <PlannedIngredients stock={stock} />
-      </Stack>
+      </Modal>
     </Stack>
   );
 }
