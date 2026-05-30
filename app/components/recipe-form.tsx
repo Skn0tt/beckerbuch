@@ -28,6 +28,23 @@ export type RecipeFormInitial = {
 };
 
 const blankRow = (): IngredientRow => ({ amount: "", unit: "", item: "" });
+const isBlankRow = (row: IngredientRow | undefined) => {
+  if (!row) return false;
+  return row.amount.trim() === "" && row.unit.trim() === "" && row.item.trim() === "";
+};
+const ensureTrailingBlankRow = (rows: IngredientRow[]) => {
+  const normalized = [...rows];
+  while (normalized.length > 1) {
+    const last = normalized.at(-1);
+    const previous = normalized.at(-2);
+    if (!isBlankRow(last) || !isBlankRow(previous)) break;
+    normalized.pop();
+  }
+  if (normalized.length === 0 || !isBlankRow(normalized.at(-1))) {
+    normalized.push(blankRow());
+  }
+  return normalized;
+};
 
 type Props = {
   csrfToken: string;
@@ -49,8 +66,8 @@ export function RecipeForm({
   const initialRows =
     initial?.ingredients && initial.ingredients.length > 0
       ? initial.ingredients
-      : [blankRow(), blankRow(), blankRow()];
-  const [rows, setRows] = useState<IngredientRow[]>(initialRows);
+      : [blankRow()];
+  const [rows, setRows] = useState<IngredientRow[]>(ensureTrailingBlankRow(initialRows));
   const navigation = useNavigation();
   // Prevents double-submit (rapid second click, mobile double-tap, repeated
   // Enter) creating duplicate recipes. Mantine's `loading` doesn't set the
@@ -58,12 +75,13 @@ export function RecipeForm({
   const isSubmitting = navigation.state !== "idle";
 
   const setRow = (i: number, patch: Partial<IngredientRow>) => {
-    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+    setRows((rs) =>
+      ensureTrailingBlankRow(rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r))),
+    );
   };
   const removeRow = (i: number) => {
-    setRows((rs) => (rs.length > 1 ? rs.filter((_, idx) => idx !== i) : rs));
+    setRows((rs) => ensureTrailingBlankRow(rs.filter((_, idx) => idx !== i)));
   };
-  const addRow = () => setRows((rs) => [...rs, blankRow()]);
 
   return (
     <Form method="post" encType="multipart/form-data">
@@ -140,6 +158,8 @@ export function RecipeForm({
                 onChange={(e) => setRow(i, { unit: e.currentTarget.value })}
                 placeholder="unit"
                 style={{ width: 100 }}
+                autoCapitalize="none"
+                autoCorrect="off"
               />
               <TextInput
                 aria-label={`Ingredient ${i + 1} item`}
@@ -159,15 +179,6 @@ export function RecipeForm({
               </ActionIcon>
             </Group>
           ))}
-          <Button
-            type="button"
-            variant="default"
-            size="xs"
-            onClick={addRow}
-            style={{ alignSelf: "flex-start" }}
-          >
-            + Add ingredient
-          </Button>
         </Stack>
 
         <Textarea
