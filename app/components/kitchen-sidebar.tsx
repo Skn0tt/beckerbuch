@@ -929,7 +929,6 @@ export function KitchenSidebar({
             variant="subtle"
             size="xs"
             onClick={openIngredients}
-            aria-label="Show planned ingredients"
           >
             Ingredients
           </Button>
