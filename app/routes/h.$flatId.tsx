@@ -162,6 +162,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         ],
       }));
 
+  // Sort joint (merged) groups to the top so the user sees the
+  // dedup wins first. Stable: groups with the same merged-ness keep
+  // their original order.
+  combinedGroups.sort((a, b) => {
+    const aMerged = a.sources.length > 1 ? 1 : 0;
+    const bMerged = b.sources.length > 1 ? 1 : 0;
+    return bMerged - aMerged;
+  });
+
   // The exact lines that go into the JSON-LD recipeIngredient. Rejected
   // groups expand back to their source lines.
   const allIngredients: string[] = combinedGroups.flatMap((g) =>
