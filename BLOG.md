@@ -8,17 +8,22 @@ This post shows how to use spec-driven testing with `playwright-cli`.
 
 ## Setup
 
-You need two things:
+Two commands to set up everything you need:
 
-// I fixed the link. please look at how skill installation works and put the explicit commands here so folks can copy without having to browse around.
-- **The CLI** — `npm install -g @playwright/cli@latest`. See the
-  [`playwright-cli` docs](https://playwright.dev/agent-cli/introduction)
-  for the full surface; for our purposes, every command it runs also
-  prints the equivalent Playwright TypeScript.
-- **The skill** — the agent playbook that teaches Claude Code, Copilot
-  CLI, Cursor (or anything else that supports skills) *how* to use the
-  CLI for plan / generate / heal. Drop it into your repo and you're
-  done.
+```bash
+# 1. The CLI itself.
+npm install -g @playwright/cli@latest
+
+# 2. The agent skill — choose your flavour:
+playwright-cli install --skills=claude   # for Claude Code / Skills-aware agents
+playwright-cli install --skills=agents   # for Cursor, Copilot CLI, Continue, …
+```
+
+The CLI is documented at
+[playwright.dev/agent-cli](https://playwright.dev/agent-cli/introduction);
+the skill is a markdown playbook that teaches the agent *how* to use
+the CLI for plan / generate / heal so you don't have to spell it out
+every time.
 
 ---
 
@@ -42,27 +47,47 @@ The agent launches a debug session, attaches with `playwright-cli`,
 clicks through the importer the way a user would, and writes a spec
 file like this:
 
-// I'm not sure it would actually look like this. can you try it out and replace this with the real spec? feel free to delete the existing spec and test if needed.
 ```markdown
 # Recipe Import Test Plan
 
 ## Application Overview
-The importer accepts a recipe URL, fetches the page, parses its
-schema.org Recipe metadata, and prefills the new-recipe form.
+
+The generic import modal fetches real schema.org recipe pages, prefills
+the recipe form with parsed data, imports a cover image, and saves the
+result as a normal recipe.
 
 ## Test Scenarios
 
-### 1. Generic web import
+### 1. Live URL Import Modal
 
-**Seed:** `tests/fixtures.ts` (logged-in user, empty recipe list)
+**Seed:** `tests/fixtures.ts` (flat fixture: provisions a fresh tenant
++ first user, leaves browser logged out)
 
-#### 1.1 bbc-good-food-exact-ingredients
-**File:** `tests/recipe-import/bbc-good-food-exact-ingredients.spec.ts`
+#### 1.1. import-bbc-good-food-baked-ratatouille-prefills-exact-ingredients
+
+**File:** `tests/recipe-import-ui-live.spec.ts`
+
+Asserts the import modal extracts every ingredient from the source
+URL into the recipe form with the exact amount, unit, and item — not
+just sanity counts. Catches regressions where unit detection drops
+`tbsp`/`tsp`/`ml`/`g`, where unitless counts (e.g. "2 red onions") get
+a spurious unit, or where the "For the cheese sauce" subsection is
+skipped.
+
 **Steps:**
-  1. Open the importer and paste
-     `https://www.bbcgoodfood.com/recipes/baked-ratatouille-goats-cheese`.
-    - expect: the ingredients table contains, in order:
-      4 tbsp olive oil; 2 red onions; 2 garlic cloves; ...
+  1. Log in, open `/recipes/new`, and click `Import recipe`.
+    - expect: The `Import a recipe` heading is visible.
+  2. Paste `https://www.bbcgoodfood.com/recipes/baked-ratatouille-goats-cheese` and click `Import`.
+    - expect: The Name field contains `ratatouille`.
+    - expect: The ingredient rows in the form contain exactly the following 15 entries, in source order. Prep notes (e.g. "chopped", "finely grated") stay attached to the item rather than being silently dropped:
+      1. `{ amount: "4", unit: "tbsp", item: "olive oil" }`
+      2. `{ amount: "2", unit: "", item: "red onions chopped" }`
+      3. `{ amount: "2", unit: "", item: "garlic cloves finely chopped" }`
+      …
+      10. `{ amount: "200", unit: "g", item: "young goat's cheese" }`
+      …
+  3. Click `Save recipe`.
+    - expect: The browser lands on a recipe detail URL.
 ```
 
 ---
@@ -71,60 +96,72 @@ schema.org Recipe metadata, and prefills the new-recipe form.
 
 Now the second prompt:
 
-> Generate Playwright tests for scenario 1.1 of the spec.
+> Generate a Playwright test for scenario 1.1 of the spec.
 
 The agent reattaches to a debug session, walks the spec's steps in the
 real browser, and produces a `*.spec.ts` file:
 
-// same here, try out the prompt and see what it really looks like
 ```ts
-// spec: specs/recipe-import.plan.md scenario 1.1
-import { test, expect } from "./fixtures";
+test("import BBC Good Food baked ratatouille prefills exact ingredients", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+  await page.goto("/recipes/new");
 
-test.describe("Generic web import", () => {
-  test("bbc-good-food-exact-ingredients", async ({ page }) => {
-    // 1. Open the importer and paste the URL.
-    await page.getByRole("button", { name: "New recipe" }).click();
-    await page.getByRole("button", { name: "Import from URL" }).click();
-    await page
-      .getByRole("textbox", { name: "Recipe URL" })
-      .fill("https://www.bbcgoodfood.com/recipes/baked-ratatouille-goats-cheese");
-    await page.getByRole("button", { name: "Import" }).click();
+  // 1. Open the import modal.
+  await page.getByRole("button", { name: /import recipe/i }).click();
+  await expect(
+    page.getByRole("heading", { name: /import a recipe/i }),
+  ).toBeVisible();
 
-    // - expect: the ingredients table contains, in order: ...
-    await expect(page.getByRole("table", { name: "Ingredients" }))
-      .toMatchAriaSnapshot(`
-        - row:
-          - cell "4"
-          - cell "tbsp"
-          - cell "olive oil"
-        - row:
-          - cell "2"
-          - cell
-          - cell "red onions"
-        # ... and so on for every ingredient
-      `);
-  });
+  // 2. Paste the BBC Good Food URL and import.
+  await page
+    .getByLabel("Recipe URL or kptncook link / id")
+    .fill("https://www.bbcgoodfood.com/recipes/baked-ratatouille-goats-cheese");
+  await page.getByRole("button", { name: "Import", exact: true }).click();
+
+  await expect(page.getByLabel("Name")).toHaveValue(/ratatouille/i);
+
+  // Assert the whole ingredients table as one ARIA snapshot so a single
+  // soft failure shows every mismatched row, amount, unit, and item at once.
+  await expect.soft(page.getByRole("table", { name: "Ingredients" }))
+    .toMatchAriaSnapshot(`
+      - table "Ingredients":
+        - rowgroup:
+          - row "Amount Unit Item Actions":
+            - columnheader "Amount"
+            - columnheader "Unit"
+            - columnheader "Item"
+            - columnheader "Actions"
+        - rowgroup:
+          - row:
+            - cell "4"
+            - cell "tbsp"
+            - cell "olive oil"
+          - row:
+            - cell "2"
+            - cell
+            - cell "red onions chopped"
+          # … 13 more rows …
+          - row:
+            - cell "200"
+            - cell "g"
+            - cell "young goat's cheese"
+          # …
+    `);
+
+  // 3. Save.
+  await page.getByRole("button", { name: "Save recipe" }).click();
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
 });
 ```
 
-The `// spec:` header at the top of the file is the link back to the
-plan. When this test fails later, you (or your agent) know exactly
-which scenario to reconcile against.
-
 ---
 
-## Step 3 — A few days later, CI goes red
+## Step 3 — Heal
 
-// this is roundabout, just say that the CI going red means that maybe something changed in the format of bbcgoodfood and it might mean our parser needs updates.
-A note before the failure: we deliberately did *not* mock
-`bbcgoodfood.com` here. The whole point of the importer is to parse
-real third-party pages — if BBC ever changes the shape of their
-JSON-LD, our users will hit "Import" and get garbage. We want to know
-the day that happens, not three weeks later. Hitting the real URL from
-CI is the early-warning system.
-
-One morning, it pings:
+A few days later, CI goes red:
 
 ```diff
   - row:
@@ -134,14 +171,14 @@ One morning, it pings:
 +   - cell "mature goat's cheese"
 ```
 
-Honestly? This one's noise. We wanted the test to catch BBC changing
-the *format* of their data; what we actually caught is BBC changing
-the *content* of one recipe. The nice thing is that with the agent in
-the loop, noise like this is essentially free to clean up.
+Something on the BBC page changed. Could be the format their parser
+relies on, in which case our parser may need updates; could just be a
+content edit. Either way, we need to triage.
 
----
-
-## Step 4 — Heal
+(Note: we deliberately didn't mock `bbcgoodfood.com`. The whole point
+of this test is to catch the day a third party changes what we depend
+on — a mocked test would happily go green right up until our users
+hit "Import" on a real URL and got garbage.)
 
 We hand the failure to the agent:
 
@@ -149,18 +186,20 @@ We hand the failure to the agent:
 > decide whether the spec or the parser is the source of truth, and
 > update whichever is wrong.
 
-// check if it really does this. in this case, I think it can immediately fix it just by looking at the error message. the key thing is that the agent also updates the spec along with the test, please verify that manually.
-The agent runs the failing test with `--debug=cli`, attaches, inspects
-the live page, sees that the new ingredient name is genuinely what BBC
-serves now, and concludes: *spec is stale, parser is fine*. It edits
-**both** the spec (`young goat's cheese` → `mature goat's cheese`) and
-the test's aria snapshot to match, in one shot. The `// spec:` header
-made the round-trip mechanical.
+In this case the agent doesn't have to reattach the browser at all —
+it greps the failure output for the one row that doesn't match, checks
+that the live page really does serve `young goat's cheese`, and
+concludes our spec drifted. It then updates **both files** in one
+shot: the aria snapshot in the test and the matching line in the
+spec. (That dual update isn't optional — the skill's heal step
+explicitly says user-visible changes have to be reconciled in the
+spec, not just the test.)
 
 If instead the page was unchanged but our parser had regressed (say,
-we dropped the "g" unit somewhere), the agent would do the opposite —
-keep the spec, fix the parser. Either way the spec stays honest about
-what the app is supposed to do, and the fix has a paper trail.
+we dropped the "g" unit somewhere), the agent would go the other way
+— keep the spec, fix the parser. The point is that "did we change
+intent, or did we break something" is no longer a guess; it's an
+explicit decision recorded in the diff.
 
 ---
 
