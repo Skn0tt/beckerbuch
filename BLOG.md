@@ -1,5 +1,6 @@
 # Spec-driven Playwright testing with `playwright-cli`
 
+// this feels very length and contrived and from the past. can we cut it short? maybe we can also link out to our previous blog post, people might wonder why we're publishing the same thing twice.
 Most Playwright suites are written like this: build the feature, open
 DevTools, fish out a selector, write a test, repeat. A month later the
 selector breaks, a teammate "fixes" it by swapping `getByText` for
@@ -22,6 +23,8 @@ a recipe-import feature — paste a URL, get a prefilled recipe form.
 ---
 
 ## Setup
+
+// this is too long. let's cut it short and link out to some other authoritative doc on what the CLI is.
 
 You need two things.
 
@@ -67,6 +70,7 @@ walk through it.
 
 We open our agent and paste:
 
+// lets immediately just mention the BBC good food URL here! the one test case we want it to generate is about parsing this one URL
 > Use the `playwright-cli` skill to explore the recipe-import feature
 > and produce a spec file under `specs/recipe-import.plan.md`. Cover
 > the happy path, validation, and at least one regression-prone case
@@ -169,6 +173,7 @@ Two things worth noting:
 
 ## Step 3 — A few days later, the upstream page changes
 
+// let's have this smaller. we can just say that bbcgoodfood.com changed and our test is failing; and that we explicitly did not mock out this third party server because that's what the feature is all about.
 Here's the question that always comes up with this kind of test:
 *"isn't hitting `bbcgoodfood.com` from CI brittle? Shouldn't you mock
 it?"*
@@ -194,6 +199,7 @@ They're an early-warning system for upstream format drift.
 +   - cell "mature goat's cheese"
 ```
 
+// no, it's not really the signal we wanted. it's noise. them tweaking the contents is not what we wanted to detect, we want to detect them tweaking the format. so this is noise, but the nice thing is that the agent can fix the noise on its own super easy.
 That's exactly the signal we wanted: BBC tweaked an ingredient name on
 the page. Now we need to decide: is the parser wrong, or is this
 "reality changed, our spec is stale"?
