@@ -1,54 +1,25 @@
 # Spec-driven Playwright testing with `playwright-cli`
 
-// this feels very length and contrived and from the past. can we cut it short? maybe we can also link out to our previous blog post, people might wonder why we're publishing the same thing twice.
-Most Playwright suites are written like this: build the feature, open
-DevTools, fish out a selector, write a test, repeat. A month later the
-selector breaks, a teammate "fixes" it by swapping `getByText` for
-`locator(".btn-primary > span")`, and nobody remembers what the test
-was actually trying to prove. The suite slowly turns into a wall of
-green CI that nobody trusts.
-
-**Spec-driven testing** flips that around. You write a short,
-human-readable spec first — what scenarios matter, what the user should
-see — and an agent generates the Playwright code from it. The spec
-stays the source of truth. When the test fails, you don't go hunting
-for selectors; you ask "did the user-visible behaviour change, or did
-it not?" The spec gives you something concrete to reconcile against.
-
-In this post I'll walk through the **plan → generate → heal** loop using
-[`playwright-cli`](https://www.npmjs.com/package/@playwright/cli) and the
-matching agent skill. The running example is a tiny cookbook app with
-a recipe-import feature — paste a URL, get a prefilled recipe form.
+We've [written before](https://dev.to/playwright/playwright-agents-planner-generator-and-healer-in-action-5ajh)
+about the plan → generate → heal loop. This post is a short follow-up:
+a single concrete example using `playwright-cli` against a third-party
+page we don't control, where the *brittleness* of the test is actually
+the point.
 
 ---
 
 ## Setup
 
-// this is too long. let's cut it short and link out to some other authoritative doc on what the CLI is.
+You need two things:
 
-You need two things.
-
-**1. The CLI itself.** `playwright-cli` is a thin command surface over
-a real Playwright browser, designed to be driven by an agent (or by
-you, on the terminal):
-
-```bash
-npm install -g @playwright/cli@latest
-playwright-cli open https://example.com
-playwright-cli snapshot
-```
-
-Each command prints both the browser action *and* the equivalent
-Playwright TypeScript — so anything the agent does in the browser, you
-can paste straight into a test.
-
-**2. The `playwright-cli` skill.** This is the playbook your agent
-reads to know *how* to use the CLI — when to snapshot, how to attach
-to a paused test, what a spec file looks like, what "heal" means. It
-works with Claude Code, Copilot CLI, Cursor, or any other coding agent
-that supports skills. Drop it into your repo (or install it
-user-wide), and your agent now knows the workflow without you
-explaining it every time.
+- **The CLI** — `npm install -g @playwright/cli@latest`. See the
+  [`playwright-cli` docs](https://playwright.dev/docs/playwright-cli)
+  for the full surface; for our purposes, every command it runs also
+  prints the equivalent Playwright TypeScript.
+- **The skill** — the agent playbook that teaches Claude Code, Copilot
+  CLI, Cursor (or anything else that supports skills) *how* to use the
+  CLI for plan / generate / heal. Drop it into your repo and you're
+  done.
 
 ---
 
@@ -70,11 +41,11 @@ walk through it.
 
 We open our agent and paste:
 
-// lets immediately just mention the BBC good food URL here! the one test case we want it to generate is about parsing this one URL
 > Use the `playwright-cli` skill to explore the recipe-import feature
-> and produce a spec file under `specs/recipe-import.plan.md`. Cover
-> the happy path, validation, and at least one regression-prone case
-> (e.g. ingredient parsing with awkward units).
+> and produce a spec file under `specs/recipe-import.plan.md`. Include
+> a scenario that imports
+> `https://www.bbcgoodfood.com/recipes/baked-ratatouille-goats-cheese`
+> and asserts the parsed ingredients exactly (amount, unit, item).
 
 The agent launches a debug session, attaches with `playwright-cli`,
 clicks through the importer the way a user would, and writes a spec
@@ -85,8 +56,7 @@ file like this:
 
 ## Application Overview
 The importer accepts a recipe URL, fetches the page, parses its
-schema.org Recipe metadata, and prefills the new-recipe form. The user
-can edit the result before saving.
+schema.org Recipe metadata, and prefills the new-recipe form.
 
 ## Test Scenarios
 
@@ -94,17 +64,7 @@ can edit the result before saving.
 
 **Seed:** `tests/fixtures.ts` (logged-in user, empty recipe list)
 
-#### 1.1 paste-url-prefills-form
-**File:** `tests/recipe-import/paste-url-prefills-form.spec.ts`
-**Steps:**
-  1. Click "New recipe", then "Import from URL".
-    - expect: an input labelled "Recipe URL" is visible
-  2. Paste a known recipe URL and click "Import".
-    - expect: the form name field is filled with the recipe title
-    - expect: the ingredient list has at least one row
-    - expect: the steps textarea is non-empty
-
-#### 1.2 bbc-good-food-exact-ingredients
+#### 1.1 bbc-good-food-exact-ingredients
 **File:** `tests/recipe-import/bbc-good-food-exact-ingredients.spec.ts`
 **Steps:**
   1. Open the importer and paste
@@ -123,14 +83,14 @@ that's what it is. The agent just typed it for us.
 
 Now the second prompt:
 
-> Generate Playwright tests for scenario 1.2 of
+> Generate Playwright tests for scenario 1.1 of
 > `specs/recipe-import.plan.md` using the `playwright-cli` skill.
 
 The agent reattaches to a debug session, walks the spec's steps in the
 real browser, and produces a `*.spec.ts` file:
 
 ```ts
-// spec: specs/recipe-import.plan.md scenario 1.2
+// spec: specs/recipe-import.plan.md scenario 1.1
 import { test, expect } from "./fixtures";
 
 test.describe("Generic web import", () => {
@@ -171,25 +131,16 @@ Two things worth noting:
 
 ---
 
-## Step 3 — A few days later, the upstream page changes
+## Step 3 — A few days later, CI goes red
 
-// let's have this smaller. we can just say that bbcgoodfood.com changed and our test is failing; and that we explicitly did not mock out this third party server because that's what the feature is all about.
-Here's the question that always comes up with this kind of test:
-*"isn't hitting `bbcgoodfood.com` from CI brittle? Shouldn't you mock
-it?"*
+A note before the failure: we deliberately did *not* mock
+`bbcgoodfood.com` here. The whole point of the importer is to parse
+real third-party pages — if BBC ever changes the shape of their
+JSON-LD, our users will hit "Import" and get garbage. We want to know
+the day that happens, not three weeks later. Hitting the real URL from
+CI is the early-warning system.
 
-For most network-touching tests, yes — mock. But for an *importer*
-specifically, the brittleness is the whole point. The reason the
-feature exists is to parse third-party pages we don't control. If BBC
-Good Food renames a field in their JSON-LD, or Chefkoch wraps their
-ingredients in a new element, we *want* to know. A mocked test
-guarantees we'll keep passing right up until the moment our users hit
-"Import" on a real URL and get garbage.
-
-So we point a small number of high-signal tests at the real upstream.
-They're an early-warning system for upstream format drift.
-
-…and one morning, CI goes red:
+One morning, it pings:
 
 ```diff
   - row:
@@ -199,10 +150,10 @@ They're an early-warning system for upstream format drift.
 +   - cell "mature goat's cheese"
 ```
 
-// no, it's not really the signal we wanted. it's noise. them tweaking the contents is not what we wanted to detect, we want to detect them tweaking the format. so this is noise, but the nice thing is that the agent can fix the noise on its own super easy.
-That's exactly the signal we wanted: BBC tweaked an ingredient name on
-the page. Now we need to decide: is the parser wrong, or is this
-"reality changed, our spec is stale"?
+Honestly? This one's noise. We wanted the test to catch BBC changing
+the *format* of their data; what we actually caught is BBC changing
+the *content* of one recipe. The nice thing is that with the agent in
+the loop, noise like this is essentially free to clean up.
 
 ---
 
