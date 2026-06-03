@@ -9,7 +9,7 @@ This post shows the same loop with `playwright-cli`.
 > npm install -g @playwright/cli@latest
 > playwright-cli install --skills
 > ```
-> You can find out more at [https://playwright.dev/agent-cli/introduction](https://playwright.dev/agent-cli/introduction).
+> You can find out more at [playwright.dev/agent-cli/introduction](https://playwright.dev/agent-cli/introduction).
 
 ## Step 1: Plan
 
@@ -19,7 +19,7 @@ To generate a spec, we open the coding agent and ask:
 
 > Use the `playwright-cli` skill to explore the new recipe-import feature and produce a spec. Include a scenario that imports `https://www.bbcgoodfood.com/recipes/baked-ratatouille-goats-cheese` and asserts the parsed ingredients exactly.
 
-The agent reads the spec-driven-testing section of the playwright-cli Skill, then it attaches to a test debug session, clicks through the importer, and writes a spec:
+The agent reads the spec-driven-testing section of the playwright-cli skill, then attaches to a debug session, clicks through the importer, and writes a spec:
 
 ```markdown
 # Recipe Import Test Plan
@@ -64,8 +64,8 @@ skipped.
     - expect: The browser lands on a recipe detail URL.
 ```
 
-Since this spec is plain english markdown, it can be reviewed without knowing TypeScript!
-If you're unhappy with some details, you can give feedback to the agent or just edit the spec.md file directly.
+Since this spec is plain English markdown, it can be reviewed without knowing TypeScript!
+If you're unhappy with some details, you can give feedback to the agent or just edit the spec file directly.
 
 ## Step 2: Generate
 
@@ -101,7 +101,7 @@ test("import BBC Good Food baked ratatouille prefills exact ingredients", async 
     .toMatchAriaSnapshot(`
       - table "Ingredients":
         - rowgroup:
-          - row "Amount Unit Item Actions":
+          - row:
             - columnheader "Amount"
             - columnheader "Unit"
             - columnheader "Item"
@@ -129,13 +129,11 @@ test("import BBC Good Food baked ratatouille prefills exact ingredients", async 
 });
 ```
 
-Running the test shows it's green.
-
----
+Run it. Green.
 
 ## Step 3: Heal
 
-A few days pass. CI goes red; something on the recipe page changed. If they changed their format, it might mean we have to fix our importing logic. In this case, it was just a content edit:
+A few days pass. CI goes red; something on the recipe page changed. If their format changed, we might have to fix our import logic. In this case, it was just a content edit:
 
 ```diff
   - row:
@@ -152,6 +150,6 @@ We hand the failure to the agent:
 The agent doesn't need to reattach the browser — it greps the failure for the row that doesn't match, checks that the live page really does serve `mature goat's cheese`, concludes our spec drifted, and updates **both files** in one shot: the aria snapshot in the test *and* the matching line in the spec.
 The skill's heal step is explicit about this — user-visible changes get reconciled in the spec, not just patched in the test.
 
-If the content were unchanged but the format regressed our parser (say, we dropped the "g" unit somewhere), the agent would go the other way: keep the spec, fix the parser.
+If the content were unchanged but the format change broke our parser (say, we dropped the "g" unit somewhere), the agent would go the other way: keep the spec, fix the parser.
 
-In short, spec-driven testing allows keeping tests as prose which can be useful. Agents make it easy to keep the test implementation in sync with the spec. Give it a try!
+Spec-driven testing lets you keep your test plan as prose. Agents do the boring work of keeping the implementation in sync. Give it a try!
