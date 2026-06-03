@@ -14,6 +14,7 @@ import { db } from "../db/client";
 import { ingredients, recipes } from "../db/schema";
 import { formatIngredient } from "../lib/scale";
 import { parseParams } from "../lib/form";
+import { createSwrClientLoader, unwrapSwr, useSwrData } from "../lib/swr";
 
 const ParamsSchema = z.object({ id: z.guid() });
 
@@ -44,20 +45,26 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     recipe.baseQuantity > 0 ? targetQuantity / recipe.baseQuantity : 1;
 
   const imageUrl = recipe.photoBlobKey
-    ? new URL(`/r/${recipe.id}/photo`, url.origin).toString()
+    ? new URL(
+        `/r/${recipe.id}/photo?v=${encodeURIComponent(recipe.photoBlobKey)}`,
+        url.origin,
+      ).toString()
     : undefined;
 
   return { recipe, ingredients: ings, targetQuantity, factor, imageUrl };
 }
 
-export function meta({ data: d }: Route.MetaArgs) {
+export const clientLoader = createSwrClientLoader<Awaited<ReturnType<typeof loader>>>();
+
+export function meta({ data: raw }: Route.MetaArgs) {
+  const d = raw ? unwrapSwr(raw) : null;
   if (!d) return [];
   return [{ title: d.recipe.name }];
 }
 
-export default function PublicRecipe({ loaderData }: Route.ComponentProps) {
+export default function PublicRecipe() {
   const { recipe, ingredients: ings, targetQuantity, factor, imageUrl } =
-    loaderData;
+    useSwrData<Awaited<ReturnType<typeof loader>>>();
 
   const jsonLd = {
     "@context": "https://schema.org/",

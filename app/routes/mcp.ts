@@ -378,7 +378,9 @@ function recipePayload(recipe: FlatRecipe, request: Request) {
     steps: recipe.steps,
     sourceUrl: recipe.sourceUrl,
     sourceHost: recipe.sourceHost,
-    photoUrl: recipe.photoBlobKey ? `${origin}/r/${recipe.id}/photo` : null,
+    photoUrl: recipe.photoBlobKey
+      ? `${origin}/r/${recipe.id}/photo?v=${encodeURIComponent(recipe.photoBlobKey)}`
+      : null,
     createdAt: recipe.createdAt.toISOString(),
     updatedAt: recipe.updatedAt.toISOString(),
     url: `${origin}/recipes/${recipe.id}`,

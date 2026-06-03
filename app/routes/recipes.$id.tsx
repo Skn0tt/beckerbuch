@@ -35,6 +35,7 @@ import { isSameOrigin } from "../auth/origin";
 import { deletePhoto } from "../blobs";
 import { formatIngredient } from "../lib/scale";
 import { firstMessage, formDataToObject, parseParams } from "../lib/form";
+import { createSwrClientLoader, useSwrData } from "../lib/swr";
 
 const ParamsSchema = z.object({ id: z.guid() });
 
@@ -114,6 +115,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     csrfToken: csrfTokenForSession(ctx.session.id),
   };
 }
+
+export const clientLoader = createSwrClientLoader<Awaited<ReturnType<typeof loader>>>();
 
 export async function action({ request, params }: Route.ActionArgs) {
   if (!isSameOrigin(request)) {
@@ -339,9 +342,9 @@ function CookedButton({
   );
 }
 
-export default function RecipeView({ loaderData }: Route.ComponentProps) {
+export default function RecipeView() {
   const { recipe, ingredients: ings, draftInstance, stockInstance, csrfToken } =
-    loaderData;
+    useSwrData<Awaited<ReturnType<typeof loader>>>();
   const actionData = useActionData<{ error?: string } | undefined>();
   // Add-to-draft uses a fetcher so the loader revalidates and the
   // button flips to the "In draft" state without a full navigation.
@@ -397,7 +400,7 @@ export default function RecipeView({ loaderData }: Route.ComponentProps) {
 
       {recipe.photoBlobKey && (
         <Image
-          src={`/recipes/${recipe.id}/photo`}
+          src={`/recipes/${recipe.id}/photo?v=${encodeURIComponent(recipe.photoBlobKey)}`}
           alt={recipe.name}
           radius="sm"
           fit="cover"

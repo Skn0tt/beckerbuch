@@ -24,12 +24,33 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!recipe.photoBlobKey) {
     throw data("No photo.", { status: 404 });
   }
+
+  // Content-addressed via ?v=<blobKey>: callers append the current
+  // blobKey so the URL changes whenever the photo changes. When the
+  // caller's `v` matches the current blobKey, ship `immutable` —
+  // browsers will keep it forever. Older URLs without (or with a
+  // stale) `v` still work but get a short cache.
+  const url = new URL(request.url);
+  const versionMatches = url.searchParams.get("v") === recipe.photoBlobKey;
+  const etag = `"${recipe.photoBlobKey}"`;
+  const cacheControl = versionMatches
+    ? "private, max-age=31536000, immutable"
+    : "private, max-age=60";
+
+  if (request.headers.get("if-none-match") === etag) {
+    return new Response(null, {
+      status: 304,
+      headers: { ETag: etag, "Cache-Control": cacheControl },
+    });
+  }
+
   const blob = await readPhoto(recipe.photoBlobKey);
   if (!blob) throw data("No photo.", { status: 404 });
   return new Response(blob.body, {
     headers: {
       "Content-Type": blob.contentType,
-      "Cache-Control": "private, max-age=300",
+      "Cache-Control": cacheControl,
+      ETag: etag,
     },
   });
 }
