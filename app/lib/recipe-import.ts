@@ -138,6 +138,43 @@ async function assertPublicUrl(raw: string): Promise<URL> {
 
 class ImportError extends Error {}
 
+const MAX_REDIRECTS = 5;
+
+/**
+ * fetchWithTimeout + manual redirect handling that re-runs each hop's
+ * Location through assertPublicUrl. Without this, `redirect: "follow"`
+ * lets an attacker bounce us from a public host to an internal address
+ * (RFC1918, link-local, loopback, cloud metadata, etc.) — the SSRF
+ * guard would only have seen the original URL.
+ */
+async function safeFetch(initialUrl: URL, init: RequestInit): Promise<Response> {
+  let currentUrl = initialUrl;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    const response = await fetchWithTimeout(
+      currentUrl.toString(),
+      { ...init, redirect: "manual" },
+      FETCH_TIMEOUT_MS,
+    );
+    if (response.status < 300 || response.status >= 400) return response;
+    const location = response.headers.get("location");
+    if (!location) return response;
+    // Drain the redirect response so the connection can be reused.
+    try {
+      await response.arrayBuffer();
+    } catch {
+      // ignore
+    }
+    let nextRaw: string;
+    try {
+      nextRaw = new URL(location, currentUrl).toString();
+    } catch {
+      throw new ImportError("Got a redirect to an invalid URL.");
+    }
+    currentUrl = await assertPublicUrl(nextRaw);
+  }
+  throw new ImportError("Too many redirects.");
+}
+
 // --------------------------------------------------------------------
 // JSON-LD extraction
 
@@ -439,10 +476,9 @@ async function fetchPhoto(
   }
   let response: Response;
   try {
-    response = await fetchWithTimeout(
-      publicUrl.toString(),
-      { redirect: "follow", headers: { "User-Agent": USER_AGENT } },
-      FETCH_TIMEOUT_MS,
+    response = await safeFetch(
+      publicUrl,
+      { headers: { "User-Agent": USER_AGENT } },
     );
   } catch {
     return null;
@@ -487,15 +523,14 @@ export async function importRecipeFromUrl(
 
   let response: Response;
   try {
-    response = await fetchWithTimeout(
-      url.toString(),
+    response = await safeFetch(
+      url,
       {
-        redirect: "follow",
         headers: { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml" },
       },
-      FETCH_TIMEOUT_MS,
     );
   } catch (err) {
+    if (err instanceof ImportError) return { ok: false, error: err.message };
     const msg = err instanceof Error ? err.message : "fetch failed";
     return { ok: false, error: `Could not fetch that page: ${msg}` };
   }
