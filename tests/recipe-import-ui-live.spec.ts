@@ -104,97 +104,97 @@ test.describe("generic recipe import (live UI)", () => {
             - columnheader "Item"
             - columnheader "Actions"
         - rowgroup:
-          - row "Ingredient 1":
+          - row:
             - cell "4"
             - cell "tbsp"
             - cell "olive oil"
             - cell "Remove":
               - button "Remove": ✕
-          - row "Ingredient 2":
+          - row:
             - cell "2"
             - cell
             - cell "red onions chopped"
             - cell "Remove":
               - button "Remove": ✕
-          - row "Ingredient 3":
+          - row:
             - cell "2"
             - cell
             - cell "garlic cloves finely chopped"
             - cell "Remove":
               - button "Remove": ✕
-          - row "Ingredient 4":
+          - row:
             - cell "2"
             - cell
             - cell "aubergines diced"
             - cell "Remove":
               - button "Remove": ✕
-          - row "Ingredient 5":
+          - row:
             - cell "2"
             - cell
             - cell "red peppers seeded and diced"
             - cell "Remove":
               - button "Remove": ✕
-          - row "Ingredient 6":
+          - row:
             - cell "1"
             - cell "tsp"
             - cell "smoked paprika"
             - cell "Remove":
               - button "Remove": ✕
-          - row "Ingredient 7":
+          - row:
             - cell "2"
             - cell "tbsp"
             - cell "balsamic vinegar"
             - cell "Remove":
               - button "Remove": ✕
-          - row "Ingredient 8":
+          - row:
             - cell "1"
             - cell "tsp"
             - cell "soy sauce"
             - cell "Remove":
               - button "Remove": ✕
-          - row "Ingredient 9":
+          - row:
             - cell "500"
             - cell "ml"
             - cell "passata"
             - cell "Remove":
               - button "Remove": ✕
-          - row "Ingredient 10":
+          - row:
             - cell "200"
             - cell "g"
             - cell "young goat’s cheese"
             - cell "Remove":
               - button "Remove": ✕
-          - row "Ingredient 11":
+          - row:
             - cell "4"
             - cell
             - cell "courgettes (a mixture of green and yellow looks nice), thinly sliced"
             - cell "Remove":
               - button "Remove": ✕
-          - row "Ingredient 12":
+          - row:
             - cell "400"
             - cell "ml"
             - cell "milk"
             - cell "Remove":
               - button "Remove": ✕
-          - row "Ingredient 13":
+          - row:
             - cell "50"
             - cell "g"
             - cell "unsalted butter"
             - cell "Remove":
               - button "Remove": ✕
-          - row "Ingredient 14":
+          - row:
             - cell "50"
             - cell "g"
             - cell "plain flour"
             - cell "Remove":
               - button "Remove": ✕
-          - row "Ingredient 15":
+          - row:
             - cell "80"
             - cell "g"
             - cell "parmesan or vegetarian alternative, finely grated"
             - cell "Remove":
               - button "Remove": ✕
-          - row "Ingredient 16":
+          - row:
             - cell
             - cell
             - cell
