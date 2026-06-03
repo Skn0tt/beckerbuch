@@ -1,10 +1,8 @@
 # Spec-driven Playwright testing with `playwright-cli`
 
 We've [written before](https://dev.to/playwright/playwright-agents-planner-generator-and-healer-in-action-5ajh)
-about the plan → generate → heal loop. This post is a short follow-up:
-a single concrete example using `playwright-cli` against a third-party
-page we don't control, where the *brittleness* of the test is actually
-the point.
+about spec-driven testing and the plan → generate → heal loop via Playwright Test Agents.
+This post shows how to use spec-driven testing with `playwright-cli`.
 
 ---
 
@@ -12,8 +10,9 @@ the point.
 
 You need two things:
 
+// I fixed the link. please look at how skill installation works and put the explicit commands here so folks can copy without having to browse around.
 - **The CLI** — `npm install -g @playwright/cli@latest`. See the
-  [`playwright-cli` docs](https://playwright.dev/docs/playwright-cli)
+  [`playwright-cli` docs](https://playwright.dev/agent-cli/introduction)
   for the full surface; for our purposes, every command it runs also
   prints the equivalent Playwright TypeScript.
 - **The skill** — the agent playbook that teaches Claude Code, Copilot
@@ -23,34 +22,27 @@ You need two things:
 
 ---
 
-## A worked example: a recipe importer
-
-Imagine we just shipped a feature in our cookbook app: paste a recipe
-URL from somewhere on the web — BBC Good Food, Chefkoch, an old food
-blog — and the app fetches the page, parses its
-[schema.org Recipe](https://schema.org/Recipe) JSON-LD, and prefills a
-new recipe form. We want tests, but we *really* don't want to spend a
-day writing brittle selectors today and rewriting them in three months.
-
-Spec-driven testing fits the shape of this feature perfectly. Let's
-walk through it.
-
----
-
 ## Step 1 — Generate the spec
 
-We open our agent and paste:
+Imagine we just shipped a recipe import feature in our cookbook app.
+The user can paste a recipe URL from somewhere on the web — BBC Good Food, Chefkoch, an old food
+blog — and the app fetches the page, parses its
+[schema.org Recipe](https://schema.org/Recipe) JSON-LD, and prefills the
+new recipe form.
 
-> Use the `playwright-cli` skill to explore the recipe-import feature
-> and produce a spec file under `specs/recipe-import.plan.md`. Include
-> a scenario that imports
+To generate a spec for this, we open our agent and ask it to:
+
+> Use the `playwright-cli` skill to explore the new recipe-import feature
+> and produce a spec.
+> Include a scenario that imports
 > `https://www.bbcgoodfood.com/recipes/baked-ratatouille-goats-cheese`
-> and asserts the parsed ingredients exactly (amount, unit, item).
+> and asserts the parsed ingredients exactly.
 
 The agent launches a debug session, attaches with `playwright-cli`,
 clicks through the importer the way a user would, and writes a spec
 file like this:
 
+// I'm not sure it would actually look like this. can you try it out and replace this with the real spec? feel free to delete the existing spec and test if needed.
 ```markdown
 # Recipe Import Test Plan
 
@@ -73,22 +65,18 @@ schema.org Recipe metadata, and prefills the new-recipe form.
       4 tbsp olive oil; 2 red onions; 2 garlic cloves; ...
 ```
 
-That file lives in the repo, gets reviewed in PRs, and reads like a
-test plan a human wrote on a Monday morning — because functionally,
-that's what it is. The agent just typed it for us.
-
 ---
 
 ## Step 2 — Generate the test
 
 Now the second prompt:
 
-> Generate Playwright tests for scenario 1.1 of
-> `specs/recipe-import.plan.md` using the `playwright-cli` skill.
+> Generate Playwright tests for scenario 1.1 of the spec.
 
 The agent reattaches to a debug session, walks the spec's steps in the
 real browser, and produces a `*.spec.ts` file:
 
+// same here, try out the prompt and see what it really looks like
 ```ts
 // spec: specs/recipe-import.plan.md scenario 1.1
 import { test, expect } from "./fixtures";
@@ -120,19 +108,15 @@ test.describe("Generic web import", () => {
 });
 ```
 
-Two things worth noting:
-
-- The `// spec:` header at the top of the file is the link back to the
-  plan. When this test fails later, you (or your agent) know exactly
-  which scenario to reconcile against.
-- The assertion is an *aria snapshot* of the whole table. That's
-  deliberate: one assertion, the full structure, a single readable
-  diff when something drifts.
+The `// spec:` header at the top of the file is the link back to the
+plan. When this test fails later, you (or your agent) know exactly
+which scenario to reconcile against.
 
 ---
 
 ## Step 3 — A few days later, CI goes red
 
+// this is roundabout, just say that the CI going red means that maybe something changed in the format of bbcgoodfood and it might mean our parser needs updates.
 A note before the failure: we deliberately did *not* mock
 `bbcgoodfood.com` here. The whole point of the importer is to parse
 real third-party pages — if BBC ever changes the shape of their
@@ -165,6 +149,7 @@ We hand the failure to the agent:
 > decide whether the spec or the parser is the source of truth, and
 > update whichever is wrong.
 
+// check if it really does this. in this case, I think it can immediately fix it just by looking at the error message. the key thing is that the agent also updates the spec along with the test, please verify that manually.
 The agent runs the failing test with `--debug=cli`, attaches, inspects
 the live page, sees that the new ingredient name is genuinely what BBC
 serves now, and concludes: *spec is stale, parser is fine*. It edits
