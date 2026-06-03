@@ -25,7 +25,7 @@ import {
 } from "../db/schema";
 import { formatIngredient } from "../lib/scale";
 import {
-  buildDedupInput,
+  buildDedupInputFromData,
   snapshotDedupForFlat,
 } from "../lib/dedup-snapshot";
 import { hashInput } from "../lib/dedup";
@@ -101,11 +101,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           .from(ingredients)
           .where(inArray(ingredients.recipeId, recipeIds))
           .orderBy(asc(ingredients.position));
-  const [allIngs, currentInput, qrSvg] = await Promise.all([
+  const [allIngs, qrSvg] = await Promise.all([
     ingsQuery ?? Promise.resolve([] as never[]),
-    buildDedupInput(flat.id),
     QRCode.toString(handoffUrl, { type: "svg", margin: 1 }),
   ]);
+  const currentInput = buildDedupInputFromData(rows, allIngs);
   const currentHash = await hashInput(currentInput);
   const ingsByRecipe = new Map<string, typeof allIngs>();
   for (const ing of allIngs) {

@@ -33,8 +33,26 @@ export async function requireFlatMember(request: Request): Promise<AuthedContext
   throw redirect(`/login?redirect=${encodeURIComponent(target)}`);
 }
 
+// Per-request memoization. The same Request flows through every loader
+// in the route chain (_app, _workspace, the leaf), and several loaders
+// independently call tryGetAuthedContext / requireFlatMember — that
+// used to be 3 identical session-lookup queries per page load. The
+// WeakMap is keyed by the Request object so it auto-evicts when the
+// request finishes; no manual lifecycle to manage.
+const authCache: WeakMap<Request, Promise<AuthedContext | null>> = new WeakMap();
+
 /** Same lookup as requireFlatMember but returns null instead of throwing. */
-export async function tryGetAuthedContext(
+export function tryGetAuthedContext(
+  request: Request,
+): Promise<AuthedContext | null> {
+  const cached = authCache.get(request);
+  if (cached) return cached;
+  const promise = loadAuthedContext(request);
+  authCache.set(request, promise);
+  return promise;
+}
+
+async function loadAuthedContext(
   request: Request,
 ): Promise<AuthedContext | null> {
   const token = readSessionTokenFromRequest(request);

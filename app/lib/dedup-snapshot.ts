@@ -54,6 +54,31 @@ export async function buildDedupInput(flatId: string): Promise<DedupInput> {
     .where(inArray(ingredients.recipeId, recipeIds))
     .orderBy(asc(ingredients.position));
 
+  return buildDedupInputFromData(rows, ings);
+}
+
+/**
+ * Pure version of buildDedupInput for callers that have already loaded
+ * the in-stock rows and their ingredients (e.g. the handoff page loader).
+ * Avoids re-querying the same data.
+ */
+export function buildDedupInputFromData(
+  rows: ReadonlyArray<{
+    recipeId: string;
+    recipeName: string;
+    baseQuantity: number;
+    targetQuantity: number;
+  }>,
+  ings: ReadonlyArray<{
+    id: string;
+    recipeId: string;
+    amount: string | null;
+    unit: string | null;
+    item: string;
+  }>,
+): DedupInput {
+  if (rows.length === 0) return { items: [] };
+
   const byRecipe = new Map<string, (typeof rows)[number]>();
   for (const r of rows) byRecipe.set(r.recipeId, r);
 

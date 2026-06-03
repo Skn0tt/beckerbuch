@@ -13,7 +13,7 @@ import {
   Title,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { and, eq, asc, count, isNotNull, isNull, max, sql } from "drizzle-orm";
+import { and, eq, asc, isNotNull, isNull, max, sql } from "drizzle-orm";
 import {
   data,
   Form,
@@ -218,18 +218,23 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   // delete
-  const [{ value: usageCount }] = await db()
-    .select({ value: count() })
-    .from(recipeInstances)
-    .where(eq(recipeInstances.recipeId, recipe.id));
-  if (usageCount > 0) {
+  // Single round-trip: delete only if no recipeInstances reference it.
+  // Returning rows lets us tell "didn't exist" from "blocked by usage".
+  const deleted = await db()
+    .delete(recipes)
+    .where(
+      and(
+        eq(recipes.id, recipe.id),
+        sql`not exists (select 1 from ${recipeInstances} where ${recipeInstances.recipeId} = ${recipes.id})`,
+      ),
+    )
+    .returning({ id: recipes.id });
+  if (deleted.length === 0) {
     return {
       error:
         "This recipe is in your draft, in stock, or cooked history — remove it from there before deleting.",
     };
   }
-
-  await db().delete(recipes).where(eq(recipes.id, recipe.id));
   if (recipe.photoBlobKey) await deletePhoto(recipe.photoBlobKey);
   return redirect("/");
 }
