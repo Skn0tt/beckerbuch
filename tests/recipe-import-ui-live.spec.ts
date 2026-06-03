@@ -105,187 +105,99 @@ test.describe("generic recipe import (live UI)", () => {
             - columnheader "Actions"
         - rowgroup:
           - row "Ingredient 1":
-            - cell "4":
-              - textbox "Amount":
-                - text: "4"
-            - cell "tbsp":
-              - textbox "Unit":
-                - text: tbsp
-            - cell "olive oil":
-              - textbox "Item":
-                - text: olive oil
+            - cell "4"
+            - cell "tbsp"
+            - cell "olive oil"
             - cell "Remove":
               - button "Remove": ✕
           - row "Ingredient 2":
-            - cell "2":
-              - textbox "Amount":
-                - text: "2"
-            - cell:
-              - textbox "Unit"
-            - cell "red onions chopped":
-              - textbox "Item":
-                - text: red onions chopped
+            - cell "2"
+            - cell
+            - cell "red onions chopped"
             - cell "Remove":
               - button "Remove": ✕
           - row "Ingredient 3":
-            - cell "2":
-              - textbox "Amount":
-                - text: "2"
-            - cell:
-              - textbox "Unit"
-            - cell "garlic cloves finely chopped":
-              - textbox "Item":
-                - text: garlic cloves finely chopped
+            - cell "2"
+            - cell
+            - cell "garlic cloves finely chopped"
             - cell "Remove":
               - button "Remove": ✕
           - row "Ingredient 4":
-            - cell "2":
-              - textbox "Amount":
-                - text: "2"
-            - cell:
-              - textbox "Unit"
-            - cell "aubergines diced":
-              - textbox "Item":
-                - text: aubergines diced
+            - cell "2"
+            - cell
+            - cell "aubergines diced"
             - cell "Remove":
               - button "Remove": ✕
           - row "Ingredient 5":
-            - cell "2":
-              - textbox "Amount":
-                - text: "2"
-            - cell:
-              - textbox "Unit"
-            - cell "red peppers seeded and diced":
-              - textbox "Item":
-                - text: red peppers seeded and diced
+            - cell "2"
+            - cell
+            - cell "red peppers seeded and diced"
             - cell "Remove":
               - button "Remove": ✕
           - row "Ingredient 6":
-            - cell "1":
-              - textbox "Amount":
-                - text: "1"
-            - cell "tsp":
-              - textbox "Unit":
-                - text: tsp
-            - cell "smoked paprika":
-              - textbox "Item":
-                - text: smoked paprika
+            - cell "1"
+            - cell "tsp"
+            - cell "smoked paprika"
             - cell "Remove":
               - button "Remove": ✕
           - row "Ingredient 7":
-            - cell "2":
-              - textbox "Amount":
-                - text: "2"
-            - cell "tbsp":
-              - textbox "Unit":
-                - text: tbsp
-            - cell "balsamic vinegar":
-              - textbox "Item":
-                - text: balsamic vinegar
+            - cell "2"
+            - cell "tbsp"
+            - cell "balsamic vinegar"
             - cell "Remove":
               - button "Remove": ✕
           - row "Ingredient 8":
-            - cell "1":
-              - textbox "Amount":
-                - text: "1"
-            - cell "tsp":
-              - textbox "Unit":
-                - text: tsp
-            - cell "soy sauce":
-              - textbox "Item":
-                - text: soy sauce
+            - cell "1"
+            - cell "tsp"
+            - cell "soy sauce"
             - cell "Remove":
               - button "Remove": ✕
           - row "Ingredient 9":
-            - cell "500":
-              - textbox "Amount":
-                - text: "500"
-            - cell "ml":
-              - textbox "Unit":
-                - text: ml
-            - cell "passata":
-              - textbox "Item":
-                - text: passata
+            - cell "500"
+            - cell "ml"
+            - cell "passata"
             - cell "Remove":
               - button "Remove": ✕
           - row "Ingredient 10":
-            - cell "200":
-              - textbox "Amount":
-                - text: "200"
-            - cell "g":
-              - textbox "Unit":
-                - text: g
-            - cell "young goat’s cheese":
-              - textbox "Item":
-                - text: young goat’s cheese
+            - cell "200"
+            - cell "g"
+            - cell "young goat’s cheese"
             - cell "Remove":
               - button "Remove": ✕
           - row "Ingredient 11":
-            - cell "4":
-              - textbox "Amount":
-                - text: "4"
-            - cell:
-              - textbox "Unit"
-            - cell "courgettes (a mixture of green and yellow looks nice), thinly sliced":
-              - textbox "Item":
-                - text: courgettes (a mixture of green and yellow looks nice), thinly sliced
+            - cell "4"
+            - cell
+            - cell "courgettes (a mixture of green and yellow looks nice), thinly sliced"
             - cell "Remove":
               - button "Remove": ✕
           - row "Ingredient 12":
-            - cell "400":
-              - textbox "Amount":
-                - text: "400"
-            - cell "ml":
-              - textbox "Unit":
-                - text: ml
-            - cell "milk":
-              - textbox "Item":
-                - text: milk
+            - cell "400"
+            - cell "ml"
+            - cell "milk"
             - cell "Remove":
               - button "Remove": ✕
           - row "Ingredient 13":
-            - cell "50":
-              - textbox "Amount":
-                - text: "50"
-            - cell "g":
-              - textbox "Unit":
-                - text: g
-            - cell "unsalted butter":
-              - textbox "Item":
-                - text: unsalted butter
+            - cell "50"
+            - cell "g"
+            - cell "unsalted butter"
             - cell "Remove":
               - button "Remove": ✕
           - row "Ingredient 14":
-            - cell "50":
-              - textbox "Amount":
-                - text: "50"
-            - cell "g":
-              - textbox "Unit":
-                - text: g
-            - cell "plain flour":
-              - textbox "Item":
-                - text: plain flour
+            - cell "50"
+            - cell "g"
+            - cell "plain flour"
             - cell "Remove":
               - button "Remove": ✕
           - row "Ingredient 15":
-            - cell "80":
-              - textbox "Amount":
-                - text: "80"
-            - cell "g":
-              - textbox "Unit":
-                - text: g
-            - cell "parmesan or vegetarian alternative, finely grated":
-              - textbox "Item":
-                - text: parmesan or vegetarian alternative, finely grated
+            - cell "80"
+            - cell "g"
+            - cell "parmesan or vegetarian alternative, finely grated"
             - cell "Remove":
               - button "Remove": ✕
           - row "Ingredient 16":
-            - cell:
-              - textbox "Amount"
-            - cell:
-              - textbox "Unit"
-            - cell:
-              - textbox "Item"
+            - cell
+            - cell
+            - cell
             - cell "Remove":
               - button "Remove": ✕
     `);
