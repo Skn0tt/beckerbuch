@@ -27,9 +27,9 @@ test("ingredients tab: shows ingredients from in-stock recipes with recipe name"
   await page.goto("/");
   await page.getByRole("link", { name: "+ New recipe" }).click();
   await page.getByLabel("Name").fill("Pasta al limone");
-  await page.getByLabel("Ingredient 1 amount").fill("400");
-  await page.getByLabel("Ingredient 1 unit").fill("g");
-  await page.getByLabel("Ingredient 1 item").fill("spaghetti");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Amount").fill("400");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Unit").fill("g");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill("spaghetti");
   await page.getByRole("button", { name: "Save recipe" }).click();
   await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
 

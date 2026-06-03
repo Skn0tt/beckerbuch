@@ -41,6 +41,7 @@ Asserts the import modal extracts every ingredient from `https://www.bbcgoodfood
     - expect: The import modal closes.
     - expect: The Name field contains `ratatouille`.
     - expect: The Source URL field contains `bbcgoodfood.com`.
+    - expect: The Ingredients section is a table with `Amount`, `Unit`, `Item`, and an actions column.
     - expect: The ingredient rows in the form contain exactly the following 15 entries, in source order, each with the given amount, unit, and item. Preparation notes from the source (e.g. "chopped", "finely grated") stay attached to the item rather than being silently dropped:
       1. `{ amount: "4", unit: "tbsp", item: "olive oil" }`
       2. `{ amount: "2", unit: "", item: "red onions chopped" }`

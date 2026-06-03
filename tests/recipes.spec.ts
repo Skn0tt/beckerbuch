@@ -12,15 +12,15 @@ test("create a recipe → see it on home → open detail view", async ({ page, f
 
   await page.getByLabel("Source URL").fill("https://smittenkitchen.com/pasta");
 
-  await page.getByLabel("Ingredient 1 amount").fill("400");
-  await page.getByLabel("Ingredient 1 unit").fill("g");
-  await page.getByLabel("Ingredient 1 item").fill("spaghetti");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Amount").fill("400");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Unit").fill("g");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill("spaghetti");
 
-  await page.getByLabel("Ingredient 2 amount").fill("2");
-  await page.getByLabel("Ingredient 2 unit").fill("");
-  await page.getByLabel("Ingredient 2 item").fill("lemons");
+  await page.getByRole("row", { name: "Ingredient 2", exact: true }).getByLabel("Amount").fill("2");
+  await page.getByRole("row", { name: "Ingredient 2", exact: true }).getByLabel("Unit").fill("");
+  await page.getByRole("row", { name: "Ingredient 2", exact: true }).getByLabel("Item").fill("lemons");
 
-  await page.getByLabel("Ingredient 3 item").fill("olive oil, salt, pepper");
+  await page.getByRole("row", { name: "Ingredient 3", exact: true }).getByLabel("Item").fill("olive oil, salt, pepper");
 
   await page.getByLabel("Steps").fill("1. Boil salted water.\n2. Cook pasta.");
 
@@ -58,22 +58,22 @@ test("recipe form keeps one trailing empty ingredient row", async ({ page, flat 
   await page.getByRole("link", { name: "+ New recipe" }).click();
 
   await expect(page.getByRole("button", { name: "+ Add ingredient" })).toHaveCount(0);
-  await expect(page.getByLabel("Ingredient 2 item")).toHaveCount(0);
+  await expect(page.getByRole("row", { name: "Ingredient 2", exact: true }).getByLabel("Item")).toHaveCount(0);
 
-  await expect(page.getByLabel("Ingredient 1 unit")).toHaveAttribute(
+  await expect(page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Unit")).toHaveAttribute(
     "autocapitalize",
     "none",
   );
-  await expect(page.getByLabel("Ingredient 1 unit")).toHaveAttribute(
+  await expect(page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Unit")).toHaveAttribute(
     "autocorrect",
     "off",
   );
 
-  await page.getByLabel("Ingredient 1 item").fill("flour");
-  await expect(page.getByLabel("Ingredient 2 item")).toBeVisible();
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill("flour");
+  await expect(page.getByRole("row", { name: "Ingredient 2", exact: true }).getByLabel("Item")).toBeVisible();
 
-  await page.getByLabel("Ingredient 2 item").fill("water");
-  await expect(page.getByLabel("Ingredient 3 item")).toBeVisible();
+  await page.getByRole("row", { name: "Ingredient 2", exact: true }).getByLabel("Item").fill("water");
+  await expect(page.getByRole("row", { name: "Ingredient 3", exact: true }).getByLabel("Item")).toBeVisible();
 });
 
 test("recipes are scoped to the flat — other flat's recipe → 404", async ({
@@ -85,7 +85,7 @@ test("recipes are scoped to the flat — other flat's recipe → 404", async ({
   await login(page, flat.user);
   await page.getByRole("link", { name: "+ New recipe" }).click();
   await page.getByLabel("Name").fill("Secret recipe");
-  await page.getByLabel("Ingredient 1 item").fill("water");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill("water");
   await page.getByRole("button", { name: "Save recipe" }).click();
   await expect(page).toHaveURL(/\/recipes\/([0-9a-f-]{36})$/);
   const recipeUrl = page.url();
@@ -117,7 +117,7 @@ test("rapid double-click on Save creates only one recipe", async ({ page, flat }
   await page.getByRole("link", { name: "+ New recipe" }).click();
 
   await page.getByLabel("Name").fill("Double click test");
-  await page.getByLabel("Ingredient 1 item").fill("water");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill("water");
 
   // Delay the POST so the user has time to click again while the first
   // submission is still in flight. Count POSTs to prove the second click
@@ -154,10 +154,10 @@ test("malformed UUID in /r/:id → 404", async ({ page }) => {
 async function createPasta(page: import("@playwright/test").Page) {
   await page.getByRole("link", { name: "+ New recipe" }).click();
   await page.getByLabel("Name").fill("Pasta al limone");
-  await page.getByLabel("Ingredient 1 amount").fill("400");
-  await page.getByLabel("Ingredient 1 unit").fill("g");
-  await page.getByLabel("Ingredient 1 item").fill("spaghetti");
-  await page.getByLabel("Ingredient 2 item").fill("lemons");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Amount").fill("400");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Unit").fill("g");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill("spaghetti");
+  await page.getByRole("row", { name: "Ingredient 2", exact: true }).getByLabel("Item").fill("lemons");
   await page.getByRole("button", { name: "Save recipe" }).click();
   await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
 }
@@ -174,14 +174,14 @@ test("edit a recipe — change name + ingredient, see it on view + home", async 
 
   // Pre-filled values are present.
   await expect(page.getByLabel("Name")).toHaveValue("Pasta al limone");
-  await expect(page.getByLabel("Ingredient 1 item")).toHaveValue("spaghetti");
+  await expect(page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item")).toHaveValue("spaghetti");
 
   // Tweak. Assert intermediate values to defend against React not having
   // committed the controlled state by the time we click Save.
   await page.getByLabel("Name").fill("Pasta al limone (better)");
   await expect(page.getByLabel("Name")).toHaveValue("Pasta al limone (better)");
-  await page.getByLabel("Ingredient 1 amount").fill("450");
-  await expect(page.getByLabel("Ingredient 1 amount")).toHaveValue("450");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Amount").fill("450");
+  await expect(page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Amount")).toHaveValue("450");
   await page.getByRole("button", { name: "Save changes" }).click();
 
   await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
@@ -253,7 +253,7 @@ test("upload a photo on create → see it on view; remove it on edit", async ({
 
   await page.getByRole("link", { name: "+ New recipe" }).click();
   await page.getByLabel("Name").fill("Photo recipe");
-  await page.getByLabel("Ingredient 1 item").fill("water");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill("water");
   await page
     .locator('input[type="file"]')
     .setInputFiles({ name: "tiny.png", mimeType: "image/png", buffer: TINY_PNG });
@@ -281,7 +281,7 @@ test("rejects non-image upload with form error", async ({ page, flat }) => {
   await login(page, flat.user);
   await page.getByRole("link", { name: "+ New recipe" }).click();
   await page.getByLabel("Name").fill("Bad upload");
-  await page.getByLabel("Ingredient 1 item").fill("water");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill("water");
   await page
     .locator('input[type="file"]')
     .setInputFiles({
@@ -300,7 +300,7 @@ async function createRecipe(
 ) {
   await page.getByRole("link", { name: "+ New recipe" }).click();
   await page.getByLabel("Name").fill(opts.name);
-  await page.getByLabel("Ingredient 1 item").fill(opts.ingredient ?? "water");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill(opts.ingredient ?? "water");
   if (opts.sourceUrl) {
     await page.getByLabel("Source URL").fill(opts.sourceUrl);
   }

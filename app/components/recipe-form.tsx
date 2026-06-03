@@ -8,6 +8,7 @@ import {
   Image,
   NumberInput,
   Stack,
+  Table,
   TextInput,
   Textarea,
   Title,
@@ -17,6 +18,18 @@ import { Form, useNavigation } from "react-router";
 import { CsrfField } from "../auth/csrf-field";
 
 export type IngredientRow = { amount: string; unit: string; item: string };
+
+const visuallyHidden = {
+  position: "absolute" as const,
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: "hidden",
+  clip: "rect(0 0 0 0)",
+  whiteSpace: "nowrap" as const,
+  border: 0,
+};
 
 export type RecipeFormInitial = {
   name?: string;
@@ -141,44 +154,67 @@ export function RecipeForm({
 
         <Stack gap={4}>
           <Title order={5}>Ingredients</Title>
-          {rows.map((row, i) => (
-            <Group key={i} gap="xs" wrap="nowrap" align="end">
-              <TextInput
-                aria-label={`Ingredient ${i + 1} amount`}
-                name="ingredient_amount"
-                value={row.amount}
-                onChange={(e) => setRow(i, { amount: e.currentTarget.value })}
-                placeholder="amt"
-                style={{ width: 80 }}
-              />
-              <TextInput
-                aria-label={`Ingredient ${i + 1} unit`}
-                name="ingredient_unit"
-                value={row.unit}
-                onChange={(e) => setRow(i, { unit: e.currentTarget.value })}
-                placeholder="unit"
-                style={{ width: 100 }}
-                autoCapitalize="none"
-                autoCorrect="off"
-              />
-              <TextInput
-                aria-label={`Ingredient ${i + 1} item`}
-                name="ingredient_item"
-                value={row.item}
-                onChange={(e) => setRow(i, { item: e.currentTarget.value })}
-                placeholder="item"
-                style={{ flex: 1 }}
-              />
-              <ActionIcon
-                variant="subtle"
-                aria-label={`Remove ingredient ${i + 1}`}
-                onClick={() => removeRow(i)}
-                type="button"
-              >
-                ✕
-              </ActionIcon>
-            </Group>
-          ))}
+          <Table aria-label="Ingredients" verticalSpacing={4} horizontalSpacing={4} withRowBorders={false}>
+            <colgroup>
+              <col style={{ width: 80 }} />
+              <col style={{ width: 100 }} />
+              <col />
+              <col style={{ width: 32 }} />
+            </colgroup>
+            <Table.Thead style={visuallyHidden}>
+              <Table.Tr>
+                <Table.Th>Amount</Table.Th>
+                <Table.Th>Unit</Table.Th>
+                <Table.Th>Item</Table.Th>
+                <Table.Th>Actions</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows.map((row, i) => (
+                <Table.Tr key={i} aria-label={`Ingredient ${i + 1}`}>
+                  <Table.Td>
+                    <TextInput
+                      aria-label="Amount"
+                      name="ingredient_amount"
+                      value={row.amount}
+                      onChange={(e) => setRow(i, { amount: e.currentTarget.value })}
+                      placeholder="amt"
+                    />
+                  </Table.Td>
+                  <Table.Td>
+                    <TextInput
+                      aria-label="Unit"
+                      name="ingredient_unit"
+                      value={row.unit}
+                      onChange={(e) => setRow(i, { unit: e.currentTarget.value })}
+                      placeholder="unit"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                    />
+                  </Table.Td>
+                  <Table.Td>
+                    <TextInput
+                      aria-label="Item"
+                      name="ingredient_item"
+                      value={row.item}
+                      onChange={(e) => setRow(i, { item: e.currentTarget.value })}
+                      placeholder="item"
+                    />
+                  </Table.Td>
+                  <Table.Td>
+                    <ActionIcon
+                      variant="subtle"
+                      aria-label="Remove"
+                      onClick={() => removeRow(i)}
+                      type="button"
+                    >
+                      ✕
+                    </ActionIcon>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
         </Stack>
 
         <Textarea

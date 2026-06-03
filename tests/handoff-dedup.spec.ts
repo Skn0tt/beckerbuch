@@ -24,9 +24,9 @@ async function createRecipeWithIngredient(
   await page.goto("/");
   await page.getByRole("link", { name: "+ New recipe" }).click();
   await page.getByLabel("Name").fill(name);
-  await page.getByLabel("Ingredient 1 amount").fill(amount);
-  await page.getByLabel("Ingredient 1 unit").fill(unit);
-  await page.getByLabel("Ingredient 1 item").fill(item);
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Amount").fill(amount);
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Unit").fill(unit);
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill(item);
   await page.getByRole("button", { name: "Save recipe" }).click();
   await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
@@ -196,7 +196,7 @@ test("stale snapshot: editing a recipe after finalise shows Regenerate; clicking
   await page.goto("/");
   await page.getByRole("link", { name: /Pasta al pomodoro/ }).first().click();
   await page.getByRole("link", { name: /Edit recipe/ }).click();
-  await page.getByLabel("Ingredient 1 amount").fill("500");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Amount").fill("500");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
 

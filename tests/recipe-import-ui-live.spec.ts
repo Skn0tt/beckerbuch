@@ -37,7 +37,7 @@ test.describe("generic recipe import (live UI)", () => {
     await expect(page.getByLabel("Source URL")).toHaveValue(/loveandlemons\.com/);
 
     // First ingredient parsed into at least a non-empty item.
-    await expect(page.getByLabel("Ingredient 1 item")).not.toHaveValue("");
+    await expect(page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item")).not.toHaveValue("");
 
     // Steps pre-filled.
     await expect(page.getByLabel("Steps")).not.toHaveValue("");
@@ -88,7 +88,7 @@ test.describe("generic recipe import (live UI)", () => {
     // Wait for the importer to populate the form, then assert the whole
     // ingredients block as one ARIA snapshot so a single soft failure shows
     // every mismatched row, amount, unit, and item at once.
-    await expect(page.getByLabel("Ingredient 1 item")).not.toHaveValue("");
+    await expect(page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item")).not.toHaveValue("");
 
     const ingredientsBlock = page
       .getByRole("heading", { name: "Ingredients" })
@@ -96,158 +96,198 @@ test.describe("generic recipe import (live UI)", () => {
 
     await expect.soft(ingredientsBlock).toMatchAriaSnapshot(`
       - heading "Ingredients" [level=5]
-      - textbox "Ingredient 1 amount":
-        - /placeholder: amt
-        - text: "4"
-      - textbox "Ingredient 1 unit":
-        - /placeholder: unit
-        - text: tbsp
-      - textbox "Ingredient 1 item":
-        - /placeholder: item
-        - text: olive oil
-      - button "Remove ingredient 1": ✕
-      - textbox "Ingredient 2 amount":
-        - /placeholder: amt
-        - text: "2"
-      - textbox "Ingredient 2 unit":
-        - /placeholder: unit
-      - textbox "Ingredient 2 item":
-        - /placeholder: item
-        - text: red onions chopped
-      - button "Remove ingredient 2": ✕
-      - textbox "Ingredient 3 amount":
-        - /placeholder: amt
-        - text: "2"
-      - textbox "Ingredient 3 unit":
-        - /placeholder: unit
-      - textbox "Ingredient 3 item":
-        - /placeholder: item
-        - text: garlic cloves finely chopped
-      - button "Remove ingredient 3": ✕
-      - textbox "Ingredient 4 amount":
-        - /placeholder: amt
-        - text: "2"
-      - textbox "Ingredient 4 unit":
-        - /placeholder: unit
-      - textbox "Ingredient 4 item":
-        - /placeholder: item
-        - text: aubergines diced
-      - button "Remove ingredient 4": ✕
-      - textbox "Ingredient 5 amount":
-        - /placeholder: amt
-        - text: "2"
-      - textbox "Ingredient 5 unit":
-        - /placeholder: unit
-      - textbox "Ingredient 5 item":
-        - /placeholder: item
-        - text: red peppers seeded and diced
-      - button "Remove ingredient 5": ✕
-      - textbox "Ingredient 6 amount":
-        - /placeholder: amt
-        - text: "1"
-      - textbox "Ingredient 6 unit":
-        - /placeholder: unit
-        - text: tsp
-      - textbox "Ingredient 6 item":
-        - /placeholder: item
-        - text: smoked paprika
-      - button "Remove ingredient 6": ✕
-      - textbox "Ingredient 7 amount":
-        - /placeholder: amt
-        - text: "2"
-      - textbox "Ingredient 7 unit":
-        - /placeholder: unit
-        - text: tbsp
-      - textbox "Ingredient 7 item":
-        - /placeholder: item
-        - text: balsamic vinegar
-      - button "Remove ingredient 7": ✕
-      - textbox "Ingredient 8 amount":
-        - /placeholder: amt
-        - text: "1"
-      - textbox "Ingredient 8 unit":
-        - /placeholder: unit
-        - text: tsp
-      - textbox "Ingredient 8 item":
-        - /placeholder: item
-        - text: soy sauce
-      - button "Remove ingredient 8": ✕
-      - textbox "Ingredient 9 amount":
-        - /placeholder: amt
-        - text: "500"
-      - textbox "Ingredient 9 unit":
-        - /placeholder: unit
-        - text: ml
-      - textbox "Ingredient 9 item":
-        - /placeholder: item
-        - text: passata
-      - button "Remove ingredient 9": ✕
-      - textbox "Ingredient 10 amount":
-        - /placeholder: amt
-        - text: "200"
-      - textbox "Ingredient 10 unit":
-        - /placeholder: unit
-        - text: g
-      - textbox "Ingredient 10 item":
-        - /placeholder: item
-        - text: young goat’s cheese
-      - button "Remove ingredient 10": ✕
-      - textbox "Ingredient 11 amount":
-        - /placeholder: amt
-        - text: "4"
-      - textbox "Ingredient 11 unit":
-        - /placeholder: unit
-      - textbox "Ingredient 11 item":
-        - /placeholder: item
-        - text: courgettes (a mixture of green and yellow looks nice), thinly sliced
-      - button "Remove ingredient 11": ✕
-      - textbox "Ingredient 12 amount":
-        - /placeholder: amt
-        - text: "400"
-      - textbox "Ingredient 12 unit":
-        - /placeholder: unit
-        - text: ml
-      - textbox "Ingredient 12 item":
-        - /placeholder: item
-        - text: milk
-      - button "Remove ingredient 12": ✕
-      - textbox "Ingredient 13 amount":
-        - /placeholder: amt
-        - text: "50"
-      - textbox "Ingredient 13 unit":
-        - /placeholder: unit
-        - text: g
-      - textbox "Ingredient 13 item":
-        - /placeholder: item
-        - text: unsalted butter
-      - button "Remove ingredient 13": ✕
-      - textbox "Ingredient 14 amount":
-        - /placeholder: amt
-        - text: "50"
-      - textbox "Ingredient 14 unit":
-        - /placeholder: unit
-        - text: g
-      - textbox "Ingredient 14 item":
-        - /placeholder: item
-        - text: plain flour
-      - button "Remove ingredient 14": ✕
-      - textbox "Ingredient 15 amount":
-        - /placeholder: amt
-        - text: "80"
-      - textbox "Ingredient 15 unit":
-        - /placeholder: unit
-        - text: g
-      - textbox "Ingredient 15 item":
-        - /placeholder: item
-        - text: parmesan or vegetarian alternative, finely grated
-      - button "Remove ingredient 15": ✕
-      - textbox "Ingredient 16 amount":
-        - /placeholder: amt
-      - textbox "Ingredient 16 unit":
-        - /placeholder: unit
-      - textbox "Ingredient 16 item":
-        - /placeholder: item
-      - button "Remove ingredient 16": ✕
+      - table "Ingredients":
+        - rowgroup:
+          - row "Amount Unit Item Actions":
+            - columnheader "Amount"
+            - columnheader "Unit"
+            - columnheader "Item"
+            - columnheader "Actions"
+        - rowgroup:
+          - row "Ingredient 1":
+            - cell "4":
+              - textbox "Amount":
+                - text: "4"
+            - cell "tbsp":
+              - textbox "Unit":
+                - text: tbsp
+            - cell "olive oil":
+              - textbox "Item":
+                - text: olive oil
+            - cell "Remove":
+              - button "Remove": ✕
+          - row "Ingredient 2":
+            - cell "2":
+              - textbox "Amount":
+                - text: "2"
+            - cell:
+              - textbox "Unit"
+            - cell "red onions chopped":
+              - textbox "Item":
+                - text: red onions chopped
+            - cell "Remove":
+              - button "Remove": ✕
+          - row "Ingredient 3":
+            - cell "2":
+              - textbox "Amount":
+                - text: "2"
+            - cell:
+              - textbox "Unit"
+            - cell "garlic cloves finely chopped":
+              - textbox "Item":
+                - text: garlic cloves finely chopped
+            - cell "Remove":
+              - button "Remove": ✕
+          - row "Ingredient 4":
+            - cell "2":
+              - textbox "Amount":
+                - text: "2"
+            - cell:
+              - textbox "Unit"
+            - cell "aubergines diced":
+              - textbox "Item":
+                - text: aubergines diced
+            - cell "Remove":
+              - button "Remove": ✕
+          - row "Ingredient 5":
+            - cell "2":
+              - textbox "Amount":
+                - text: "2"
+            - cell:
+              - textbox "Unit"
+            - cell "red peppers seeded and diced":
+              - textbox "Item":
+                - text: red peppers seeded and diced
+            - cell "Remove":
+              - button "Remove": ✕
+          - row "Ingredient 6":
+            - cell "1":
+              - textbox "Amount":
+                - text: "1"
+            - cell "tsp":
+              - textbox "Unit":
+                - text: tsp
+            - cell "smoked paprika":
+              - textbox "Item":
+                - text: smoked paprika
+            - cell "Remove":
+              - button "Remove": ✕
+          - row "Ingredient 7":
+            - cell "2":
+              - textbox "Amount":
+                - text: "2"
+            - cell "tbsp":
+              - textbox "Unit":
+                - text: tbsp
+            - cell "balsamic vinegar":
+              - textbox "Item":
+                - text: balsamic vinegar
+            - cell "Remove":
+              - button "Remove": ✕
+          - row "Ingredient 8":
+            - cell "1":
+              - textbox "Amount":
+                - text: "1"
+            - cell "tsp":
+              - textbox "Unit":
+                - text: tsp
+            - cell "soy sauce":
+              - textbox "Item":
+                - text: soy sauce
+            - cell "Remove":
+              - button "Remove": ✕
+          - row "Ingredient 9":
+            - cell "500":
+              - textbox "Amount":
+                - text: "500"
+            - cell "ml":
+              - textbox "Unit":
+                - text: ml
+            - cell "passata":
+              - textbox "Item":
+                - text: passata
+            - cell "Remove":
+              - button "Remove": ✕
+          - row "Ingredient 10":
+            - cell "200":
+              - textbox "Amount":
+                - text: "200"
+            - cell "g":
+              - textbox "Unit":
+                - text: g
+            - cell "young goat’s cheese":
+              - textbox "Item":
+                - text: young goat’s cheese
+            - cell "Remove":
+              - button "Remove": ✕
+          - row "Ingredient 11":
+            - cell "4":
+              - textbox "Amount":
+                - text: "4"
+            - cell:
+              - textbox "Unit"
+            - cell "courgettes (a mixture of green and yellow looks nice), thinly sliced":
+              - textbox "Item":
+                - text: courgettes (a mixture of green and yellow looks nice), thinly sliced
+            - cell "Remove":
+              - button "Remove": ✕
+          - row "Ingredient 12":
+            - cell "400":
+              - textbox "Amount":
+                - text: "400"
+            - cell "ml":
+              - textbox "Unit":
+                - text: ml
+            - cell "milk":
+              - textbox "Item":
+                - text: milk
+            - cell "Remove":
+              - button "Remove": ✕
+          - row "Ingredient 13":
+            - cell "50":
+              - textbox "Amount":
+                - text: "50"
+            - cell "g":
+              - textbox "Unit":
+                - text: g
+            - cell "unsalted butter":
+              - textbox "Item":
+                - text: unsalted butter
+            - cell "Remove":
+              - button "Remove": ✕
+          - row "Ingredient 14":
+            - cell "50":
+              - textbox "Amount":
+                - text: "50"
+            - cell "g":
+              - textbox "Unit":
+                - text: g
+            - cell "plain flour":
+              - textbox "Item":
+                - text: plain flour
+            - cell "Remove":
+              - button "Remove": ✕
+          - row "Ingredient 15":
+            - cell "80":
+              - textbox "Amount":
+                - text: "80"
+            - cell "g":
+              - textbox "Unit":
+                - text: g
+            - cell "parmesan or vegetarian alternative, finely grated":
+              - textbox "Item":
+                - text: parmesan or vegetarian alternative, finely grated
+            - cell "Remove":
+              - button "Remove": ✕
+          - row "Ingredient 16":
+            - cell:
+              - textbox "Amount"
+            - cell:
+              - textbox "Unit"
+            - cell:
+              - textbox "Item"
+            - cell "Remove":
+              - button "Remove": ✕
     `);
 
     // Steps prefilled with the 4 method steps.

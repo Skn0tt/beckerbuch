@@ -51,14 +51,14 @@ test.describe("kptncook import", () => {
       `https://share.kptncook.com/${MOCK_RECIPES.cinnamonBuns.uid}`,
     );
 
-    await expect(page.getByLabel("Ingredient 1 amount")).toHaveValue("250");
-    await expect(page.getByLabel("Ingredient 1 unit")).toHaveValue("g");
-    await expect(page.getByLabel("Ingredient 1 item")).toHaveValue("Mehl");
-    await expect(page.getByLabel("Ingredient 2 amount")).toHaveValue("150");
-    await expect(page.getByLabel("Ingredient 2 unit")).toHaveValue("ml");
-    await expect(page.getByLabel("Ingredient 2 item")).toHaveValue("Milch");
-    await expect(page.getByLabel("Ingredient 3 amount")).toHaveValue("2");
-    await expect(page.getByLabel("Ingredient 3 item")).toHaveValue("Eier");
+    await expect(page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Amount")).toHaveValue("250");
+    await expect(page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Unit")).toHaveValue("g");
+    await expect(page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item")).toHaveValue("Mehl");
+    await expect(page.getByRole("row", { name: "Ingredient 2", exact: true }).getByLabel("Amount")).toHaveValue("150");
+    await expect(page.getByRole("row", { name: "Ingredient 2", exact: true }).getByLabel("Unit")).toHaveValue("ml");
+    await expect(page.getByRole("row", { name: "Ingredient 2", exact: true }).getByLabel("Item")).toHaveValue("Milch");
+    await expect(page.getByRole("row", { name: "Ingredient 3", exact: true }).getByLabel("Amount")).toHaveValue("2");
+    await expect(page.getByRole("row", { name: "Ingredient 3", exact: true }).getByLabel("Item")).toHaveValue("Eier");
 
     await expect(page.getByLabel("Steps")).toHaveValue(
       /Teig anrühren.*Zimt-Zucker.*180 °C/s,
