@@ -326,9 +326,11 @@ export function parseIngredientString(raw: string): RecipeImportIngredient | nul
 
   const text = normalizeFractions(original);
   // Leading quantity: a number or a range ("2-3"), optionally a second
-  // number to fold a leftover mixed number ("1 0.5" → 1.5).
+  // number to fold a leftover mixed number ("1 0.5" → 1.5). The trailing
+  // `\s*(\S.*)$` lets the amount be glued directly to the unit ("500ml
+  // passata", "50g flour") with no separating space.
   const qtyMatch = text.match(
-    /^(\d+(?:[.,]\d+)?)(?:\s*[-–]\s*(\d+(?:[.,]\d+)?))?(?:\s+(\d+(?:[.,]\d+)?))?\s+(.*)$/,
+    /^(\d+(?:[.,]\d+)?)(?:\s*[-–]\s*(\d+(?:[.,]\d+)?))?(?:\s+(\d+(?:[.,]\d+)?))?\s*(\S.*)$/,
   );
   if (!qtyMatch) {
     return { amount: null, unit: null, item: original };
