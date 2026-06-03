@@ -1,8 +1,8 @@
-import type { Route } from "./+types/recipes.import-kptncook";
+import type { Route } from "./+types/recipes.import";
 import { requireFlatMember } from "../auth/require";
 import { requireCsrf } from "../auth/csrf.server";
 import { isSameOrigin } from "../auth/origin";
-import { importKptncookRecipe } from "../lib/kptncook";
+import { importRecipe } from "../lib/recipe-import";
 
 /**
  * JSON action. POST { input: string } → either:
@@ -10,8 +10,10 @@ import { importKptncookRecipe } from "../lib/kptncook";
  *       ingredients, photo?: { contentType, base64 } } }
  *   - { ok: false, error: string }
  *
- * No DB writes — purely a lookup proxy that requires auth so we don't
- * expose the kptncook API key for arbitrary callers.
+ * `input` may be a recipe page URL (schema.org JSON-LD) or a kptncook
+ * share URL / uid / oid. No DB writes — purely a lookup proxy that
+ * requires auth so we don't expose the kptncook API key or use the
+ * server as an open SSRF proxy.
  */
 export async function action({ request }: Route.ActionArgs) {
   if (request.method !== "POST") {
@@ -27,12 +29,12 @@ export async function action({ request }: Route.ActionArgs) {
   const input = String(form.get("input") ?? "").trim();
   if (!input) {
     return Response.json(
-      { ok: false, error: "Please provide a kptncook share URL or id." },
+      { ok: false, error: "Please provide a recipe URL or kptncook share link / id." },
       { status: 400 },
     );
   }
 
-  const result = await importKptncookRecipe(input, { includePhoto: true });
+  const result = await importRecipe(input, { includePhoto: true });
   if (!result.ok) {
     return Response.json({ ok: false, error: result.error }, { status: 400 });
   }

@@ -25,7 +25,7 @@ type FetchResult = {
 
 const SHARE_URL = `https://share.kptncook.com/${MOCK_RECIPES.cinnamonBuns.shareToken}`;
 
-test.describe("MCP kptncook_fetch_recipe", () => {
+test.describe("MCP fetch_recipe", () => {
   test.beforeEach(async ({ mocks, baseURL }) => {
     setMcpBaseUrl(baseURL!);
     const recipes = [MOCK_RECIPES.cinnamonBuns];
@@ -51,7 +51,7 @@ test.describe("MCP kptncook_fetch_recipe", () => {
 
     try {
       const callResult = await client.callTool({
-        name: "kptncook_fetch_recipe",
+        name: "fetch_recipe",
         arguments: { input: SHARE_URL },
       });
       expect(callResult.isError).toBeFalsy();
@@ -85,7 +85,7 @@ test.describe("MCP kptncook_fetch_recipe", () => {
 
     try {
       const callResult = await client.callTool({
-        name: "kptncook_fetch_recipe",
+        name: "fetch_recipe",
         arguments: { input: MOCK_RECIPES.cinnamonBuns.uid, includePhoto: false },
       });
       expect(callResult.isError).toBeFalsy();
@@ -108,7 +108,7 @@ test.describe("MCP kptncook_fetch_recipe", () => {
 
     try {
       const callResult = await client.callTool({
-        name: "kptncook_fetch_recipe",
+        name: "fetch_recipe",
         arguments: { input: "not-a-real-id" },
       });
       expect(callResult.isError).toBe(true);

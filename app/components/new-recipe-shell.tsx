@@ -85,7 +85,7 @@ export function NewRecipeShell({ csrfToken, error }: Props) {
           variant="light"
           onClick={() => setOpened(true)}
         >
-          Import from kptncook
+          Import recipe
         </Button>
       </Group>
 
@@ -94,21 +94,21 @@ export function NewRecipeShell({ csrfToken, error }: Props) {
         onClose={() => {
           if (!importing) setOpened(false);
         }}
-        title="Import a kptncook recipe"
+        title="Import a recipe"
         centered
       >
-        <fetcher.Form method="post" action="/recipes/import-kptncook">
+        <fetcher.Form method="post" action="/recipes/import">
           <input type="hidden" name="_csrf" value={csrfToken} />
           <Stack gap="sm">
             <Text size="sm" c="dimmed">
-              Paste a kptncook share URL (e.g. https://share.kptncook.com/…)
-              or a recipe id. The fields below will be pre-filled; review
-              and edit before saving.
+              Paste a link to a recipe page, or a kptncook share URL (e.g.
+              https://share.kptncook.com/…) or recipe id. The fields below
+              will be pre-filled; review and edit before saving.
             </Text>
             <TextInput
               name="input"
-              label="Share URL or id"
-              placeholder="https://share.kptncook.com/abcd1234"
+              label="Recipe URL or kptncook link / id"
+              placeholder="https://example.com/recipes/banana-bread"
               value={input}
               onChange={(e) => setInput(e.currentTarget.value)}
               required

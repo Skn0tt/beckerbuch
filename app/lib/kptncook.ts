@@ -1,4 +1,10 @@
 import { validatePhotoBytes } from "../blobs";
+import { fetchWithTimeout } from "./http";
+import type {
+  RecipeImport,
+  RecipeImportIngredient,
+  RecipeImportResult,
+} from "./recipe-import";
 
 /**
  * kptncook integration. Imports a single recipe via share URL, uid,
@@ -16,7 +22,6 @@ import { validatePhotoBytes } from "../blobs";
 
 const SHARE_HOST = "share.kptncook.com";
 const BASE_URL = "https://mobile.kptncook.com";
-const FETCH_TIMEOUT_MS = 10_000;
 const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 
 const KPTN_HEADERS = {
@@ -53,20 +58,6 @@ export function parseKptncookId(text: string): KptncookId | null {
   return null;
 }
 
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
-  timeoutMs = FETCH_TIMEOUT_MS,
-): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 /**
  * Follow exactly one redirect from a share.kptncook.com URL to
  * extract the canonical recipe URL (which embeds the uid/oid).
@@ -81,25 +72,11 @@ async function resolveShareUrl(shareUrl: string): Promise<string | null> {
   }
 }
 
-export type KptncookIngredient = {
-  amount: string | null;
-  unit: string | null;
-  item: string;
-};
+export type KptncookIngredient = RecipeImportIngredient;
 
-export type KptncookImport = {
-  name: string;
-  baseQuantity: number;
-  sourceUrl: string | null;
-  sourceHost: string | null;
-  steps: string;
-  ingredients: KptncookIngredient[];
-  photo?: { bytes: Uint8Array; contentType: string };
-};
+export type KptncookImport = RecipeImport;
 
-export type KptncookImportResult =
-  | { ok: true; recipe: KptncookImport }
-  | { ok: false; error: string };
+export type KptncookImportResult = RecipeImportResult;
 
 const LANG_FALLBACK = ["de", "en", "es", "fr", "pt"] as const;
 

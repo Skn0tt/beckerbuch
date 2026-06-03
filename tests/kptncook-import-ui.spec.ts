@@ -33,16 +33,16 @@ test.describe("kptncook import", () => {
     await login(page, flat.user);
     await page.goto("/recipes/new");
 
-    await page.getByRole("button", { name: /import from kptncook/i }).click();
+    await page.getByRole("button", { name: /import recipe/i }).click();
     await expect(
-      page.getByRole("heading", { name: /import a kptncook recipe/i }),
+      page.getByRole("heading", { name: /import a recipe/i }),
     ).toBeVisible();
 
-    await page.getByLabel("Share URL or id").fill(SHARE_URL);
+    await page.getByLabel("Recipe URL or kptncook link / id").fill(SHARE_URL);
     await page.getByRole("button", { name: "Import", exact: true }).click();
 
     await expect(
-      page.getByRole("heading", { name: /import a kptncook recipe/i }),
+      page.getByRole("heading", { name: /import a recipe/i }),
     ).toBeHidden();
 
     // Form fields are prefilled.
@@ -88,13 +88,13 @@ test.describe("kptncook import", () => {
   }) => {
     await login(page, flat.user);
     await page.goto("/recipes/new");
-    await page.getByRole("button", { name: /import from kptncook/i }).click();
-    await page.getByLabel("Share URL or id").fill("nope-not-an-id");
+    await page.getByRole("button", { name: /import recipe/i }).click();
+    await page.getByLabel("Recipe URL or kptncook link / id").fill("nope-not-an-id");
     await page.getByRole("button", { name: "Import", exact: true }).click();
 
     await expect(page.getByRole("alert")).toContainText(/kptncook/i);
     await expect(
-      page.getByRole("heading", { name: /import a kptncook recipe/i }),
+      page.getByRole("heading", { name: /import a recipe/i }),
     ).toBeVisible();
   });
 });

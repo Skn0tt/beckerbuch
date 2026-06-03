@@ -75,16 +75,21 @@ Each recipe holds:
 Recipes are owned by the flat. Anyone in the flat can create, edit, and
 delete them. There is no per-recipe ownership in v1.
 
-**Importing from kptncook.** The "Add recipe" form accepts a kptncook
-share URL (or recipe id) as an alternative to typing all the fields
-in. The server fetches the recipe via the kptncook mobile API,
-pre-fills the form (name, ingredients, steps, photo), and the user
-reviews/edits before saving. An `kptncook_fetch_recipe` MCP tool
-exposes the same import path for agents. kptncook is the only
-supported import source.
+**Importing recipes.** The "Add recipe" form accepts a URL (or recipe
+id) as an alternative to typing all the fields in. Two sources are
+supported: a **kptncook** share URL / recipe id (resolved via the
+kptncook mobile API), and **any recipe page** that publishes schema.org
+`Recipe` metadata as JSON-LD (the format used by the vast majority of
+recipe sites and food blogs). In both cases the server fetches and
+normalizes the recipe, pre-fills the form (name, ingredients, steps,
+photo), and the user reviews/edits before saving. A `fetch_recipe` MCP
+tool exposes the same import path (both sources) for agents. Fetching
+arbitrary user-supplied URLs is guarded against SSRF (http(s) only;
+private/loopback/link-local addresses are refused).
 
 > **Out of scope for v1:** tags/categories, cuisine, difficulty, prep time,
-> per-user notes, versioning of edits.
+> per-user notes, versioning of edits. Importers also drop fields that
+> have no home in our schema (prep/cook time, nutrition, categories).
 
 #### Searching the collection
 
@@ -222,7 +227,8 @@ To keep the scope honest, these are explicitly **not** in v1:
 - Multiple concurrent drafts.
 - Roles, permissions, multi-flat users.
 - Ratings, comments, social features.
-- Recipe import from URL (other than kptncook — see §4.1).
+- Importing recipe metadata beyond schema.org JSON-LD (microdata,
+  hRecipe, RDFa) — effectively extinct on the modern web.
 - Reading state back from Bring!.
 
 ## 8. Future: public collections (v2 placeholder)

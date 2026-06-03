@@ -12,7 +12,7 @@ import {
   type FlatRecipe,
   type RecipeListItem,
 } from "../lib/recipes";
-import { importKptncookRecipe } from "../lib/kptncook";
+import { importRecipe } from "../lib/recipe-import";
 
 const UUID_SCHEMA = z.guid("Recipe id must be a UUID.");
 
@@ -233,18 +233,18 @@ async function handle(request: Request): Promise<Response> {
   );
 
   server.registerTool(
-    "kptncook_fetch_recipe",
+    "fetch_recipe",
     {
-      title: "Fetch a kptncook recipe",
+      title: "Fetch a recipe from a URL",
       description:
-        "Resolve a kptncook share URL, uid (7-8 chars), or oid (24 hex chars) into a normalized recipe payload that can be passed to kochbuch_add_recipe. Does not store anything — the agent should review and call kochbuch_add_recipe to actually save it. Requires KPTNCOOK_API_KEY to be configured server-side.",
+        "Resolve a recipe into a normalized payload that can be passed to kochbuch_add_recipe. Accepts any recipe page URL that exposes schema.org JSON-LD metadata (most recipe sites and food blogs), as well as kptncook share URLs, uids (7-8 chars), or oids (24 hex chars). Does not store anything — the agent should review and call kochbuch_add_recipe to actually save it. kptncook imports require KPTNCOOK_API_KEY to be configured server-side.",
       inputSchema: {
         input: z
           .string()
           .trim()
           .min(1)
           .describe(
-            "Share URL (e.g. https://share.kptncook.com/abc123), uid, or oid",
+            "A recipe page URL (e.g. https://example.com/recipes/banana-bread), a kptncook share URL (e.g. https://share.kptncook.com/abc123), uid, or oid",
           ),
         includePhoto: z
           .boolean()
@@ -253,7 +253,7 @@ async function handle(request: Request): Promise<Response> {
       },
     },
     async (args) => {
-      const result = await importKptncookRecipe(args.input, {
+      const result = await importRecipe(args.input, {
         includePhoto: args.includePhoto !== false,
       });
       if (!result.ok) return toolError(result.error);

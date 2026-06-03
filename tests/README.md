@@ -58,15 +58,25 @@ CI cold-starts.
 
 ## Mocking external APIs
 
-The app calls two external services: kptncook (recipe import) and
-OpenAI (shopping-list dedup). Both are mocked at the HTTP layer by
-the vendored **[`playwright-mocks/`](./playwright-mocks/README.md)**
+The app calls two external services that are mocked: kptncook (recipe
+import) and OpenAI (shopping-list dedup). Both are mocked at the HTTP
+layer by the vendored **[`playwright-mocks/`](./playwright-mocks/README.md)**
 library — a Playwright-shape facade over
 [mockttp](https://github.com/httptoolkit/mockttp). The library exposes
 its `workerProxy` + `mocks` fixtures, which this repo's
 `tests/fixtures.ts` composes with the rest via `mergeTests`. **App
 code calls real production URLs** — there is no test-only base-URL
 env var or `if (test)` branch in `app/`.
+
+> **Exception — generic recipe import.** The schema.org URL importer
+> (`recipe-import-live.spec.ts`, `recipe-import-ui-live.spec.ts`) is
+> deliberately **not** mocked: it fetches a handful of real recipe
+> pages over the network (unmatched requests fall through the proxy to
+> the real internet) and asserts loosely on the result. These specs
+> can flake if a third-party page 404s, bot-blocks the CI IP, or
+> changes its content — the fix is to swap the URL, not to weaken the
+> importer. The SSRF-guard / no-recipe error cases in those specs are
+> network-independent (localhost / example.com).
 
 Specs opt in to the test-scoped **`mocks` fixture** and call
 `mocks.route(pattern, handler, options?)` directly:
