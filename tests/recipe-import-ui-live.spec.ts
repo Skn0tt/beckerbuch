@@ -90,12 +90,7 @@ test.describe("generic recipe import (live UI)", () => {
     // every mismatched row, amount, unit, and item at once.
     await expect(page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item")).not.toHaveValue("");
 
-    const ingredientsBlock = page
-      .getByRole("heading", { name: "Ingredients" })
-      .locator("..");
-
-    await expect.soft(ingredientsBlock).toMatchAriaSnapshot(`
-      - heading "Ingredients" [level=5]
+    await expect.soft(page.getByRole("table", { name: "Ingredients" })).toMatchAriaSnapshot(`
       - table "Ingredients":
         - rowgroup:
           - row "Amount Unit Item Actions":
