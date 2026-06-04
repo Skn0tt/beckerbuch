@@ -15,13 +15,13 @@
 | Concern              | Choice                                                                 |
 | -------------------- | ---------------------------------------------------------------------- |
 | Framework            | **React Router v7** (Remix successor), TypeScript, SSR                 |
-| Hosting              | **Netlify** (`@netlify/vite-plugin-react-router`)                      |
+| Hosting              | **Netlify** (default, `@netlify/vite-plugin-react-router`) or **Vercel** (`@vercel/react-router` preset) — selected by deploy target (§12.1) |
 | Styling / components | **Mantine** (component library + hooks: `@mantine/core`, `@mantine/form`, `@mantine/notifications`, `@mantine/dropzone`); drag-and-drop via `@hello-pangea/dnd` |
 | Database             | **Neon Postgres** (Netlify DB) in production; **Testcontainers** (`postgres:16`) in tests. Pinned to Postgres 16. |
 | ORM / migrations     | **Drizzle ORM** + `drizzle-kit`                                        |
 | DB driver            | **`pg`** (standard node-postgres). *Not* `@neondatabase/serverless`    |
 | Auth                 | Hand-rolled: argon2id passwords, signed cookie sessions, invite tokens |
-| Image storage        | **Netlify Blobs**                                                      |
+| Image storage        | **Netlify Blobs** or **Vercel Blob**, behind a driver abstraction (§8) |
 | Search               | Postgres FTS (`tsvector` + weights) + `pg_trgm` for fuzzy              |
 | Bring! integration   | Server-rendered routes emitting schema.org Recipe JSON-LD              |
 | Tests                | **Playwright** end-to-end (only — no unit tests in v1)                 |
@@ -501,14 +501,32 @@ Marking a stock entry as cooked is the symmetric one-liner:
   edit/create action.
 - Server validates: MIME in `{image/jpeg, image/png, image/webp}`,
   size ≤ 5 MB, dimensions decoded (rejects malformed).
-- Stored in Netlify Blobs under key
-  `recipes/<recipe_id>/<random>.<ext>`. Key written to
-  `recipes.photo_blob_key`.
-- Served via a route `/blobs/recipes/:key` that streams from
-  `getStore("recipes").get(...)` with appropriate `Cache-Control`
-  (immutable, 1 year — keys are random per upload).
-- Locally: emulated via `.netlify/blobs/` (filesystem-backed), no
-  cloud calls (see §11).
+- Stored in a blob store under key
+  `recipes/<recipe_id>/<random>.<ext>`. The store driver (Netlify Blobs
+  or Vercel Blob) is chosen at runtime — see below. The value persisted
+  to `recipes.photo_blob_key` is an opaque **handle**: the store key on
+  Netlify, the blob URL on Vercel. App code never parses it; it round-trips
+  the handle back into read/delete.
+- Served via a route `/blobs/recipes/:key` that streams the bytes the
+  driver returns with appropriate `Cache-Control` (immutable, 1 year —
+  keys are random per upload).
+- **Storage abstraction** (`app/lib/storage/`): a tiny `BlobStore`
+  interface (`put` / `get` / `del`) with two drivers. `resolveStorageDriver()`
+  picks `vercel` when a Vercel Blob store is wired (`BLOB_READ_WRITE_TOKEN`
+  or, for the current OIDC setup, `BLOB_STORE_ID`); `STORAGE_DRIVER` forces
+  either; else `netlify`. On the Vercel path `@vercel/blob` authenticates
+  via the runtime-injected `VERCEL_OIDC_TOKEN` + `BLOB_STORE_ID` (no static
+  token). `app/blobs.ts` (recipes) and `app/lib/avatars.ts` (avatars) keep
+  all validation + key generation and delegate the three store ops.
+- **Vercel Blob is public-read.** `@vercel/blob` only offers
+  `access: 'public'`, so the underlying blob URL is fetchable by anyone who
+  has it. Our keys embed an unguessable random component and we still serve
+  through the existing auth/token-gated routes, so normal access is
+  unchanged; the raw URL being reachable is the accepted trade-off on the
+  Vercel target. Netlify Blobs has no such exposure.
+- Locally / in tests: emulated via the Netlify Blobs server
+  (filesystem-backed), no cloud calls (see §10.1, §11). Tests always run
+  the Netlify driver.
 - No image processing in v1 (no thumbnailing, no EXIF strip beyond
   what the browser does on capture). Track as a v2 if file sizes
   start to bite.
@@ -752,24 +770,79 @@ CLI directly — see §11.1.
 
 ## 12. Deployment
 
-- Netlify site connected to the GitHub repo. Production branch:
-  `main`. Preview deploys per PR.
-- **Build:** `npm run build` (React Router → `build/` server bundle +
-  `build/client/` assets). The `@netlify/vite-plugin-react-router`
-  Netlify plugin wraps the server bundle as a Function automatically.
-- **Migrations:** the Netlify build command applies pending Drizzle
-  migrations against `$DATABASE_URL` before building:
-  `npx drizzle-kit migrate && npm run build`. Roll-forward only —
-  schema changes are reviewed for backwards compat in PR. (No `db:migrate`
-  npm script — we keep the four-script rule from §11.3.)
-- **Env vars** (set in Netlify UI):
-  - `DATABASE_URL` — Neon pooled connection string
+The app builds for two targets. **Netlify is the default** — it's what the
+test rig (`react-router-serve build/server/server-build.js`) and CI
+exercise, so it stays the source of truth. **Vercel** is an opt-in second
+target sharing the same app code via a storage/DB abstraction.
+
+### 12.1 Target selection
+
+`react-router.config.ts` and `vite.config.ts` resolve a target:
+
+```
+target = DEPLOY_TARGET ?? (process.env.VERCEL ? "vercel" : "netlify")
+```
+
+- **Netlify** (default): `vite.config.ts` loads `@netlify/vite-plugin` +
+  `@netlify/vite-plugin-react-router`; no React Router preset.
+- **Vercel**: detected automatically (Vercel sets `VERCEL=1` during build),
+  or forced with `DEPLOY_TARGET=vercel`. Drops the Netlify plugins and adds
+  the `vercelPreset()` from `@vercel/react-router/vite` to the RR config.
+  The two mechanisms are mutually exclusive — only one wraps the SSR bundle.
+
+The runtime storage driver is resolved independently (§8): Vercel Blob when
+`BLOB_READ_WRITE_TOKEN` is present, else Netlify Blobs.
+
+### 12.2 Netlify
+
+- Site connected to the GitHub repo. Production branch `main`, preview
+  deploys per PR.
+- **Build** (`netlify.toml`): `node scripts/migrate.mjs && npm run build`.
+  The migrate script applies pending Drizzle migrations against the DB
+  (roll-forward only — schema changes reviewed for backwards compat in PR),
+  then `react-router build` produces `build/` (server bundle) +
+  `build/client/` (publish dir). `@netlify/vite-plugin-react-router` wraps
+  the server bundle as a Function. (No `db:migrate` npm script — we keep the
+  four-script rule from §11.3.)
+- **Env vars** (Netlify UI):
+  - `DATABASE_URL` — Neon pooled connection string (or auto `NETLIFY_DB_URL`)
   - `SESSION_SECRET` — 32-byte random, rotated by force-logout
   - `BLOBS_*` — provided automatically by Netlify
+
+### 12.3 Vercel
+
+- Project connected to the same repo; Vercel auto-detects the target.
+- **Build** (`vercel.json`): `framework: react-router` +
+  `buildCommand: node scripts/migrate.mjs && npm run build` — same migrate
+  step, then the Vercel-preset build emits the Vercel output. The preset
+  generates the Function(s); no publish dir to configure.
+- **Env vars** (Vercel project settings):
+  - `DATABASE_URL` or `POSTGRES_URL` — Neon connection string (the Neon
+    marketplace integration injects both plus a swarm of `PG*`/`POSTGRES_*`
+    aliases; we read `DATABASE_URL` then `POSTGRES_URL`, see `app/db/url.ts`)
+  - `SESSION_SECRET`
+  - `BLOB_STORE_ID` — injected when a Vercel Blob store is connected; also
+    auto-selects the Vercel storage driver. Auth uses the runtime
+    `VERCEL_OIDC_TOKEN` (no static `BLOB_READ_WRITE_TOKEN` needed anymore).
+    The store must be **public-read** (§8).
+  - `OPENAI_API_KEY` **and** `OPENAI_BASE_URL` — there's no Netlify AI
+    Gateway here. To use Vercel's AI Gateway set
+    `OPENAI_BASE_URL=https://ai-gateway.vercel.sh/v1` and a gateway key as
+    `OPENAI_API_KEY`; gateway model IDs are provider-prefixed, so set
+    `DEDUP_MODEL=openai/gpt-4.1-mini` (the bare default `gpt-4.1-mini` only
+    works against `api.openai.com`).
+  - `KPTNCOOK_API_KEY`, `ADMIN_TOKEN` — same as Netlify.
+- `VERCEL_DEPLOYMENT_ID` is auto-injected and feeds `__SWR_VERSION__` for
+  per-deploy client cache invalidation (the `DEPLOY_ID` analogue).
+
+### 12.4 Common
+
 - **Preview deploys** per PR point at the production DB read replica
   for v1 — we'll reconsider once we have data worth corrupting.
   (Phase 6 adds an ephemeral Neon branch per PR for the Playwright
   parity run; that branch is *not* what preview deploys connect to.)
+- Tests only ever run the **Netlify** build + driver; the Vercel target is
+  verified by a manual `DEPLOY_TARGET=vercel npm run build` + a real deploy.
 
 ---
 

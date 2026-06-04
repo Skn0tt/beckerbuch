@@ -9,6 +9,9 @@
 # Netlify
 /.netlify/
 
+# Vercel
+/.vercel/
+
 # Playwright
 /playwright-report/
 /test-results/
@@ -16,3 +19,4 @@
 
 # Local Netlify folder
 .netlify
+.vercel

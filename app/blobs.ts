@@ -1,4 +1,4 @@
-import { getStore } from "@netlify/blobs";
+import { getBlobStore } from "./lib/storage";
 
 const STORE_NAME = "recipes";
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -23,7 +23,7 @@ export type PhotoValidationError = string;
 export const PHOTO_MAX_BYTES = MAX_PHOTO_BYTES;
 
 function recipeStore() {
-  return getStore({ name: STORE_NAME, consistency: "strong" });
+  return getBlobStore(STORE_NAME);
 }
 
 export type PhotoValidationResult =
@@ -77,7 +77,7 @@ export async function storePhotoBytes(
   const ext = MIME_TO_EXT[contentType] ?? "bin";
   const random = crypto.randomUUID();
   const key = `recipes/${recipeId}/${random}.${ext}`;
-  // Netlify Blobs accepts ArrayBuffer; normalise Uint8Array to a fresh ArrayBuffer.
+  // Normalise Uint8Array to a fresh ArrayBuffer for the storage driver.
   let payload: ArrayBuffer;
   if (bytes instanceof Uint8Array) {
     const copy = new Uint8Array(bytes.byteLength);
@@ -86,28 +86,18 @@ export async function storePhotoBytes(
   } else {
     payload = bytes;
   }
-  await recipeStore().set(key, payload, {
-    metadata: { contentType },
-  });
-  return key;
+  const store = await recipeStore();
+  return store.put(key, payload, contentType);
 }
 
 export async function deletePhoto(key: string): Promise<void> {
-  try {
-    await recipeStore().delete(key);
-  } catch {
-    // Best-effort; orphan blobs are not user-visible.
-  }
+  const store = await recipeStore();
+  await store.del(key);
 }
 
 export async function readPhoto(
   key: string,
 ): Promise<{ body: ArrayBuffer; contentType: string } | null> {
-  const result = await recipeStore().getWithMetadata(key, { type: "arrayBuffer" });
-  if (!result) return null;
-  const md = result.metadata as { contentType?: string } | undefined;
-  return {
-    body: result.data,
-    contentType: md?.contentType ?? "application/octet-stream",
-  };
+  const store = await recipeStore();
+  return store.get(key);
 }
