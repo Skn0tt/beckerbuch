@@ -1,15 +1,13 @@
 #!/usr/bin/env node
 // Runs pending Drizzle migrations against the configured database.
-// Used by the Netlify and Vercel build commands. Resolves the URL via
-// DATABASE_URL, then POSTGRES_URL (Vercel/Neon marketplace), then
-// @netlify/database (which reads NETLIFY_DB_URL).
+// Used by netlify.toml's build command. Resolves the URL via
+// @netlify/database (which reads NETLIFY_DB_URL) with a DATABASE_URL fallback.
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 import { getConnectionString } from "@netlify/database";
 
-const url =
-  process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? getConnectionString();
+const url = process.env.DATABASE_URL ?? getConnectionString();
 
 console.log("Connecting to database...");
 const pool = new Pool({
