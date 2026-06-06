@@ -41,16 +41,32 @@ test("create a recipe → see it on home → open detail view", async ({ page, f
   await expect(page.getByRole("heading", { name: "Draft" })).toBeVisible();
 });
 
-test("recipe form rejects empty name and missing ingredients", async ({ page, flat }) => {
+test("recipe form disables submit when required fields are missing", async ({ page, flat }) => {
   await login(page, flat.user);
   await page.getByRole("link", { name: "+ New recipe" }).click();
 
-  // Name empty → browser may block submit (HTML required). Provide a name
-  // but leave ingredients blank.
+  // Name filled but no ingredient items → submit stays disabled.
   await page.getByLabel("Name").fill("Empty test");
-  await page.getByRole("button", { name: "Save recipe" }).click();
+  await expect(page.getByRole("button", { name: "Save recipe" })).toBeDisabled();
+});
 
-  await expect(page.getByRole("alert")).toContainText(/at least one ingredient/i);
+test("recipe form flags non-numeric ingredient amounts and blocks submit", async ({ page, flat }) => {
+  await login(page, flat.user);
+  await page.getByRole("link", { name: "+ New recipe" }).click();
+
+  await page.getByLabel("Name").fill("Bad amount");
+  const row1 = page.getByRole("row", { name: "Ingredient 1", exact: true });
+  await row1.getByLabel("Item").fill("flour");
+  await row1.getByLabel("Amount").fill("a lot");
+
+  const amount = row1.getByLabel("Amount");
+  await expect(amount).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByRole("button", { name: "Save recipe" })).toBeDisabled();
+
+  // Fixing the amount re-enables submit.
+  await amount.fill("200");
+  await expect(amount).not.toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByRole("button", { name: "Save recipe" })).toBeEnabled();
 });
 
 test("recipe form keeps one trailing empty ingredient row", async ({ page, flat }) => {
