@@ -366,6 +366,8 @@ function readyURLFromStdout(
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
+      stdout.off("data", onChunk);
+      if (stderr) stderr.off("data", onChunk);
       reject(
         new Error(
           `Timed out waiting for react-router-serve ready line. Last stdout:\n${buffer.slice(-2000)}`,
