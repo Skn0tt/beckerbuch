@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { mkdir } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { mkdir, open, stat } from "node:fs/promises";
 import path from "node:path";
 import { BlobsServer } from "@netlify/blobs/server";
 import {
@@ -38,6 +39,13 @@ export type Flat = {
 export type ServerHandle = {
   /** Base URL of this worker's react-router-serve process. */
   baseURL: string;
+  /**
+   * Path to the file that captures this worker's react-router-serve
+   * stdout+stderr. The `_serverLogAttachment` auto fixture slices it
+   * per test and attaches the slice on failure; nothing is written to
+   * the runner's own stdout, so CI logs stay readable.
+   */
+  logFile: string;
 };
 
 export type AppWorkerFixtures = {
@@ -46,6 +54,12 @@ export type AppWorkerFixtures = {
 
 export type AppTestFixtures = {
   flat: Flat;
+  /**
+   * Auto fixture; not meant to be consumed. Captures the byte range
+   * the per-worker server log grew by during this test and attaches
+   * it when the test fails. See the fixture definition for details.
+   */
+  _serverLogAttachment: void;
 };
 
 export type WorkerFixtures = AppWorkerFixtures & MocksWorkerFixtures;
@@ -138,6 +152,21 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
         },
       );
 
+      // Capture the server's stdout+stderr to a per-worker log file
+      // rather than streaming it to the test runner's own stdout.
+      // CI runs are otherwise drowned in interleaved server logs from
+      // every worker, which makes failures hard to read. The
+      // `_serverLogAttachment` test fixture slices this file per test
+      // and attaches the slice when a test fails, so the logs are
+      // still recoverable from the Playwright HTML report.
+      const logFile = path.join(
+        workerInfo.project.outputDir,
+        `react-router-serve-worker-${workerInfo.parallelIndex}.log`,
+      );
+      const logStream = createWriteStream(logFile);
+      child.stdout?.pipe(logStream, { end: false });
+      child.stderr?.pipe(logStream, { end: false });
+
       const baseURLPromise = readyURLFromStdout(child, 60_000);
 
       const exited = new Promise<never>((_, reject) => {
@@ -156,10 +185,11 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
       } catch (err) {
         killTree(child);
         await blobs.stop().catch(() => undefined);
+        await new Promise<void>((resolve) => logStream.end(() => resolve()));
         throw err;
       }
 
-      await use({ baseURL });
+      await use({ baseURL, logFile });
 
       killTree(child);
       await new Promise<void>((resolve) => {
@@ -170,11 +200,54 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
         child.once("exit", () => resolve());
       });
       await blobs.stop().catch(() => undefined);
+      await new Promise<void>((resolve) => logStream.end(() => resolve()));
       // Don't `rm` blobsDir — it sits under workerInfo.outputDir, so
       // Playwright handles cleanup on the next run and the contents
       // stay around for post-mortem inspection.
     },
     { scope: "worker", timeout: 180_000 },
+  ],
+
+  // Auto fixture: record the server log size at test start and, if
+  // the test ends in an unexpected state, attach the bytes the server
+  // wrote during it. We deliberately scope this per-test (rather than
+  // attaching the whole worker log) so each failure carries just its
+  // own context.
+  _serverLogAttachment: [
+    async ({ server }, use, testInfo) => {
+      let startOffset = 0;
+      try {
+        startOffset = (await stat(server.logFile)).size;
+      } catch {
+        // Log file may not exist yet if the server failed to start;
+        // fall through and attach whatever is there at the end.
+      }
+
+      await use();
+
+      if (testInfo.status === testInfo.expectedStatus) return;
+
+      try {
+        const handle = await open(server.logFile, "r");
+        try {
+          const end = (await handle.stat()).size;
+          const len = Math.max(0, end - startOffset);
+          if (len === 0) return;
+          const buf = Buffer.alloc(len);
+          await handle.read(buf, 0, len, startOffset);
+          await testInfo.attach("react-router-serve.log", {
+            body: buf,
+            contentType: "text/plain",
+          });
+        } finally {
+          await handle.close();
+        }
+      } catch {
+        // Best-effort: don't mask the underlying test failure if we
+        // couldn't read the log for some reason.
+      }
+    },
+    { auto: true },
   ],
 
   // Override Playwright's built-in `baseURL` (test scope, since
@@ -301,13 +374,14 @@ function readyURLFromStdout(
     }, timeoutMs);
     const onChunk = (chunk: Buffer | string) => {
       const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
-      process.stdout.write(text);
       if (settled) return;
       buffer += text;
       const m = buffer.replace(ansi, "").match(re);
       if (m) {
         settled = true;
         clearTimeout(timer);
+        stdout.off("data", onChunk);
+        if (stderr) stderr.off("data", onChunk);
         resolve(m[1].replace(/[\s.,;]+$/, ""));
       }
       if (buffer.length > 64 * 1024) buffer = buffer.slice(-32 * 1024);
