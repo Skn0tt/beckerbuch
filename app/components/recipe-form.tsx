@@ -13,11 +13,21 @@ import {
   Textarea,
   Title,
 } from "@mantine/core";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Form, useNavigation } from "react-router";
 import { CsrfField } from "../auth/csrf-field";
+import { parseAmount } from "../lib/amount";
 
 export type IngredientRow = { amount: string; unit: string; item: string };
+
+/**
+ * Returns true if the amount string is valid for submission: either empty,
+ * or parseable as a number / fraction by {@link parseAmount}.
+ */
+export function isValidAmount(raw: string): boolean {
+  if (raw.trim() === "") return true;
+  return parseAmount(raw) !== null;
+}
 
 const visuallyHidden = {
   position: "absolute" as const,
@@ -81,6 +91,11 @@ export function RecipeForm({
       ? initial.ingredients
       : [blankRow()];
   const [rows, setRows] = useState<IngredientRow[]>(ensureTrailingBlankRow(initialRows));
+  const [name, setName] = useState<string>(initial?.name ?? "");
+  const [baseQuantity, setBaseQuantity] = useState<number | string>(
+    initial?.baseQuantity ?? 4,
+  );
+  const [sourceUrl, setSourceUrl] = useState<string>(initial?.sourceUrl ?? "");
   const navigation = useNavigation();
   // Prevents double-submit (rapid second click, mobile double-tap, repeated
   // Enter) creating duplicate recipes. Mantine's `loading` doesn't set the
@@ -96,6 +111,44 @@ export function RecipeForm({
     setRows((rs) => ensureTrailingBlankRow(rs.filter((_, idx) => idx !== i)));
   };
 
+  // Visually flag any non-empty invalid amount so typos in the trailing
+  // (yet-to-be-filled) row are still surfaced.
+  const rowAmountInvalid = (row: IngredientRow) => !isValidAmount(row.amount);
+
+  const nameTrimmed = name.trim();
+  const nameInvalid = nameTrimmed.length === 0 || nameTrimmed.length > 200;
+  const baseQuantityNum =
+    typeof baseQuantity === "number" ? baseQuantity : Number.parseInt(baseQuantity, 10);
+  const baseQuantityInvalid =
+    !Number.isFinite(baseQuantityNum) ||
+    !Number.isInteger(baseQuantityNum) ||
+    baseQuantityNum < 1 ||
+    baseQuantityNum > 1000;
+  const sourceUrlInvalid = useMemo(() => {
+    const trimmed = sourceUrl.trim();
+    if (!trimmed) return false;
+    try {
+      new URL(trimmed);
+      return false;
+    } catch {
+      return true;
+    }
+  }, [sourceUrl]);
+  const usedRows = rows.filter((r) => r.item.trim() !== "");
+  const hasIngredient = usedRows.length > 0;
+  // Only block submission on amounts that belong to a row the backend will
+  // actually persist (i.e. one with an item). This keeps mid-edit typos in
+  // the trailing blank row from disabling the button, while still showing
+  // the red outline via `rowAmountInvalid`.
+  const anyAmountInvalid = usedRows.some(rowAmountInvalid);
+
+  const formInvalid =
+    nameInvalid ||
+    baseQuantityInvalid ||
+    sourceUrlInvalid ||
+    !hasIngredient ||
+    anyAmountInvalid;
+
   return (
     <Form method="post" encType="multipart/form-data">
       <CsrfField token={csrfToken} />
@@ -105,16 +158,22 @@ export function RecipeForm({
           name="name"
           label="Name"
           required
-          defaultValue={initial?.name ?? ""}
+          maxLength={200}
+          value={name}
+          onChange={(e) => setName(e.currentTarget.value)}
+          error={nameInvalid}
         />
 
         <NumberInput
           name="baseQuantity"
           label="Base portions"
           min={1}
-          defaultValue={initial?.baseQuantity ?? 4}
+          max={1000}
+          value={baseQuantity}
+          onChange={(v) => setBaseQuantity(v)}
           required
           allowDecimal={false}
+          error={baseQuantityInvalid}
         />
 
         <TextInput
@@ -122,7 +181,9 @@ export function RecipeForm({
           label="Source URL"
           type="url"
           placeholder="https://…"
-          defaultValue={initial?.sourceUrl ?? ""}
+          value={sourceUrl}
+          onChange={(e) => setSourceUrl(e.currentTarget.value)}
+          error={sourceUrlInvalid}
         />
 
         <Stack gap="xs">
@@ -179,6 +240,7 @@ export function RecipeForm({
                       value={row.amount}
                       onChange={(e) => setRow(i, { amount: e.currentTarget.value })}
                       placeholder="amt"
+                      error={rowAmountInvalid(row)}
                     />
                   </Table.Td>
                   <Table.Td>
@@ -234,7 +296,7 @@ export function RecipeForm({
 
         <Group justify="space-between">
           {secondaryAction ?? <span />}
-          <Button type="submit" loading={isSubmitting} disabled={isSubmitting}>
+          <Button type="submit" loading={isSubmitting} disabled={isSubmitting || formInvalid}>
             {submitLabel}
           </Button>
         </Group>
@@ -260,9 +322,22 @@ export function parseIngredientsFromForm(form: FormData): ParsedIngredient[] {
     if (!item) continue;
     const amountRaw = (amounts[i] ?? "").trim();
     const unitRaw = (units[i] ?? "").trim();
+    let amount: string | null = amountRaw || null;
+    if (amount !== null) {
+      const n = parseAmount(amount);
+      if (n === null) {
+        // parseRecipeFields validates this and surfaces an error; we still
+        // emit a row so positions line up, but with amount=null so we never
+        // hand a non-numeric string to PG's numeric column.
+        amount = null;
+      } else {
+        // Canonical decimal string for the PG numeric column (e.g. "1/2" → "0.5").
+        amount = String(n);
+      }
+    }
     out.push({
       position: out.length,
-      amount: amountRaw || null,
+      amount,
       unit: unitRaw || null,
       item,
     });
@@ -296,6 +371,21 @@ export function parseRecipeFields(form: FormData): ParseResult {
     errors.push("Base portions must be between 1 and 1000.");
   }
   if (parsed.length === 0) errors.push("Add at least one ingredient.");
+
+  // Detect non-numeric amount strings the user typed. parseIngredientsFromForm
+  // normalises valid amounts (incl. "1/2", "1,5") to canonical decimal strings
+  // and silently drops invalid ones; here we check the raw form values so we
+  // can reject them before hitting PG's numeric column.
+  const rawAmounts = form.getAll("ingredient_amount").map((x) => String(x));
+  const rawItems = form.getAll("ingredient_item").map((x) => String(x));
+  for (let i = 0; i < rawItems.length; i++) {
+    if (!(rawItems[i] ?? "").trim()) continue;
+    const raw = (rawAmounts[i] ?? "").trim();
+    if (raw && parseAmount(raw) === null) {
+      errors.push("Ingredient amounts must be numeric.");
+      break;
+    }
+  }
 
   let sourceHost: string | null = null;
   if (sourceUrl) {
