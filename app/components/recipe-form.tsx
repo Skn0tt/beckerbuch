@@ -111,8 +111,8 @@ export function RecipeForm({
     setRows((rs) => ensureTrailingBlankRow(rs.filter((_, idx) => idx !== i)));
   };
 
-  // A row is "in use" when the user typed something into the item column.
-  // Blank trailing rows are ignored by the backend, so we don't flag them.
+  // Visually flag any non-empty invalid amount so typos in the trailing
+  // (yet-to-be-filled) row are still surfaced.
   const rowAmountInvalid = (row: IngredientRow) => !isValidAmount(row.amount);
 
   const nameTrimmed = name.trim();
@@ -136,7 +136,11 @@ export function RecipeForm({
   }, [sourceUrl]);
   const usedRows = rows.filter((r) => r.item.trim() !== "");
   const hasIngredient = usedRows.length > 0;
-  const anyAmountInvalid = rows.some(rowAmountInvalid);
+  // Only block submission on amounts that belong to a row the backend will
+  // actually persist (i.e. one with an item). This keeps mid-edit typos in
+  // the trailing blank row from disabling the button, while still showing
+  // the red outline via `rowAmountInvalid`.
+  const anyAmountInvalid = usedRows.some(rowAmountInvalid);
 
   const formInvalid =
     nameInvalid ||
@@ -322,9 +326,9 @@ export function parseIngredientsFromForm(form: FormData): ParsedIngredient[] {
     if (amount !== null) {
       const n = parseAmount(amount);
       if (n === null) {
-        // Caller (parseRecipeFields) validates this and surfaces an error;
-        // we still emit a row so positions line up, but with amount=null so
-        // we never hand a non-numeric string to PG's numeric column.
+        // parseRecipeFields validates this and surfaces an error; we still
+        // emit a row so positions line up, but with amount=null so we never
+        // hand a non-numeric string to PG's numeric column.
         amount = null;
       } else {
         // Canonical decimal string for the PG numeric column (e.g. "1/2" → "0.5").
