@@ -15,6 +15,7 @@ import { ingredients, recipes } from "../db/schema";
 import { formatIngredient } from "../lib/scale";
 import { parseParams } from "../lib/form";
 import { createSwrClientLoader, unwrapSwr, useSwrData } from "../lib/swr";
+import { RecipeSteps } from "../components/recipe-steps";
 
 const ParamsSchema = z.object({ id: z.guid() });
 
@@ -103,7 +104,7 @@ export default function PublicRecipe() {
             <Title order={2} size="h4">
               Steps
             </Title>
-            <Text style={{ whiteSpace: "pre-wrap" }}>{recipe.steps}</Text>
+            <RecipeSteps>{recipe.steps}</RecipeSteps>
           </>
         ) : null}
       </Stack>

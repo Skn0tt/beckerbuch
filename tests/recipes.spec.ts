@@ -384,3 +384,60 @@ test("search filters by name + ingredient + source host", async ({ page, flat })
   await expect(cards).toHaveCount(0);
   await expect(page.getByText(/No recipes match/)).toBeVisible();
 });
+
+test("recipe Steps are rendered as Markdown", async ({ page, flat }) => {
+  await login(page, flat.user);
+
+  await page.getByRole("link", { name: "+ New recipe" }).click();
+  await page.getByLabel("Name").fill("Markdown steps recipe");
+  await page
+    .getByRole("row", { name: "Ingredient 1", exact: true })
+    .getByLabel("Item")
+    .fill("water");
+
+  await page
+    .getByLabel("Steps")
+    .fill(
+      [
+        "## Prep",
+        "",
+        "1. Mix **flour** and *water*.",
+        "2. Knead well.",
+        "",
+        "See [docs](https://example.com/knead) for technique.",
+        "",
+        "- [ ] todo one",
+        "- [x] todo two",
+      ].join("\n"),
+    );
+
+  await page.getByRole("button", { name: "Save recipe" }).click();
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
+
+  const stepsSection = page
+    .getByRole("heading", { name: "Steps", level: 4 })
+    .locator("..");
+
+  await expect(stepsSection.getByRole("heading", { name: "Prep" })).toBeVisible();
+  await expect(stepsSection.locator("ol > li")).toHaveCount(2);
+  await expect(stepsSection.locator("strong", { hasText: "flour" })).toBeVisible();
+  await expect(stepsSection.locator("em", { hasText: "water" })).toBeVisible();
+
+  const link = stepsSection.getByRole("link", { name: "docs" });
+  await expect(link).toHaveAttribute("href", "https://example.com/knead");
+  await expect(link).toHaveAttribute("target", "_blank");
+  await expect(link).toHaveAttribute("rel", /noreferrer/);
+
+  // Task list items render as checkboxes without a list bullet.
+  const taskList = stepsSection.locator("ul.contains-task-list");
+  await expect(taskList).toBeVisible();
+  await expect(taskList).toHaveCSS("list-style-type", "none");
+  const taskItems = taskList.locator("li.task-list-item");
+  await expect(taskItems).toHaveCount(2);
+  await expect(taskItems.first()).toHaveCSS("list-style-type", "none");
+  await expect(taskItems.first().locator("input[type=checkbox]")).toBeVisible();
+
+  // Raw Markdown syntax should not be visible as plain text.
+  await expect(stepsSection.getByText("**flour**")).toHaveCount(0);
+  await expect(stepsSection.getByText("## Prep")).toHaveCount(0);
+});

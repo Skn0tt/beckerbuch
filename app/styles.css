@@ -1,4 +1,5 @@
 @import "@mantine/core/styles.css";
+@import "@mantine/core/styles/Typography.css";
 @import "@mantine/notifications/styles.css";
 @import "@mantine/dropzone/styles.css";
 
@@ -14,4 +15,16 @@ html {
 
 :where(input:not([type="hidden"]), textarea, select) {
   font-size: max(16px, 1rem) !important;
+}
+
+/* GFM task lists: hide list bullet so only the checkbox shows (matches GitHub). */
+.recipe-steps ul.contains-task-list {
+  list-style: none;
+  padding-left: 0;
+}
+.recipe-steps li.task-list-item {
+  list-style: none;
+}
+.recipe-steps li.task-list-item > input[type="checkbox"] {
+  margin-right: 0.4em;
 }

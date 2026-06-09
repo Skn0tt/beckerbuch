@@ -36,6 +36,7 @@ import { deletePhoto } from "../blobs";
 import { formatIngredient } from "../lib/scale";
 import { firstMessage, formDataToObject, parseParams } from "../lib/form";
 import { createSwrClientLoader, useSwrData } from "../lib/swr";
+import { RecipeSteps } from "../components/recipe-steps";
 
 const ParamsSchema = z.object({ id: z.guid() });
 
@@ -444,7 +445,7 @@ export default function RecipeView() {
           <Title order={4} mb="xs">
             Steps
           </Title>
-          <Text style={{ whiteSpace: "pre-wrap" }}>{recipe.steps}</Text>
+          <RecipeSteps>{recipe.steps}</RecipeSteps>
         </section>
       )}
 
