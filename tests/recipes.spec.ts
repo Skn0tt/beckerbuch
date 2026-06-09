@@ -435,7 +435,55 @@ test("recipe Steps are rendered as Markdown", async ({ page, flat }) => {
   const taskItems = taskList.locator("li.task-list-item");
   await expect(taskItems).toHaveCount(2);
   await expect(taskItems.first()).toHaveCSS("list-style-type", "none");
-  await expect(taskItems.first().locator("input[type=checkbox]")).toBeVisible();
+  const checkboxes = taskItems.locator("input[type=checkbox]");
+  await expect(checkboxes.first()).toBeVisible();
+  await expect(checkboxes.nth(0)).not.toBeChecked();
+  await expect(checkboxes.nth(1)).toBeChecked();
+
+  await checkboxes.nth(0).click();
+  await checkboxes.nth(1).click();
+  await expect(checkboxes.nth(0)).toBeChecked();
+  await expect(checkboxes.nth(1)).not.toBeChecked();
+
+  const savedProgress = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((entry) =>
+      entry.startsWith("recipe-steps-progress:"),
+    );
+    if (!key) return null;
+    return {
+      key,
+      value: JSON.parse(localStorage.getItem(key) ?? "null"),
+      expectedExpiresAt: (() => {
+        const now = new Date();
+        const expiresAt = new Date(now);
+        expiresAt.setHours(2, 0, 0, 0);
+        if (expiresAt.getTime() <= now.getTime()) {
+          expiresAt.setDate(expiresAt.getDate() + 1);
+        }
+        return expiresAt.getTime();
+      })(),
+    };
+  });
+  expect(savedProgress).not.toBeNull();
+  expect(savedProgress?.value.checks).toEqual({ 0: true, 1: false });
+  expect(savedProgress?.value.expiresAt).toBe(savedProgress?.expectedExpiresAt);
+
+  await page.reload();
+  await expect(checkboxes.nth(0)).toBeChecked();
+  await expect(checkboxes.nth(1)).not.toBeChecked();
+
+  await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((entry) =>
+      entry.startsWith("recipe-steps-progress:"),
+    );
+    if (!key) return;
+    const value = JSON.parse(localStorage.getItem(key) ?? "null");
+    value.expiresAt = Date.now() - 1_000;
+    localStorage.setItem(key, JSON.stringify(value));
+  });
+  await page.reload();
+  await expect(checkboxes.nth(0)).not.toBeChecked();
+  await expect(checkboxes.nth(1)).toBeChecked();
 
   // Raw Markdown syntax should not be visible as plain text.
   await expect(stepsSection.getByText("**flour**")).toHaveCount(0);

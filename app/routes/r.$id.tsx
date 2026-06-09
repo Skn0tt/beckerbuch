@@ -104,7 +104,7 @@ export default function PublicRecipe() {
             <Title order={2} size="h4">
               Steps
             </Title>
-            <RecipeSteps>{recipe.steps}</RecipeSteps>
+            <RecipeSteps storageId={recipe.id}>{recipe.steps}</RecipeSteps>
           </>
         ) : null}
       </Stack>
