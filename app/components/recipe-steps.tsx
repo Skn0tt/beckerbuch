@@ -80,32 +80,37 @@ function clearProgress(storageKey: string): void {
  * tables, autolinks and strikethrough.
  */
 export function RecipeSteps({ children, storageId }: Props) {
+  // Include the current markdown content in the key so editing recipe steps
+  // resets any stale saved checkbox state for the older version. The hash is
+  // only for localStorage key differentiation; it is not security-sensitive.
   const storageKey = useMemo(
     () =>
       storageId ? `${STORAGE_PREFIX}${storageId}:${hashText(children)}` : null,
     [children, storageId],
   );
-  const [state, setState] = useState(() => ({
-    storageKey,
-    progress: storageKey ? loadProgress(storageKey) : null,
-  }));
-  if (state.storageKey !== storageKey) {
-    setState({
-      storageKey,
-      progress: storageKey ? loadProgress(storageKey) : null,
-    });
-  }
-  const progress = state.progress;
+  return (
+    <RecipeStepsContent key={storageKey ?? "recipe-steps"} storageKey={storageKey}>
+      {children}
+    </RecipeStepsContent>
+  );
+}
+
+type ContentProps = {
+  children: string;
+  storageKey: string | null;
+};
+
+function RecipeStepsContent({ children, storageKey }: ContentProps) {
+  const [progress, setProgress] = useState<Record<number, boolean> | null>(() =>
+    storageKey ? loadProgress(storageKey) : null,
+  );
 
   useEffect(() => {
     if (!storageKey || progress === null) return;
     saveProgress(storageKey, progress);
     const timeout = window.setTimeout(() => {
       clearProgress(storageKey);
-      setState((current) => ({
-        storageKey: current.storageKey,
-        progress: null,
-      }));
+      setProgress(null);
     }, Math.max(nextExpiryAt() - Date.now(), 0));
     return () => window.clearTimeout(timeout);
   }, [progress, storageKey]);
@@ -132,12 +137,9 @@ export function RecipeSteps({ children, storageId }: Props) {
                 checked={progress?.[index] ?? Boolean(checked)}
                 onChange={(event) => {
                   const nextChecked = event.currentTarget.checked;
-                  setState((current) => ({
-                    storageKey: current.storageKey,
-                    progress: {
-                      ...(current.progress ?? {}),
-                      [index]: nextChecked,
-                    },
+                  setProgress((current) => ({
+                    ...(current ?? {}),
+                    [index]: nextChecked,
                   }));
                 }}
               />
