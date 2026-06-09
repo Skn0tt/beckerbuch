@@ -480,8 +480,8 @@ test("recipe Steps are rendered as Markdown", async ({ page, flat }) => {
     .getByRole("heading", { name: "Steps", level: 4 })
     .locator("..");
   const reloadedCheckboxes = reloadedStepsSection.locator("input[type=checkbox]");
-  await expect(reloadedCheckboxes.nth(0)).toBeHidden();
-  await expect(reloadedCheckboxes.nth(1)).toBeHidden();
+  await expect(reloadedCheckboxes.nth(0)).toBeVisible();
+  await expect(reloadedCheckboxes.nth(1)).toBeVisible();
   await expect(reloadedCheckboxes.nth(0)).toBeDisabled();
   await expect(reloadedCheckboxes.nth(1)).toBeDisabled();
   await page.waitForLoadState("load");

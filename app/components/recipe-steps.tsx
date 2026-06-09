@@ -141,7 +141,6 @@ function RecipeStepsContent({ children, storageKey }: ContentProps) {
                 type="checkbox"
                 checked={progress?.[index] ?? Boolean(checked)}
                 disabled={!hydrated}
-                style={hydrated ? undefined : { visibility: "hidden" }}
                 onChange={(event) => {
                   const nextChecked = event.currentTarget.checked;
                   setProgress((current) => ({
