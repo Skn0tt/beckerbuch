@@ -468,9 +468,22 @@ test("recipe Steps are rendered as Markdown", async ({ page, flat }) => {
   expect(savedProgress?.value.checks).toEqual({ 0: true, 1: false });
   expect(savedProgress?.value.expiresAt).toBe(savedProgress?.expectedExpiresAt);
 
-  await page.reload();
-  await expect(checkboxes.nth(0)).toBeChecked();
-  await expect(checkboxes.nth(1)).not.toBeChecked();
+  const slowScripts = async (route: import("@playwright/test").Route) => {
+    if (route.request().resourceType() === "script") {
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    await route.continue();
+  };
+  await page.route("**/*", slowScripts);
+  const reload = page.reload({ waitUntil: "commit" });
+  const reloadedStepsSection = page
+    .getByRole("heading", { name: "Steps", level: 4 })
+    .locator("..");
+  const reloadedCheckboxes = reloadedStepsSection.locator("input[type=checkbox]");
+  await expect(reloadedCheckboxes.nth(0)).toBeChecked();
+  await expect(reloadedCheckboxes.nth(1)).not.toBeChecked();
+  await reload;
+  await page.unroute("**/*", slowScripts);
 
   await page.evaluate(() => {
     const key = Object.keys(localStorage).find((entry) =>
