@@ -1,5 +1,5 @@
 import { Typography } from "@mantine/core";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -72,44 +72,6 @@ function clearProgress(storageKey: string): void {
   localStorage.removeItem(storageKey);
 }
 
-function progressBootstrapScript(storageKey: string, rootId: string): string {
-  return `
-(() => {
-  try {
-    const root = document.getElementById(${JSON.stringify(rootId)});
-    if (!(root instanceof HTMLElement)) return;
-    const raw = localStorage.getItem(${JSON.stringify(storageKey)});
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      typeof parsed.expiresAt !== "number" ||
-      typeof parsed.checks !== "object" ||
-      parsed.checks === null
-    ) {
-      localStorage.removeItem(${JSON.stringify(storageKey)});
-      return;
-    }
-    if (parsed.expiresAt <= Date.now()) {
-      localStorage.removeItem(${JSON.stringify(storageKey)});
-      return;
-    }
-    const checkboxes = root.querySelectorAll('li.task-list-item > input[type="checkbox"]');
-    for (let i = 0; i < checkboxes.length; i++) {
-      if (!Object.prototype.hasOwnProperty.call(parsed.checks, i)) continue;
-      const checkbox = checkboxes[i];
-      if (checkbox instanceof HTMLInputElement) {
-        checkbox.checked = Boolean(parsed.checks[i]);
-      }
-    }
-  } catch {
-    // Ignore malformed localStorage content and leave authored markdown state in place.
-  }
-})();
-`;
-}
-
 /**
  * Renders recipe steps written in Markdown.
  *
@@ -139,7 +101,11 @@ type ContentProps = {
 };
 
 function RecipeStepsContent({ children, storageKey }: ContentProps) {
-  const rootId = useId();
+  const hydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   const [progress, setProgress] = useState<Record<number, boolean> | null>(() =>
     storageKey ? loadProgress(storageKey) : null,
   );
@@ -157,46 +123,39 @@ function RecipeStepsContent({ children, storageKey }: ContentProps) {
   let checkboxIndex = 0;
 
   return (
-    <>
-      <Typography id={rootId} className="recipe-steps">
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          components={{
-            a: ({ node: _node, ...props }) => (
-              <a {...props} target="_blank" rel="noreferrer" />
-            ),
-            input: ({ node: _node, type, checked, disabled: _disabled, ...props }) => {
-              if (type !== "checkbox") {
-                return <input {...props} type={type} />;
-              }
-              const index = checkboxIndex++;
-              return (
-                <input
-                  {...props}
-                  type="checkbox"
-                  checked={progress?.[index] ?? Boolean(checked)}
-                  onChange={(event) => {
-                    const nextChecked = event.currentTarget.checked;
-                    setProgress((current) => ({
-                      ...(current ?? {}),
-                      [index]: nextChecked,
-                    }));
-                  }}
-                />
-              );
-            },
-          }}
-        >
-          {children}
-        </ReactMarkdown>
-      </Typography>
-      {storageKey ? (
-        <script
-          dangerouslySetInnerHTML={{
-            __html: progressBootstrapScript(storageKey, rootId),
-          }}
-        />
-      ) : null}
-    </>
+    <Typography className="recipe-steps">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ node: _node, ...props }) => (
+            <a {...props} target="_blank" rel="noreferrer" />
+          ),
+          input: ({ node: _node, type, checked, disabled: _disabled, ...props }) => {
+            if (type !== "checkbox") {
+              return <input {...props} type={type} />;
+            }
+            const index = checkboxIndex++;
+            return (
+              <input
+                {...props}
+                type="checkbox"
+                checked={progress?.[index] ?? Boolean(checked)}
+                disabled={!hydrated}
+                style={hydrated ? undefined : { visibility: "hidden" }}
+                onChange={(event) => {
+                  const nextChecked = event.currentTarget.checked;
+                  setProgress((current) => ({
+                    ...(current ?? {}),
+                    [index]: nextChecked,
+                  }));
+                }}
+              />
+            );
+          },
+        }}
+      >
+        {children}
+      </ReactMarkdown>
+    </Typography>
   );
 }
