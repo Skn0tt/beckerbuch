@@ -389,6 +389,9 @@ test("recipe Steps are rendered as Markdown", async ({ page, flat }) => {
         "2. Knead well.",
         "",
         "See [docs](https://example.com/knead) for technique.",
+        "",
+        "- [ ] todo one",
+        "- [x] todo two",
       ].join("\n"),
     );
 
@@ -408,6 +411,15 @@ test("recipe Steps are rendered as Markdown", async ({ page, flat }) => {
   await expect(link).toHaveAttribute("href", "https://example.com/knead");
   await expect(link).toHaveAttribute("target", "_blank");
   await expect(link).toHaveAttribute("rel", /noreferrer/);
+
+  // Task list items render as checkboxes without a list bullet.
+  const taskList = stepsSection.locator("ul.contains-task-list");
+  await expect(taskList).toBeVisible();
+  await expect(taskList).toHaveCSS("list-style-type", "none");
+  const taskItems = taskList.locator("li.task-list-item");
+  await expect(taskItems).toHaveCount(2);
+  await expect(taskItems.first()).toHaveCSS("list-style-type", "none");
+  await expect(taskItems.first().locator("input[type=checkbox]")).toBeVisible();
 
   // Raw Markdown syntax should not be visible as plain text.
   await expect(stepsSection.getByText("**flour**")).toHaveCount(0);

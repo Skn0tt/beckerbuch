@@ -15,7 +15,7 @@ type Props = {
  */
 export function RecipeSteps({ children }: Props) {
   return (
-    <Typography>
+    <Typography className="recipe-steps">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
