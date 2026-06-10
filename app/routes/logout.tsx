@@ -6,7 +6,6 @@ import { sessions } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
 import { requireCsrf } from "../auth/csrf.server";
 import { buildClearSessionCookie } from "../auth/session";
-import { clearAllSwr } from "../lib/swr";
 
 export async function action({ request }: Route.ActionArgs) {
   const ctx = await requireFlatMember(request);
@@ -15,11 +14,6 @@ export async function action({ request }: Route.ActionArgs) {
   return redirect("/login", {
     headers: { "Set-Cookie": buildClearSessionCookie() },
   });
-}
-
-export async function clientAction({ serverAction }: Route.ClientActionArgs) {
-  clearAllSwr();
-  return serverAction();
 }
 
 export async function loader() {
