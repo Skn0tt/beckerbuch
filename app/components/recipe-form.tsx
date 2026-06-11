@@ -13,7 +13,7 @@ import {
   Textarea,
   Title,
 } from "@mantine/core";
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Form, useNavigation } from "react-router";
 import { CsrfField } from "../auth/csrf-field";
 import { parseAmount } from "../lib/amount";
@@ -101,22 +101,6 @@ export function RecipeForm({
   // Enter) creating duplicate recipes. Mantine's `loading` doesn't set the
   // underlying DOM `disabled`, so set both.
   const isSubmitting = navigation.state !== "idle";
-  // React's re-render after the first submit isn't synchronous, so a second
-  // click landing within the same tick would still reach the server. Guard
-  // with a ref that flips synchronously inside the submit handler, and
-  // reset it whenever navigation returns to idle (e.g. after a validation
-  // error so the user can retry).
-  const submittingRef = useRef(false);
-  useEffect(() => {
-    if (!isSubmitting) submittingRef.current = false;
-  }, [isSubmitting]);
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
-    if (submittingRef.current) {
-      e.preventDefault();
-      return;
-    }
-    submittingRef.current = true;
-  };
 
   const setRow = (i: number, patch: Partial<IngredientRow>) => {
     setRows((rs) =>
@@ -166,7 +150,7 @@ export function RecipeForm({
     anyAmountInvalid;
 
   return (
-    <Form method="post" encType="multipart/form-data" onSubmit={handleSubmit}>
+    <Form method="post" encType="multipart/form-data">
       <CsrfField token={csrfToken} />
       {hiddenExtras}
       <Stack gap="sm">

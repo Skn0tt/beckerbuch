@@ -128,30 +128,46 @@ test("recipes are scoped to the flat — other flat's recipe → 404", async ({
   expect(res?.status()).toBe(404);
 });
 
-test("rapid double-click on Save creates only one recipe", async ({ page, flat }) => {
+test("Save button is disabled while the first submission is in flight", async ({ page, flat }) => {
   await login(page, flat.user);
   await page.getByRole("link", { name: "+ New recipe" }).click();
 
   await page.getByLabel("Name").fill("Double click test");
   await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill("water");
 
-  // Delay the POST so the user has time to click again while the first
-  // submission is still in flight. Count POSTs to prove the second click
-  // never reaches the server.
+  // Hold the POST open via a deferred promise. This deterministically keeps
+  // the first submission "in flight" until we choose to release it — no
+  // arbitrary timeouts, no race between the second click and the server
+  // response.
   let postCount = 0;
+  let releasePost!: () => void;
+  const postHeld = new Promise<void>((resolve) => {
+    releasePost = resolve;
+  });
   await page.route(/\/recipes\/new(\.data)?$/, async (route) => {
     if (route.request().method() === "POST") {
       postCount += 1;
-      await new Promise((r) => setTimeout(r, 800));
+      await postHeld;
     }
     await route.continue();
   });
 
   const save = page.getByRole("button", { name: "Save recipe" });
   await save.click();
-  // Second click happens while the first POST is mid-flight.
-  await save.click({ force: true, noWaitAfter: true }).catch(() => {});
+
+  // Once React has re-rendered with `navigation.state !== "idle"`, the
+  // button is `disabled`, which is the user-visible guard against a second
+  // click reaching the server.
   await expect(save).toBeDisabled();
+
+  // A user clicking the disabled button again is a no-op: Playwright's
+  // click() auto-waits for actionability and would time out, so use a short
+  // timeout to assert that. If this ever succeeds, the disabled guard has
+  // regressed.
+  await expect(save.click({ timeout: 500 })).rejects.toThrow();
+
+  // Release the held POST; the first (and only) submission completes.
+  releasePost();
 
   await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
   expect(postCount).toBe(1);
