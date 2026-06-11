@@ -1,9 +1,8 @@
 import { Box, Button, Group, NavLink as MantineNavLink, Stack, Text, TextInput } from "@mantine/core";
-import { Form, Link } from "react-router";
+import { Form, Link, useLoaderData } from "react-router";
 import type { Route } from "./+types/home";
 import { requireFlatMember } from "../auth/require";
 import { searchRecipes } from "../lib/recipes";
-import { createSwrClientLoader, useSwrData } from "../lib/swr";
 
 export function meta(_: Route.MetaArgs) {
   return [
@@ -21,10 +20,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   return { recipes: list, q };
 }
 
-export const clientLoader = createSwrClientLoader<Awaited<ReturnType<typeof loader>>>();
-
 export default function Home() {
-  const { recipes: list, q } = useSwrData<Awaited<ReturnType<typeof loader>>>();
+  const { recipes: list, q } = useLoaderData<typeof loader>();
 
   return (
     <Stack

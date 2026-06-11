@@ -14,16 +14,23 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export function shouldRevalidate({
-  defaultShouldRevalidate,
   actionResult,
 }: {
   defaultShouldRevalidate: boolean;
   actionResult: unknown;
 }) {
-  // Sidebar forms post to /kitchen (a sibling route), so force
+  // Sidebar forms post to /kitchen (a sibling route) via fetchers, so force
   // revalidation after any action to keep draft/stock data fresh.
   if (actionResult !== undefined) return true;
-  return defaultShouldRevalidate;
+  // Otherwise skip: the sidebar's draft/stock/members data is independent of
+  // which recipe (or the home page) is in the Outlet, so re-running the
+  // 4-query loadKitchen() on every recipe→recipe / home↔recipe navigation is
+  // pure waste that blocks the navigation. This layout stays mounted across
+  // those navs, so React Router reuses the already-loaded sidebar data.
+  // Only concurrent edits by *other* members are momentarily missed, which is
+  // fine for a household app that is already not real-time (the full /kitchen
+  // view, outside this layout, always loads fresh).
+  return false;
 }
 
 export default function WorkspaceLayout({ loaderData }: Route.ComponentProps) {

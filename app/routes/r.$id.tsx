@@ -7,14 +7,13 @@ import {
   Title,
 } from "@mantine/core";
 import { asc, eq } from "drizzle-orm";
-import { data } from "react-router";
+import { data, useLoaderData } from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/r.$id";
 import { db } from "../db/client";
 import { ingredients, recipes } from "../db/schema";
 import { formatIngredient } from "../lib/scale";
 import { parseParams } from "../lib/form";
-import { createSwrClientLoader, unwrapSwr, useSwrData } from "../lib/swr";
 import { RecipeSteps } from "../components/recipe-steps";
 
 const ParamsSchema = z.object({ id: z.guid() });
@@ -55,17 +54,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return { recipe, ingredients: ings, targetQuantity, factor, imageUrl };
 }
 
-export const clientLoader = createSwrClientLoader<Awaited<ReturnType<typeof loader>>>();
-
-export function meta({ data: raw }: Route.MetaArgs) {
-  const d = raw ? unwrapSwr(raw) : null;
+export function meta({ data: d }: Route.MetaArgs) {
   if (!d) return [];
   return [{ title: d.recipe.name }];
 }
 
 export default function PublicRecipe() {
   const { recipe, ingredients: ings, targetQuantity, factor, imageUrl } =
-    useSwrData<Awaited<ReturnType<typeof loader>>>();
+    useLoaderData<typeof loader>();
 
   const jsonLd = {
     "@context": "https://schema.org/",

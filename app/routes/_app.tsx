@@ -26,6 +26,30 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
+export function shouldRevalidate({
+  nextUrl,
+  actionResult,
+}: {
+  nextUrl: URL;
+  defaultShouldRevalidate: boolean;
+  actionResult: unknown;
+}) {
+  // Settings mutations (rename flat, change display name, avatar) change the
+  // { user, flat } shown in the always-mounted header. They post to
+  // /flat/settings and redirect back to it, so the revalidating navigation is
+  // a plain GET with no actionResult — keep _app fresh whenever the nav lands
+  // on settings (a cold page, off the recipe-switching hot path).
+  if (actionResult !== undefined) return true;
+  if (nextUrl.pathname === "/flat/settings") return true;
+  // Otherwise skip: this auth layout stays mounted across every authenticated
+  // navigation, and its { user, flat } data is independent of which leaf is in
+  // the Outlet. Re-running tryGetAuthedContext() on each nav is a redundant
+  // Neon round-trip — every authenticated leaf already calls requireFlatMember
+  // in its own loader, so a revoked session is still caught (redirected to
+  // /login) without _app re-authing here.
+  return false;
+}
+
 const MOBILE_NAV = [
   { to: "/", label: "Recipes", end: true },
   { to: "/kitchen", label: "Kitchen" },

@@ -22,6 +22,7 @@ import {
   useActionData,
   useFetcher,
   useFetchers,
+  useLoaderData,
 } from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/recipes.$id";
@@ -35,7 +36,6 @@ import { isSameOrigin } from "../auth/origin";
 import { deletePhoto } from "../blobs";
 import { formatIngredient } from "../lib/scale";
 import { firstMessage, formDataToObject, parseParams } from "../lib/form";
-import { createSwrClientLoader, useSwrData } from "../lib/swr";
 import { RecipeSteps } from "../components/recipe-steps";
 
 const ParamsSchema = z.object({ id: z.guid() });
@@ -116,8 +116,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     csrfToken: csrfTokenForSession(ctx.session.id),
   };
 }
-
-export const clientLoader = createSwrClientLoader<Awaited<ReturnType<typeof loader>>>();
 
 export async function action({ request, params }: Route.ActionArgs) {
   if (!isSameOrigin(request)) {
@@ -345,7 +343,7 @@ function CookedButton({
 
 export default function RecipeView() {
   const { recipe, ingredients: ings, draftInstance, stockInstance, csrfToken } =
-    useSwrData<Awaited<ReturnType<typeof loader>>>();
+    useLoaderData<typeof loader>();
   const actionData = useActionData<{ error?: string } | undefined>();
   // Add-to-draft uses a fetcher so the loader revalidates and the
   // button flips to the "In draft" state without a full navigation.
