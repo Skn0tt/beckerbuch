@@ -341,8 +341,18 @@ export function DraftCard({
       method: "post",
       ...(formAction ? { action: formAction } : {}),
     });
-    closeConfirm();
   };
+
+  const isRemoving = removeFetcher.state !== "idle";
+  const wasRemovingRef = useRef(false);
+  useEffect(() => {
+    if (isRemoving) {
+      wasRemovingRef.current = true;
+    } else if (wasRemovingRef.current) {
+      wasRemovingRef.current = false;
+      closeConfirm();
+    }
+  }, [isRemoving, closeConfirm]);
 
   const cookFetcher = useFetcher();
   const pendingCookRaw = cookFetcher.formData?.get("cookId");
@@ -462,12 +472,13 @@ export function DraftCard({
             Remove <strong>{entry.recipeName}</strong> from the draft?
           </Text>
           <Group justify="flex-end" gap="sm">
-            <Button variant="default" onClick={closeConfirm}>
+            <Button variant="default" onClick={closeConfirm} disabled={isRemoving}>
               Cancel
             </Button>
             <Button
               color="red"
               onClick={confirmRemoveSubmit}
+              loading={isRemoving}
               aria-label={`Confirm remove ${entry.recipeName} from draft`}
             >
               Remove
@@ -529,8 +540,18 @@ export function StockCard({
       method: "post",
       ...(formAction ? { action: formAction } : {}),
     });
-    closeCookedConfirm();
   };
+
+  const isMarking = cookedFetcher.state !== "idle";
+  const wasMarkingRef = useRef(false);
+  useEffect(() => {
+    if (isMarking) {
+      wasMarkingRef.current = true;
+    } else if (wasMarkingRef.current) {
+      wasMarkingRef.current = false;
+      closeCookedConfirm();
+    }
+  }, [isMarking, closeCookedConfirm]);
 
   return (
     <Card withBorder padding="sm">
@@ -596,6 +617,9 @@ export function StockCard({
         onClose={closeCookedConfirm}
         title="Mark as cooked?"
         size="sm"
+        closeOnClickOutside={!isMarking}
+        closeOnEscape={!isMarking}
+        withCloseButton={!isMarking}
       >
         <Stack gap="sm">
           <Text size="sm">
@@ -603,13 +627,14 @@ export function StockCard({
             from In stock.
           </Text>
           <Group justify="flex-end" gap="sm">
-            <Button variant="default" onClick={closeCookedConfirm}>
+            <Button variant="default" onClick={closeCookedConfirm} disabled={isMarking}>
               Cancel
             </Button>
             <Button
               type="button"
               color="green"
               onClick={submitCooked}
+              loading={isMarking}
               aria-label={`Confirm mark ${entry.recipeName} as cooked`}
             >
               ✓ Cooked

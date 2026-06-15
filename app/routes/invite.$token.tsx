@@ -8,7 +8,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { Form, redirectDocument, data } from "react-router";
+import { Form, redirectDocument, data, useNavigation } from "react-router";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import type { Route } from "./+types/invite.$token";
 import { db } from "../db/client";
@@ -198,6 +198,9 @@ export default function InvitePage({
   loaderData,
   actionData,
 }: Route.ComponentProps) {
+  const navigation = useNavigation();
+  const isCreating = navigation.state !== "idle";
+
   if (loaderData.mode === "already-member") {
     return (
       <Container size={460} py="xl">
@@ -254,7 +257,7 @@ export default function InvitePage({
                 Please fix the errors above.
               </Alert>
             )}
-            <Button type="submit">Create account &amp; join</Button>
+            <Button type="submit" loading={isCreating} disabled={isCreating}>Create account &amp; join</Button>
           </Stack>
         </Form>
       </Stack>

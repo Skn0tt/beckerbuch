@@ -372,6 +372,7 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
                               type="submit"
                               size="xs"
                               variant="subtle"
+                              loading={fetcher.state !== "idle"}
                               aria-label={
                                 isRejected
                                   ? `Undo split for ${g.item}`

@@ -8,7 +8,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { Form, redirectDocument, useSearchParams } from "react-router";
+import { Form, redirectDocument, useNavigation, useSearchParams } from "react-router";
 import { eq } from "drizzle-orm";
 import type { Route } from "./+types/login";
 import { db } from "../db/client";
@@ -66,6 +66,8 @@ export async function action({ request }: Route.ActionArgs) {
 export default function Login({ actionData }: Route.ComponentProps) {
   const [searchParams] = useSearchParams();
   const redirectTo = safeRedirectTarget(searchParams.get("redirect"));
+  const navigation = useNavigation();
+  const isSigningIn = navigation.state !== "idle";
 
   return (
     <Container size={420} py="xl">
@@ -92,7 +94,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
                 {actionData.error}
               </Alert>
             )}
-            <Button type="submit">Sign in</Button>
+            <Button type="submit" loading={isSigningIn} disabled={isSigningIn}>Sign in</Button>
             <Anchor component="a" href="#" size="sm" c="dimmed">
               Got an invite? Open the invite link.
             </Anchor>

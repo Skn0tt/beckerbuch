@@ -14,9 +14,9 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { and, eq, asc, isNotNull, isNull, max, sql } from "drizzle-orm";
+import { useEffect, useRef } from "react";
 import {
   data,
-  Form,
   Link,
   redirect,
   useActionData,
@@ -308,32 +308,52 @@ function CookedButton({
   csrfToken: string;
 }) {
   const [opened, { open, close }] = useDisclosure(false);
+  const fetcher = useFetcher();
+  const isMarking = fetcher.state !== "idle";
+  const wasMarkingRef = useRef(false);
+  useEffect(() => {
+    if (isMarking) {
+      wasMarkingRef.current = true;
+    } else if (wasMarkingRef.current) {
+      wasMarkingRef.current = false;
+      close();
+    }
+  }, [isMarking, close]);
   return (
     <>
       <Button variant="outline" color="green" onClick={open}>
         Mark as cooked
       </Button>
-      <Modal opened={opened} onClose={close} title="Mark as cooked?" size="sm">
+      <Modal
+        opened={opened}
+        onClose={close}
+        title="Mark as cooked?"
+        size="sm"
+        closeOnClickOutside={!isMarking}
+        closeOnEscape={!isMarking}
+        withCloseButton={!isMarking}
+      >
         <Stack gap="sm">
           <Text size="sm">
             Mark <strong>{recipeName}</strong> as cooked? This removes it from
             In stock.
           </Text>
           <Group justify="flex-end" gap="sm">
-            <Button variant="default" onClick={close}>
+            <Button variant="default" onClick={close} disabled={isMarking}>
               Cancel
             </Button>
-            <Form method="post" onSubmit={close}>
+            <fetcher.Form method="post">
               <CsrfField token={csrfToken} />
               <input type="hidden" name="intent" value="mark-cooked" />
               <Button
                 type="submit"
                 color="green"
+                loading={isMarking}
                 aria-label={`Confirm mark ${recipeName} as cooked`}
               >
                 ✓ Cooked
               </Button>
-            </Form>
+            </fetcher.Form>
           </Group>
         </Stack>
       </Modal>
@@ -422,7 +442,7 @@ export default function RecipeView() {
           <addFetcher.Form method="post">
             <CsrfField token={csrfToken} />
             <input type="hidden" name="intent" value="add-to-draft" />
-            <Button type="submit">+ Add to draft</Button>
+            <Button type="submit" loading={addFetcher.state !== "idle"}>+ Add to draft</Button>
           </addFetcher.Form>
         )}
       </Box>
