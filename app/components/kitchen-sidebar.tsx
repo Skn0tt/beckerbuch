@@ -15,7 +15,7 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Form, Link, useFetcher, useNavigation } from "react-router";
 import {
   DndContext,
@@ -40,6 +40,7 @@ import { CsrfField } from "../auth/csrf-field";
 import { UserAvatar } from "./user-avatar";
 import { formatIngredient } from "../lib/scale";
 import type { KitchenEntry, KitchenMember } from "../lib/kitchen-data";
+import { useCloseOnIdle } from "../lib/use-close-on-idle";
 
 type Lane = "draft" | "stock";
 const kitchenMobileQuery = "(max-width: 48em)";
@@ -344,15 +345,7 @@ export function DraftCard({
   };
 
   const isRemoving = removeFetcher.state !== "idle";
-  const wasRemovingRef = useRef(false);
-  useEffect(() => {
-    if (isRemoving) {
-      wasRemovingRef.current = true;
-    } else if (wasRemovingRef.current) {
-      wasRemovingRef.current = false;
-      closeConfirm();
-    }
-  }, [isRemoving, closeConfirm]);
+  useCloseOnIdle(isRemoving, closeConfirm);
 
   const cookFetcher = useFetcher();
   const pendingCookRaw = cookFetcher.formData?.get("cookId");
@@ -543,15 +536,7 @@ export function StockCard({
   };
 
   const isMarking = cookedFetcher.state !== "idle";
-  const wasMarkingRef = useRef(false);
-  useEffect(() => {
-    if (isMarking) {
-      wasMarkingRef.current = true;
-    } else if (wasMarkingRef.current) {
-      wasMarkingRef.current = false;
-      closeCookedConfirm();
-    }
-  }, [isMarking, closeCookedConfirm]);
+  useCloseOnIdle(isMarking, closeCookedConfirm);
 
   return (
     <Card withBorder padding="sm">

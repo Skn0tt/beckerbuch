@@ -14,7 +14,6 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { and, eq, asc, isNotNull, isNull, max, sql } from "drizzle-orm";
-import { useEffect, useRef } from "react";
 import {
   data,
   Link,
@@ -37,6 +36,7 @@ import { deletePhoto } from "../blobs";
 import { formatIngredient } from "../lib/scale";
 import { firstMessage, formDataToObject, parseParams } from "../lib/form";
 import { RecipeSteps } from "../components/recipe-steps";
+import { useCloseOnIdle } from "../lib/use-close-on-idle";
 
 const ParamsSchema = z.object({ id: z.guid() });
 
@@ -310,15 +310,7 @@ function CookedButton({
   const [opened, { open, close }] = useDisclosure(false);
   const fetcher = useFetcher();
   const isMarking = fetcher.state !== "idle";
-  const wasMarkingRef = useRef(false);
-  useEffect(() => {
-    if (isMarking) {
-      wasMarkingRef.current = true;
-    } else if (wasMarkingRef.current) {
-      wasMarkingRef.current = false;
-      close();
-    }
-  }, [isMarking, close]);
+  useCloseOnIdle(isMarking, close);
   return (
     <>
       <Button variant="outline" color="green" onClick={open}>
