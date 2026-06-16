@@ -40,7 +40,6 @@ import { CsrfField } from "../auth/csrf-field";
 import { UserAvatar } from "./user-avatar";
 import { formatIngredient } from "../lib/scale";
 import type { KitchenEntry, KitchenMember } from "../lib/kitchen-data";
-import { useCloseOnIdle } from "../lib/use-close-on-idle";
 
 type Lane = "draft" | "stock";
 const kitchenMobileQuery = "(max-width: 48em)";
@@ -317,12 +316,13 @@ export function DraftCard({
 
   const removeFetcher = useFetcher();
   const isMobile = useMediaQuery(kitchenMobileQuery);
-  const [confirmRemove, { open: openConfirm, close: closeConfirm }] =
-    useDisclosure(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const isRemoving = removeFetcher.state !== "idle";
+  const removeModalOpen = confirmRemove || isRemoving;
 
   const submitTarget = (next: number) => {
     if (next < 1) {
-      openConfirm();
+      setConfirmRemove(true);
       return;
     }
     const fd = new FormData();
@@ -334,6 +334,7 @@ export function DraftCard({
   };
 
   const confirmRemoveSubmit = () => {
+    setConfirmRemove(false);
     const fd = new FormData();
     fd.set("intent", "remove-from-draft");
     fd.set("instanceId", entry.id);
@@ -343,9 +344,6 @@ export function DraftCard({
       ...(formAction ? { action: formAction } : {}),
     });
   };
-
-  const isRemoving = removeFetcher.state !== "idle";
-  useCloseOnIdle(isRemoving, closeConfirm);
 
   const cookFetcher = useFetcher();
   const pendingCookRaw = cookFetcher.formData?.get("cookId");
@@ -455,8 +453,8 @@ export function DraftCard({
       </Stack>
 
       <Modal
-        opened={confirmRemove}
-        onClose={closeConfirm}
+        opened={removeModalOpen}
+        onClose={() => setConfirmRemove(false)}
         title="Remove from draft?"
         size="sm"
       >
@@ -465,7 +463,7 @@ export function DraftCard({
             Remove <strong>{entry.recipeName}</strong> from the draft?
           </Text>
           <Group justify="flex-end" gap="sm">
-            <Button variant="default" onClick={closeConfirm} disabled={isRemoving}>
+            <Button variant="default" onClick={() => setConfirmRemove(false)} disabled={isRemoving}>
               Cancel
             </Button>
             <Button
@@ -519,12 +517,12 @@ export function StockCard({
     cookFetcher.submit(fd, { method: "post", ...(formAction ? { action: formAction } : {}) });
   };
 
-  const [confirmCooked, { open: openCookedConfirm, close: closeCookedConfirm }] =
-    useDisclosure(false);
+  const [confirmCooked, setConfirmCooked] = useState(false);
   const flexFillStyle = { minWidth: 0, flex: 1 } as const;
 
   const cookedFetcher = useFetcher();
   const submitCooked = () => {
+    setConfirmCooked(false);
     const fd = new FormData();
     fd.set("intent", "mark-cooked");
     fd.set("instanceId", entry.id);
@@ -536,7 +534,7 @@ export function StockCard({
   };
 
   const isMarking = cookedFetcher.state !== "idle";
-  useCloseOnIdle(isMarking, closeCookedConfirm);
+  const cookedModalOpen = confirmCooked || isMarking;
 
   return (
     <Card withBorder padding="sm">
@@ -589,7 +587,7 @@ export function StockCard({
             variant="outline"
             color="green"
             size="sm"
-            onClick={openCookedConfirm}
+            onClick={() => setConfirmCooked(true)}
             aria-label={`Mark ${entry.recipeName} as cooked`}
           >
             ✓
@@ -598,8 +596,8 @@ export function StockCard({
       </Stack>
 
       <Modal
-        opened={confirmCooked}
-        onClose={closeCookedConfirm}
+        opened={cookedModalOpen}
+        onClose={() => setConfirmCooked(false)}
         title="Mark as cooked?"
         size="sm"
         closeOnClickOutside={!isMarking}
@@ -612,7 +610,7 @@ export function StockCard({
             from In stock.
           </Text>
           <Group justify="flex-end" gap="sm">
-            <Button variant="default" onClick={closeCookedConfirm} disabled={isMarking}>
+            <Button variant="default" onClick={() => setConfirmCooked(false)} disabled={isMarking}>
               Cancel
             </Button>
             <Button

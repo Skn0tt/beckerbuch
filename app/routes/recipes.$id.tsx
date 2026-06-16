@@ -12,8 +12,8 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
 import { and, eq, asc, isNotNull, isNull, max, sql } from "drizzle-orm";
+import { useState } from "react";
 import {
   data,
   Link,
@@ -36,7 +36,6 @@ import { deletePhoto } from "../blobs";
 import { formatIngredient } from "../lib/scale";
 import { firstMessage, formDataToObject, parseParams } from "../lib/form";
 import { RecipeSteps } from "../components/recipe-steps";
-import { useCloseOnIdle } from "../lib/use-close-on-idle";
 
 const ParamsSchema = z.object({ id: z.guid() });
 
@@ -307,18 +306,18 @@ function CookedButton({
   recipeName: string;
   csrfToken: string;
 }) {
-  const [opened, { open, close }] = useDisclosure(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const fetcher = useFetcher();
   const isMarking = fetcher.state !== "idle";
-  useCloseOnIdle(isMarking, close);
+  const modalOpen = confirmOpen || isMarking;
   return (
     <>
-      <Button variant="outline" color="green" onClick={open}>
+      <Button variant="outline" color="green" onClick={() => setConfirmOpen(true)}>
         Mark as cooked
       </Button>
       <Modal
-        opened={opened}
-        onClose={close}
+        opened={modalOpen}
+        onClose={() => setConfirmOpen(false)}
         title="Mark as cooked?"
         size="sm"
         closeOnClickOutside={!isMarking}
@@ -331,10 +330,10 @@ function CookedButton({
             In stock.
           </Text>
           <Group justify="flex-end" gap="sm">
-            <Button variant="default" onClick={close} disabled={isMarking}>
+            <Button variant="default" onClick={() => setConfirmOpen(false)} disabled={isMarking}>
               Cancel
             </Button>
-            <fetcher.Form method="post">
+            <fetcher.Form method="post" onSubmit={() => setConfirmOpen(false)}>
               <CsrfField token={csrfToken} />
               <input type="hidden" name="intent" value="mark-cooked" />
               <Button
