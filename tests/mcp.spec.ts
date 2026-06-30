@@ -286,6 +286,46 @@ test.describe("MCP server", () => {
     await expect(page.getByText("MCP Pancakes")).toBeVisible();
   });
 
+  test("add_recipe tolerates non-numeric ingredient amounts", async ({
+    page,
+    flat,
+  }) => {
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    const add = await client.callTool({
+      name: "kochbuch_add_recipe",
+      arguments: {
+        name: "Imported Fougasse",
+        baseQuantity: 1,
+        ingredients: [
+          { amount: "2-3", unit: "Zweige", item: "Rosmarin, gehackt" },
+          { amount: "etwas", item: "Grobes Meersalz zum Bestreuen" },
+        ],
+        steps: "Backen",
+      },
+    });
+    expect(add.isError).toBeFalsy();
+    const recipeRef = recipeRefFromToolResult(add);
+
+    const get = await client.callTool({
+      name: "kochbuch_get_recipe",
+      arguments: { id: recipeRef.id },
+    });
+    expect(get.isError).toBeFalsy();
+    const recipe = jsonFromToolResult<{
+      ingredients: Array<{ amount: string | null; unit: string | null; item: string }>;
+    }>(get);
+    expect(recipe.ingredients).toEqual([
+      { amount: null, unit: "Zweige", item: "Rosmarin, gehackt" },
+      { amount: null, unit: null, item: "Grobes Meersalz zum Bestreuen" },
+    ]);
+
+    await client.close();
+  });
+
   test("add_recipe with photoUrl stores the image", async ({ page, flat }) => {
     const { server, baseUrl } = await startTinyServer(() => ({
       status: 200,
