@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "../db/client";
 import { ingredients, recipeInstances, recipes, flatMembers, users } from "../db/schema";
 
@@ -29,6 +29,83 @@ export type KitchenData = {
   stock: KitchenEntry[];
   members: KitchenMember[];
 };
+
+export type HistoryEntry = KitchenEntry & {
+  cookedAt: Date;
+};
+
+const PAGE_SIZE = 5;
+
+/**
+ * Load cooked recipe instances for a flat, ordered newest-first.
+ * Returns at most `PAGE_SIZE` entries starting at `offset`.
+ */
+export async function loadCookedHistory(
+  flatId: string,
+  offset: number,
+): Promise<{ entries: HistoryEntry[]; hasMore: boolean }> {
+  const baseSelect = {
+    id: recipeInstances.id,
+    targetQuantity: recipeInstances.targetQuantity,
+    position: recipeInstances.position,
+    recipeId: recipes.id,
+    recipeName: recipes.name,
+    baseQuantity: recipes.baseQuantity,
+    designatedCookId: recipeInstances.designatedCookId,
+    note: recipeInstances.note,
+    cookedAt: recipeInstances.cookedAt,
+  };
+
+  // Fetch one extra to detect whether more pages exist.
+  const rows = await db()
+    .select(baseSelect)
+    .from(recipeInstances)
+    .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
+    .where(
+      and(
+        eq(recipeInstances.flatId, flatId),
+        isNotNull(recipeInstances.cookedAt),
+      ),
+    )
+    .orderBy(desc(recipeInstances.cookedAt))
+    .limit(PAGE_SIZE + 1)
+    .offset(offset);
+
+  const hasMore = rows.length > PAGE_SIZE;
+  const page = rows.slice(0, PAGE_SIZE) as (typeof rows[number] & { cookedAt: Date })[];
+
+  if (page.length === 0) {
+    return { entries: [], hasMore: false };
+  }
+
+  const recipeIds = [...new Set(page.map((r) => r.recipeId))];
+  const ings = await db()
+    .select({
+      recipeId: ingredients.recipeId,
+      position: ingredients.position,
+      amount: ingredients.amount,
+      unit: ingredients.unit,
+      item: ingredients.item,
+    })
+    .from(ingredients)
+    .where(inArray(ingredients.recipeId, recipeIds))
+    .orderBy(asc(ingredients.position));
+
+  const ingsByRecipe = new Map<string, KitchenIngredient[]>();
+  for (const i of ings) {
+    const arr = ingsByRecipe.get(i.recipeId) ?? [];
+    arr.push(i);
+    ingsByRecipe.set(i.recipeId, arr);
+  }
+
+  const entries: HistoryEntry[] = page.map((r) => ({
+    ...r,
+    cookedAt: r.cookedAt as Date,
+    ingredients: ingsByRecipe.get(r.recipeId) ?? [],
+  }));
+
+  return { entries, hasMore };
+}
 
 /**
  * Load Draft + In-stock entries and flat members for a flat. Shared by

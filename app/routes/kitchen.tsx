@@ -1,13 +1,16 @@
 import {
   Anchor,
+  Button,
   Container,
+  Divider,
   SegmentedControl,
   Stack,
   Text,
   Title,
 } from "@mantine/core";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { Link, redirect, useNavigate } from "react-router";
+import { Link, redirect, useNavigate, useFetcher } from "react-router";
+import { useState, useEffect } from "react";
 import { z } from "zod";
 import type { Route } from "./+types/kitchen";
 import { db } from "../db/client";
@@ -16,9 +19,11 @@ import { requireFlatMember } from "../auth/require";
 import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { isSameOrigin } from "../auth/origin";
 import { loadKitchen } from "../lib/kitchen-data";
+import type { HistoryEntry } from "../lib/kitchen-data";
 import { snapshotDedupForFlat } from "../lib/dedup-snapshot";
 import {
   FinaliseButton,
+  HistoryCard,
   PlannedIngredients,
   SortableLane,
 } from "../components/kitchen-sidebar";
@@ -360,6 +365,42 @@ export async function action({ request }: Route.ActionArgs) {
 export default function Kitchen({ loaderData }: Route.ComponentProps) {
   const { lane, draft, stock, csrfToken, members } = loaderData;
   const navigate = useNavigate();
+
+  // Cooked history — lazy-loaded in pages of 5.
+  const historyFetcher = useFetcher<{ entries: HistoryEntry[]; hasMore: boolean }>();
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyOffset, setHistoryOffset] = useState(0);
+  const [historyStarted, setHistoryStarted] = useState(false);
+  const isLoadingHistory = historyFetcher.state !== "idle";
+
+  // Append freshly loaded pages to the accumulated list.
+  useEffect(() => {
+    const data = historyFetcher.data;
+    if (!data || data.entries.length === 0) return;
+    setHistory((prev) => {
+      const existingIds = new Set(prev.map((e) => e.id));
+      const fresh = data.entries.filter((e) => !existingIds.has(e.id));
+      if (fresh.length === 0) return prev;
+      return [...prev, ...fresh];
+    });
+    setHistoryOffset((prev) => prev + data.entries.length);
+  }, [historyFetcher.data]);
+
+  const loadHistory = (offset: number) => {
+    historyFetcher.load(`/kitchen/history?offset=${offset}`);
+  };
+
+  const handleShowHistory = () => {
+    setHistoryStarted(true);
+    loadHistory(historyOffset);
+  };
+
+  const handleLoadMore = () => {
+    loadHistory(historyOffset);
+  };
+
+  const hasMore = historyFetcher.data?.hasMore ?? true;
+
   return (
     <Container size="sm" py="md">
       <Stack gap="md">
@@ -421,18 +462,59 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
             </Stack>
           )
         ) : lane === "stock" ? (
-          stock.length === 0 ? (
-            <Text c="dimmed">
-              Nothing in stock yet — finalise the draft to start cooking.
-            </Text>
-          ) : (
-            <SortableLane
-              lane="stock"
-              entries={stock}
-              members={members}
-              csrfToken={csrfToken}
-            />
-          )
+          <Stack gap="md">
+            {stock.length === 0 ? (
+              <Text c="dimmed">
+                Nothing in stock yet — finalise the draft to start cooking.
+              </Text>
+            ) : (
+              <SortableLane
+                lane="stock"
+                entries={stock}
+                members={members}
+                csrfToken={csrfToken}
+              />
+            )}
+
+            {historyStarted && history.length > 0 && (
+              <>
+                <Divider label="Gekochte Rezepte" labelPosition="center" />
+                <Stack gap="xs">
+                  {history.map((entry) => (
+                    <HistoryCard key={entry.id} entry={entry} />
+                  ))}
+                </Stack>
+              </>
+            )}
+
+            <Stack gap="xs" align="center">
+              {!historyStarted ? (
+                <Button
+                  variant="subtle"
+                  size="xs"
+                  onClick={handleShowHistory}
+                  loading={isLoadingHistory}
+                  aria-label="Show cooking history"
+                >
+                  Verlauf anzeigen
+                </Button>
+              ) : hasMore ? (
+                <Button
+                  variant="subtle"
+                  size="xs"
+                  onClick={handleLoadMore}
+                  loading={isLoadingHistory}
+                  aria-label="Load more history"
+                >
+                  Mehr anzeigen
+                </Button>
+              ) : history.length > 0 ? (
+                <Text size="xs" c="dimmed">Kein weiterer Verlauf</Text>
+              ) : (
+                <Text size="xs" c="dimmed">Noch keine gekochten Rezepte</Text>
+              )}
+            </Stack>
+          </Stack>
         ) : (
           <Stack gap="xs">
             <Title order={4}>Planned ingredients</Title>

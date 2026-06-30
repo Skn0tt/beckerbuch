@@ -39,7 +39,7 @@ import { csrfFieldName } from "../auth/csrf-shared";
 import { CsrfField } from "../auth/csrf-field";
 import { UserAvatar } from "./user-avatar";
 import { formatIngredient } from "../lib/scale";
-import type { KitchenEntry, KitchenMember } from "../lib/kitchen-data";
+import type { KitchenEntry, KitchenMember, HistoryEntry } from "../lib/kitchen-data";
 
 type Lane = "draft" | "stock";
 const kitchenMobileQuery = "(max-width: 48em)";
@@ -617,6 +617,46 @@ export function StockCard({
           </Group>
         </Stack>
       </Modal>
+    </Card>
+  );
+}
+
+export function HistoryCard({ entry }: { entry: HistoryEntry }) {
+  const flexFillStyle = { minWidth: 0, flex: 1 } as const;
+  const cookedDate = new Date(entry.cookedAt);
+  const dateLabel = cookedDate.toLocaleDateString(undefined, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+
+  return (
+    <Card withBorder padding="sm" style={{ opacity: 0.55 }}>
+      <Stack gap="xs">
+        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0, width: "100%" }}>
+          <Anchor
+            component={Link}
+            to={`/recipes/${entry.recipeId}`}
+            prefetch="intent"
+            fw={500}
+            c="dimmed"
+            style={{
+              ...flexFillStyle,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {entry.recipeName}
+          </Anchor>
+          <Text size="sm" c="dimmed">
+            {entry.targetQuantity}
+          </Text>
+        </Group>
+        <Text size="xs" c="dimmed">
+          Gekocht am {dateLabel}
+        </Text>
+      </Stack>
     </Card>
   );
 }
