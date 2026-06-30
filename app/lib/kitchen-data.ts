@@ -34,7 +34,7 @@ export type HistoryEntry = KitchenEntry & {
   cookedAt: Date;
 };
 
-const PAGE_SIZE = 5;
+export const HISTORY_PAGE_SIZE = 5;
 
 /**
  * Load cooked recipe instances for a flat, ordered newest-first.
@@ -68,11 +68,16 @@ export async function loadCookedHistory(
       ),
     )
     .orderBy(desc(recipeInstances.cookedAt))
-    .limit(PAGE_SIZE + 1)
+    .limit(HISTORY_PAGE_SIZE + 1)
     .offset(offset);
 
-  const hasMore = rows.length > PAGE_SIZE;
-  const page = rows.slice(0, PAGE_SIZE) as (typeof rows[number] & { cookedAt: Date })[];
+  const hasMore = rows.length > HISTORY_PAGE_SIZE;
+  // Use a type guard to narrow cookedAt from Date|null to Date — the WHERE
+  // clause above guarantees non-null, but Drizzle's inferred type doesn't
+  // reflect that yet.
+  const page = rows
+    .slice(0, HISTORY_PAGE_SIZE)
+    .filter((r): r is typeof r & { cookedAt: Date } => r.cookedAt !== null);
 
   if (page.length === 0) {
     return { entries: [], hasMore: false };
@@ -100,7 +105,6 @@ export async function loadCookedHistory(
 
   const entries: HistoryEntry[] = page.map((r) => ({
     ...r,
-    cookedAt: r.cookedAt as Date,
     ingredients: ingsByRecipe.get(r.recipeId) ?? [],
   }));
 

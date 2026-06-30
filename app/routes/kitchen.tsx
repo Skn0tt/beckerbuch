@@ -20,6 +20,7 @@ import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { isSameOrigin } from "../auth/origin";
 import { loadKitchen } from "../lib/kitchen-data";
 import type { HistoryEntry } from "../lib/kitchen-data";
+import { HISTORY_PAGE_SIZE } from "../lib/kitchen-data";
 import { snapshotDedupForFlat } from "../lib/dedup-snapshot";
 import {
   FinaliseButton,
@@ -371,19 +372,24 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyOffset, setHistoryOffset] = useState(0);
   const [historyStarted, setHistoryStarted] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const isLoadingHistory = historyFetcher.state !== "idle";
 
   // Append freshly loaded pages to the accumulated list.
   useEffect(() => {
     const data = historyFetcher.data;
-    if (!data || data.entries.length === 0) return;
+    if (!data) return;
+    setHistoryLoaded(true);
+    if (data.entries.length === 0) return;
     setHistory((prev) => {
       const existingIds = new Set(prev.map((e) => e.id));
       const fresh = data.entries.filter((e) => !existingIds.has(e.id));
       if (fresh.length === 0) return prev;
       return [...prev, ...fresh];
     });
-    setHistoryOffset((prev) => prev + data.entries.length);
+    // Advance by PAGE_SIZE (when hasMore=true, exactly PAGE_SIZE entries are
+    // returned; when hasMore=false, no further load will be triggered).
+    setHistoryOffset((prev) => prev + HISTORY_PAGE_SIZE);
   }, [historyFetcher.data]);
 
   const loadHistory = (offset: number) => {
@@ -498,7 +504,7 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
                 >
                   Verlauf anzeigen
                 </Button>
-              ) : hasMore ? (
+              ) : !historyLoaded || hasMore ? (
                 <Button
                   variant="subtle"
                   size="xs"

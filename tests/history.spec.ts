@@ -96,4 +96,3 @@ test("history: not shown by default (button must be pressed first)", async ({
     page.getByRole("button", { name: "Show cooking history" }),
   ).toBeVisible();
 });
-
