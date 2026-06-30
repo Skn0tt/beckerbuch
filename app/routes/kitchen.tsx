@@ -505,6 +505,9 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
                   Verlauf anzeigen
                 </Button>
               ) : !historyLoaded || hasMore ? (
+                // `!historyLoaded` prevents a one-frame flash of the empty-state
+                // message between when the fetcher data arrives and when the
+                // useEffect runs to append the entries to `history`.
                 <Button
                   variant="subtle"
                   size="xs"
