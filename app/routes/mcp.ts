@@ -13,12 +13,11 @@ import {
   type RecipeListItem,
 } from "../lib/recipes";
 import { importRecipe } from "../lib/recipe-import";
-import { parseAmount } from "../lib/amount";
 
 const UUID_SCHEMA = z.guid("Recipe id must be a UUID.");
 
 const ingredientSchema = z.object({
-  amount: z.string().optional(),
+  amount: z.number().optional().describe("Numeric amount, e.g. 200 or 0.5"),
   unit: z.string().optional(),
   item: z.string().trim().min(1).max(200),
 });
@@ -340,21 +339,14 @@ function jsonResult(payload: unknown) {
 }
 
 function normalizeIngredients(
-  ingredients: Array<{ amount?: string; unit?: string; item: string }>,
+  ingredients: Array<{ amount?: number; unit?: string; item: string }>,
 ) {
   return ingredients.map((ingredient, position) => ({
     position,
-    amount: normalizeAmount(ingredient.amount),
+    amount: ingredient.amount === undefined ? null : String(ingredient.amount),
     unit: ingredient.unit?.trim() ? ingredient.unit.trim() : null,
     item: ingredient.item,
   }));
-}
-
-function normalizeAmount(amount: string | undefined): string | null {
-  const trimmed = amount?.trim();
-  if (!trimmed) return null;
-  const parsed = parseAmount(trimmed);
-  return parsed === null ? null : String(parsed);
 }
 
 function recipeListPayload(recipe: RecipeListItem, request: Request) {
