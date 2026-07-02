@@ -15,7 +15,7 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Form, Link, useFetcher, useNavigation } from "react-router";
 import {
   DndContext,
@@ -316,12 +316,13 @@ export function DraftCard({
 
   const removeFetcher = useFetcher();
   const isMobile = useMediaQuery(kitchenMobileQuery);
-  const [confirmRemove, { open: openConfirm, close: closeConfirm }] =
-    useDisclosure(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const isRemoving = removeFetcher.state !== "idle";
+  const removeModalOpen = confirmRemove || isRemoving;
 
   const submitTarget = (next: number) => {
     if (next < 1) {
-      openConfirm();
+      setConfirmRemove(true);
       return;
     }
     const fd = new FormData();
@@ -333,6 +334,7 @@ export function DraftCard({
   };
 
   const confirmRemoveSubmit = () => {
+    setConfirmRemove(false);
     const fd = new FormData();
     fd.set("intent", "remove-from-draft");
     fd.set("instanceId", entry.id);
@@ -341,7 +343,6 @@ export function DraftCard({
       method: "post",
       ...(formAction ? { action: formAction } : {}),
     });
-    closeConfirm();
   };
 
   const cookFetcher = useFetcher();
@@ -452,8 +453,8 @@ export function DraftCard({
       </Stack>
 
       <Modal
-        opened={confirmRemove}
-        onClose={closeConfirm}
+        opened={removeModalOpen}
+        onClose={() => setConfirmRemove(false)}
         title="Remove from draft?"
         size="sm"
       >
@@ -462,12 +463,13 @@ export function DraftCard({
             Remove <strong>{entry.recipeName}</strong> from the draft?
           </Text>
           <Group justify="flex-end" gap="sm">
-            <Button variant="default" onClick={closeConfirm}>
+            <Button variant="default" onClick={() => setConfirmRemove(false)} disabled={isRemoving}>
               Cancel
             </Button>
             <Button
               color="red"
               onClick={confirmRemoveSubmit}
+              loading={isRemoving}
               aria-label={`Confirm remove ${entry.recipeName} from draft`}
             >
               Remove
@@ -515,12 +517,12 @@ export function StockCard({
     cookFetcher.submit(fd, { method: "post", ...(formAction ? { action: formAction } : {}) });
   };
 
-  const [confirmCooked, { open: openCookedConfirm, close: closeCookedConfirm }] =
-    useDisclosure(false);
+  const [confirmCooked, setConfirmCooked] = useState(false);
   const flexFillStyle = { minWidth: 0, flex: 1 } as const;
 
   const cookedFetcher = useFetcher();
   const submitCooked = () => {
+    setConfirmCooked(false);
     const fd = new FormData();
     fd.set("intent", "mark-cooked");
     fd.set("instanceId", entry.id);
@@ -529,8 +531,10 @@ export function StockCard({
       method: "post",
       ...(formAction ? { action: formAction } : {}),
     });
-    closeCookedConfirm();
   };
+
+  const isMarking = cookedFetcher.state !== "idle";
+  const cookedModalOpen = confirmCooked || isMarking;
 
   return (
     <Card withBorder padding="sm">
@@ -583,7 +587,7 @@ export function StockCard({
             variant="outline"
             color="green"
             size="sm"
-            onClick={openCookedConfirm}
+            onClick={() => setConfirmCooked(true)}
             aria-label={`Mark ${entry.recipeName} as cooked`}
           >
             ✓
@@ -592,10 +596,13 @@ export function StockCard({
       </Stack>
 
       <Modal
-        opened={confirmCooked}
-        onClose={closeCookedConfirm}
+        opened={cookedModalOpen}
+        onClose={() => setConfirmCooked(false)}
         title="Mark as cooked?"
         size="sm"
+        closeOnClickOutside={!isMarking}
+        closeOnEscape={!isMarking}
+        withCloseButton={!isMarking}
       >
         <Stack gap="sm">
           <Text size="sm">
@@ -603,13 +610,14 @@ export function StockCard({
             from In stock.
           </Text>
           <Group justify="flex-end" gap="sm">
-            <Button variant="default" onClick={closeCookedConfirm}>
+            <Button variant="default" onClick={() => setConfirmCooked(false)} disabled={isMarking}>
               Cancel
             </Button>
             <Button
               type="button"
               color="green"
               onClick={submitCooked}
+              loading={isMarking}
               aria-label={`Confirm mark ${entry.recipeName} as cooked`}
             >
               ✓ Cooked

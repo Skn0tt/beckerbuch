@@ -200,6 +200,12 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
   const isAvatarUploading =
     navigation.state !== "idle" &&
     navigation.formData?.get("intent") === "upload-avatar";
+  const isRotatingInvite =
+    navigation.state !== "idle" &&
+    navigation.formData?.get("intent") === "rotate-invite";
+  const isSigningOut =
+    navigation.state !== "idle" &&
+    navigation.formAction?.endsWith("/logout");
 
   const saveDisplayNameIfChanged = (e: FocusEvent<HTMLInputElement>) => {
     const form = e.currentTarget.form;
@@ -363,7 +369,7 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
           <Form method="post" style={{ marginTop: "var(--mantine-spacing-sm)" }}>
             <CsrfField token={csrfToken} />
             <input type="hidden" name="intent" value="rotate-invite" />
-            <Button type="submit" variant="default">
+            <Button type="submit" variant="default" loading={isRotatingInvite} disabled={isRotatingInvite}>
               {inviteUrl ? "Generate new link" : "Generate link"}
             </Button>
           </Form>
@@ -375,7 +381,7 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
           </Title>
           <Form method="post" action="/logout">
             <CsrfField token={csrfToken} />
-            <Button type="submit" variant="default" color="red">
+            <Button type="submit" variant="default" color="red" loading={isSigningOut} disabled={isSigningOut}>
               Sign out
             </Button>
           </Form>
