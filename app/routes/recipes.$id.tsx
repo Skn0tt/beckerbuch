@@ -52,6 +52,11 @@ const ActionSchema = z.discriminatedUnion("intent", [
   }),
   z.object({ intent: z.literal("mark-cooked") }),
   z.object({ intent: z.literal("delete") }),
+  z.object({
+    intent: z.literal("toggle-omit"),
+    ingredientId: z.guid(),
+    omit: z.stringbool(),
+  }),
 ]);
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -78,6 +83,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       .select({
         id: recipeInstances.id,
         targetQuantity: recipeInstances.targetQuantity,
+        omittedIngredientIds: recipeInstances.omittedIngredientIds,
       })
       .from(recipeInstances)
       .where(
@@ -219,6 +225,48 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { ok: true as const };
   }
 
+  if (parsed.data.intent === "toggle-omit") {
+    const { ingredientId, omit } = parsed.data;
+    // The ingredient must belong to this recipe.
+    const [ing] = await db()
+      .select({ id: ingredients.id })
+      .from(ingredients)
+      .where(
+        and(eq(ingredients.id, ingredientId), eq(ingredients.recipeId, recipe.id)),
+      )
+      .limit(1);
+    if (!ing) {
+      return { error: "Unknown ingredient." };
+    }
+    // Omissions live on the open draft instance; the toggle is draft-only.
+    const [draft] = await db()
+      .select({
+        id: recipeInstances.id,
+        omittedIngredientIds: recipeInstances.omittedIngredientIds,
+      })
+      .from(recipeInstances)
+      .where(
+        and(
+          eq(recipeInstances.flatId, ctx.flat.id),
+          eq(recipeInstances.recipeId, recipe.id),
+          isNull(recipeInstances.finalisedAt),
+        ),
+      )
+      .orderBy(asc(recipeInstances.position))
+      .limit(1);
+    if (!draft) {
+      return { error: "Add the recipe to your draft before omitting ingredients." };
+    }
+    const next = new Set(draft.omittedIngredientIds);
+    if (omit) next.add(ingredientId);
+    else next.delete(ingredientId);
+    await db()
+      .update(recipeInstances)
+      .set({ omittedIngredientIds: [...next] })
+      .where(eq(recipeInstances.id, draft.id));
+    return { ok: true as const };
+  }
+
   // delete
   // Single round-trip: delete only if no recipeInstances reference it.
   // Returning rows lets us tell "didn't exist" from "blocked by usage".
@@ -341,6 +389,73 @@ function CookedButton({
   );
 }
 
+function CartIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="9" cy="21" r="1" />
+      <circle cx="20" cy="21" r="1" />
+      <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+    </svg>
+  );
+}
+
+function IngredientLine({
+  ing,
+  factor,
+  omitted,
+  csrfToken,
+}: {
+  ing: { id: string; amount: string | null; unit: string | null; item: string };
+  factor: number;
+  omitted: boolean;
+  csrfToken: string;
+}) {
+  const fetcher = useFetcher();
+  // Optimistically reflect the in-flight toggle so the line flips instantly.
+  const pending = fetcher.formData?.get("omit");
+  const isOmitted = pending != null ? pending === "true" : omitted;
+  return (
+    <Group className="ingredient-line" gap="xs" wrap="nowrap" align="center">
+      <fetcher.Form method="post">
+        <input type="hidden" name={csrfFieldName()} value={csrfToken} />
+        <input type="hidden" name="intent" value="toggle-omit" />
+        <input type="hidden" name="ingredientId" value={ing.id} />
+        <input type="hidden" name="omit" value={isOmitted ? "false" : "true"} />
+        <ActionIcon
+          className="omit-toggle"
+          type="submit"
+          variant={isOmitted ? "light" : "subtle"}
+          color="gray"
+          size="sm"
+          aria-pressed={isOmitted}
+          aria-label={
+            isOmitted ? `Include ${ing.item}` : `Omit ${ing.item}`
+          }
+        >
+          <CartIcon />
+        </ActionIcon>
+      </fetcher.Form>
+      <Text
+        component="span"
+        td={isOmitted ? "line-through" : undefined}
+        c={isOmitted ? "dimmed" : undefined}
+      >
+        {formatIngredient(ing, factor)}
+      </Text>
+    </Group>
+  );
+}
+
 export default function RecipeView() {
   const { recipe, ingredients: ings, draftInstance, stockInstance, csrfToken } =
     useLoaderData<typeof loader>();
@@ -382,6 +497,7 @@ export default function RecipeView() {
     draftTargetQuantity ??
     recipe.baseQuantity;
   const factor = recipe.baseQuantity > 0 ? scaledQuantity / recipe.baseQuantity : 1;
+  const omittedSet = new Set(draftInstance?.omittedIngredientIds ?? []);
   return (
     <Stack gap="md">
       {actionData?.error && (
@@ -431,11 +547,25 @@ export default function RecipeView() {
         <Title order={4} mb="xs">
           Ingredients ({scaledQuantity} portions)
         </Title>
-        <List spacing={2}>
-          {ings.map((i) => (
-            <List.Item key={i.id}>{formatIngredient(i, factor)}</List.Item>
-          ))}
-        </List>
+        {draftInstance ? (
+          <Stack gap={4}>
+            {ings.map((i) => (
+              <IngredientLine
+                key={i.id}
+                ing={i}
+                factor={factor}
+                omitted={omittedSet.has(i.id)}
+                csrfToken={csrfToken}
+              />
+            ))}
+          </Stack>
+        ) : (
+          <List spacing={2}>
+            {ings.map((i) => (
+              <List.Item key={i.id}>{formatIngredient(i, factor)}</List.Item>
+            ))}
+          </List>
+        )}
       </section>
 
       {recipe.steps.trim() && (

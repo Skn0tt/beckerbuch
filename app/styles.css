@@ -28,3 +28,22 @@ html {
 .recipe-steps li.task-list-item > input[type="checkbox"] {
   margin-right: 0.4em;
 }
+
+/*
+ * Omit toggle (cart button on each draft ingredient line). On touch devices
+ * (no hover), keep it always visible so it's tappable. On hover-capable
+ * pointers, keep it out of the way: reveal only when the row is hovered, when
+ * the button is keyboard-focused, or when the line is already omitted (so the
+ * struck-through line's active state stays visible and reachable).
+ */
+@media (hover: hover) {
+  .omit-toggle {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .ingredient-line:hover .omit-toggle,
+  .omit-toggle:focus-visible,
+  .omit-toggle[aria-pressed="true"] {
+    opacity: 1;
+  }
+}

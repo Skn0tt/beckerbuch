@@ -18,7 +18,7 @@ import { Form, useNavigation } from "react-router";
 import { CsrfField } from "../auth/csrf-field";
 import { parseAmount } from "../lib/amount";
 
-export type IngredientRow = { amount: string; unit: string; item: string };
+export type IngredientRow = { id?: string; amount: string; unit: string; item: string };
 
 /**
  * Returns true if the amount string is valid for submission: either empty,
@@ -234,6 +234,7 @@ export function RecipeForm({
               {rows.map((row, i) => (
                 <Table.Tr key={i} aria-label={`Ingredient ${i + 1}`}>
                   <Table.Td>
+                    <input type="hidden" name="ingredient_id" value={row.id ?? ""} />
                     <TextInput
                       aria-label="Amount"
                       name="ingredient_amount"
@@ -306,6 +307,7 @@ export function RecipeForm({
 }
 
 export type ParsedIngredient = {
+  id: string | null;
   position: number;
   amount: string | null;
   unit: string | null;
@@ -316,6 +318,7 @@ export function parseIngredientsFromForm(form: FormData): ParsedIngredient[] {
   const items = form.getAll("ingredient_item").map((x) => String(x));
   const amounts = form.getAll("ingredient_amount").map((x) => String(x));
   const units = form.getAll("ingredient_unit").map((x) => String(x));
+  const ids = form.getAll("ingredient_id").map((x) => String(x));
   const out: ParsedIngredient[] = [];
   for (let i = 0; i < items.length; i++) {
     const item = (items[i] ?? "").trim();
@@ -336,6 +339,7 @@ export function parseIngredientsFromForm(form: FormData): ParsedIngredient[] {
       }
     }
     out.push({
+      id: (ids[i] ?? "").trim() || null,
       position: out.length,
       amount,
       unit: unitRaw || null,
