@@ -4,8 +4,10 @@ import {
   Avatar,
   Button,
   Card,
+  Center,
   Group,
   List,
+  Loader,
   Modal,
   Popover,
   Stack,
@@ -15,8 +17,14 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Form, Link, useFetcher, useNavigation } from "react-router";
+import {
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { Await, Form, Link, useFetcher, useNavigation } from "react-router";
 import {
   DndContext,
   PointerSensor,
@@ -38,7 +46,8 @@ import { CSS } from "@dnd-kit/utilities";
 import { csrfFieldName } from "../auth/csrf-shared";
 import { CsrfField } from "../auth/csrf-field";
 import { UserAvatar } from "./user-avatar";
-import { formatIngredient } from "../lib/scale";
+import { CombinedList } from "./combined-list";
+import type { CombinedList as CombinedListData } from "../lib/combined-list";
 import type { KitchenEntry, KitchenMember } from "../lib/kitchen-data";
 
 type Lane = "draft" | "stock";
@@ -841,54 +850,6 @@ export function SortableLane({
 }
 
 /**
- * Flat list of all ingredients tied up in in-stock (finalised, not yet
- * cooked) recipe entries, sorted alphabetically by item name.
- * Each row shows the scaled ingredient text and the recipe it belongs to.
- */
-export function PlannedIngredients({ stock }: { stock: KitchenEntry[] }) {
-  type Row = { text: string; recipeName: string; key: string };
-  const rows: Row[] = [];
-  for (const entry of stock) {
-    const factor =
-      entry.baseQuantity > 0 ? entry.targetQuantity / entry.baseQuantity : 1;
-    for (const ing of entry.ingredients) {
-      const text = formatIngredient(ing, factor);
-      rows.push({
-        text,
-        recipeName: entry.recipeName,
-        key: `${entry.id}-${ing.position}`,
-      });
-    }
-  }
-  rows.sort((a, b) => a.text.localeCompare(b.text));
-
-  if (rows.length === 0) {
-    return (
-      <Text size="sm" c="dimmed">
-        No planned ingredients — finalise the draft to start cooking.
-      </Text>
-    );
-  }
-
-  return (
-    <List size="sm" spacing={4}>
-      {rows.map((row) => (
-        <List.Item key={row.key}>
-          <Group gap="xs" wrap="nowrap">
-            <Text span style={{ minWidth: 0, flex: 1 }}>
-              {row.text}
-            </Text>
-            <Text span size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
-              {row.recipeName}
-            </Text>
-          </Group>
-        </List.Item>
-      ))}
-    </List>
-  );
-}
-
-/**
  * Compact Draft + In-stock + Finalise tree. Rendered as the right
  * sidebar on the desktop home page; the /kitchen route uses the
  * individual cards directly with its own lane switcher.
@@ -900,12 +861,14 @@ export function KitchenSidebar({
   draft,
   stock,
   members,
+  combined,
   csrfToken,
   formAction = "/kitchen",
 }: {
   draft: KitchenEntry[];
   stock: KitchenEntry[];
   members: KitchenMember[];
+  combined: Promise<CombinedListData>;
   csrfToken: string;
   formAction?: string;
 }) {
@@ -988,7 +951,30 @@ export function KitchenSidebar({
         onClose={closeIngredients}
         title="Planned ingredients"
       >
-        <PlannedIngredients stock={stock} />
+        <Suspense
+          fallback={
+            <Center py="xl">
+              <Loader aria-label="Computing planned ingredients" />
+            </Center>
+          }
+        >
+          <Await resolve={combined}>
+            {(c) => (
+              <CombinedList
+                combinedGroups={c.combinedGroups}
+                rejectedIds={c.rejectedIds}
+                snapshotFresh={c.snapshotFresh}
+                showSingletonSource
+                emptyState={
+                  <Text size="sm" c="dimmed">
+                    No planned ingredients — finalise the draft to start
+                    cooking.
+                  </Text>
+                }
+              />
+            )}
+          </Await>
+        </Suspense>
       </Modal>
     </Stack>
   );

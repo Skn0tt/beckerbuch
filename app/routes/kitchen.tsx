@@ -1,13 +1,15 @@
 import {
   Anchor,
+  Center,
   Container,
+  Loader,
   SegmentedControl,
   Stack,
   Text,
-  Title,
 } from "@mantine/core";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { Link, redirect, useNavigate } from "react-router";
+import { Suspense } from "react";
+import { Await, Link, redirect, useNavigate } from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/kitchen";
 import { db } from "../db/client";
@@ -16,12 +18,13 @@ import { requireFlatMember } from "../auth/require";
 import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { isSameOrigin } from "../auth/origin";
 import { loadKitchen } from "../lib/kitchen-data";
+import { loadCombinedList } from "../lib/combined-list";
 import { snapshotDedupForFlat } from "../lib/dedup-snapshot";
 import {
   FinaliseButton,
-  PlannedIngredients,
   SortableLane,
 } from "../components/kitchen-sidebar";
+import { CombinedList } from "../components/combined-list";
 import { firstMessage, formDataToObject } from "../lib/form";
 
 const uuid = z.guid("Invalid instance.");
@@ -87,11 +90,18 @@ export async function loader({ request }: Route.LoaderArgs) {
         : "draft";
 
   const data = await loadKitchen(ctx.flat.id);
+  // Deferred: the ingredients tab shows a spinner while the combined list
+  // loads. It's a read-only snapshot read (no LLM), so this is fast when the
+  // snapshot is fresh; deferring keeps navigation unblocked regardless.
+  const combined =
+    lane === "ingredients" ? loadCombinedList(ctx.flat.id) : null;
   return {
     lane,
+    flatId: ctx.flat.id,
     draft: data.draft,
     stock: data.stock,
     members: data.members,
+    combined,
     csrfToken: csrfTokenForSession(ctx.session.id),
   };
 }
@@ -291,6 +301,15 @@ export async function action({ request }: Route.ActionArgs) {
     if (updated.length === 0) {
       return { error: "Already cooked or not in stock." };
     }
+    // Cooking removes a recipe from the in-stock set, changing the combined
+    // shopping list. Refresh the dedup snapshot (best-effort, same as
+    // finalise) so the read-only "Planned ingredients" view stays merged over
+    // what's still to cook.
+    try {
+      await snapshotDedupForFlat(ctx.flat.id);
+    } catch (err) {
+      console.warn("[mark-cooked] dedup snapshot failed:", err);
+    }
     return { ok: true };
   }
 
@@ -358,7 +377,8 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Kitchen({ loaderData }: Route.ComponentProps) {
-  const { lane, draft, stock, csrfToken, members } = loaderData;
+  const { lane, draft, stock, csrfToken, members, combined } =
+    loaderData;
   const navigate = useNavigate();
   return (
     <Container size="sm" py="md">
@@ -434,10 +454,31 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
             />
           )
         ) : (
-          <Stack gap="xs">
-            <Title order={4}>Planned ingredients</Title>
-            <PlannedIngredients stock={stock} />
-          </Stack>
+          <Suspense
+            fallback={
+              <Center py="xl">
+                <Loader aria-label="Computing planned ingredients" />
+              </Center>
+            }
+          >
+            <Await resolve={combined}>
+              {(c) => (
+                <CombinedList
+                  title="Planned ingredients"
+                  combinedGroups={c?.combinedGroups ?? []}
+                  rejectedIds={c?.rejectedIds ?? []}
+                  snapshotFresh={c?.snapshotFresh ?? true}
+                  showSingletonSource
+                  emptyState={
+                    <Text c="dimmed">
+                      No planned ingredients — finalise the draft to start
+                      cooking.
+                    </Text>
+                  }
+                />
+              )}
+            </Await>
+          </Suspense>
         )}
       </Stack>
     </Container>

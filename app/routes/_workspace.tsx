@@ -4,13 +4,18 @@ import type { Route } from "./+types/_workspace";
 import { requireFlatMember } from "../auth/require";
 import { csrfTokenForSession } from "../auth/csrf.server";
 import { loadKitchen } from "../lib/kitchen-data";
+import { loadCombinedList } from "../lib/combined-list";
 import { KitchenSidebar } from "../components/kitchen-sidebar";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requireFlatMember(request);
   const kitchen = await loadKitchen(ctx.flat.id);
+  // Deferred so the "Planned ingredients" modal shows a spinner while the
+  // combined list loads, and so it never blocks navigation within the
+  // workspace layout. Read-only snapshot read — no LLM, no write side effects.
+  const combined = loadCombinedList(ctx.flat.id);
   const csrfToken = csrfTokenForSession(ctx.session.id);
-  return { kitchen, csrfToken };
+  return { kitchen, combined, flatId: ctx.flat.id, csrfToken };
 }
 
 export function shouldRevalidate({
@@ -34,7 +39,7 @@ export function shouldRevalidate({
 }
 
 export default function WorkspaceLayout({ loaderData }: Route.ComponentProps) {
-  const { kitchen, csrfToken } = loaderData;
+  const { kitchen, combined, csrfToken } = loaderData;
 
   return (
     <Box px="md" py="md">
@@ -47,6 +52,7 @@ export default function WorkspaceLayout({ loaderData }: Route.ComponentProps) {
             draft={kitchen.draft}
             stock={kitchen.stock}
             members={kitchen.members}
+            combined={combined}
             csrfToken={csrfToken}
           />
         </Grid.Col>
