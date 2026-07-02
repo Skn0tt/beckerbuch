@@ -75,6 +75,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       recipeName: recipes.name,
       baseQuantity: recipes.baseQuantity,
       targetQuantity: recipeInstances.targetQuantity,
+      omittedIngredientIds: recipeInstances.omittedIngredientIds,
     })
     .from(recipeInstances)
     .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
@@ -105,7 +106,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ingsQuery ?? Promise.resolve([] as never[]),
     QRCode.toString(handoffUrl, { type: "svg", margin: 1 }),
   ]);
-  const currentInput = buildDedupInputFromData(rows, allIngs);
+  const omittedIngredientIds = new Set<string>();
+  for (const r of rows)
+    for (const id of r.omittedIngredientIds) omittedIngredientIds.add(id);
+  const currentInput = buildDedupInputFromData(rows, allIngs, omittedIngredientIds);
   const currentHash = await hashInput(currentInput);
   const ingsByRecipe = new Map<string, typeof allIngs>();
   for (const ing of allIngs) {

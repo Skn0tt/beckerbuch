@@ -1,0 +1,1 @@
+ALTER TABLE "recipe_instances" ADD COLUMN "omitted_ingredient_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;

@@ -12,6 +12,7 @@ import { RecipeForm, parseRecipeFields } from "../components/recipe-form";
 import { CsrfField } from "../auth/csrf-field";
 import { deletePhoto, storePhoto, validatePhoto } from "../blobs";
 import { updateSearchVector } from "../search";
+import { syncIngredients } from "../lib/recipes";
 import { parseParams } from "../lib/form";
 
 const ParamsSchema = z.object({ id: z.guid() });
@@ -42,6 +43,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     recipe,
     photoUrl: recipe.photoBlobKey ? `/recipes/${recipe.id}/photo` : null,
     ingredients: ings.map((i) => ({
+      id: i.id,
       amount: i.amount ?? "",
       unit: i.unit ?? "",
       item: i.item,
@@ -88,16 +90,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         updatedAt: new Date(),
       })
       .where(eq(recipes.id, recipe.id));
-    await tx.delete(ingredients).where(eq(ingredients.recipeId, recipe.id));
-    await tx.insert(ingredients).values(
-      parsed.ingredients.map((p) => ({
-        recipeId: recipe.id,
-        position: p.position,
-        amount: p.amount,
-        unit: p.unit,
-        item: p.item,
-      })),
-    );
+    await syncIngredients(tx, recipe.id, parsed.ingredients);
     await updateSearchVector(tx, recipe.id);
   });
 

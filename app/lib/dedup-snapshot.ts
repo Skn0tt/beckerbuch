@@ -33,6 +33,7 @@ export async function buildDedupInput(flatId: string): Promise<DedupInput> {
       recipeName: recipes.name,
       baseQuantity: recipes.baseQuantity,
       targetQuantity: recipeInstances.targetQuantity,
+      omittedIngredientIds: recipeInstances.omittedIngredientIds,
     })
     .from(recipeInstances)
     .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
@@ -54,7 +55,12 @@ export async function buildDedupInput(flatId: string): Promise<DedupInput> {
     .where(inArray(ingredients.recipeId, recipeIds))
     .orderBy(asc(ingredients.position));
 
-  return buildDedupInputFromData(rows, ings);
+  // Union of ingredients omitted on any in-stock instance in the lane;
+  // dedup collapses instances by recipeId, so a single set is enough.
+  const omitted = new Set<string>();
+  for (const r of rows) for (const id of r.omittedIngredientIds) omitted.add(id);
+
+  return buildDedupInputFromData(rows, ings, omitted);
 }
 
 /**
@@ -76,6 +82,7 @@ export function buildDedupInputFromData(
     unit: string | null;
     item: string;
   }>,
+  omittedIngredientIds: ReadonlySet<string> = new Set(),
 ): DedupInput {
   if (rows.length === 0) return { items: [] };
 
@@ -84,6 +91,7 @@ export function buildDedupInputFromData(
 
   const items: DedupInput["items"] = [];
   for (const ing of ings) {
+    if (omittedIngredientIds.has(ing.id)) continue;
     const recipe = byRecipe.get(ing.recipeId);
     if (!recipe) continue;
     const factor =

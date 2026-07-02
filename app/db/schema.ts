@@ -199,6 +199,15 @@ export const recipeInstances = pgTable(
     cookedAt: timestamp("cooked_at", { withTimezone: true }),
     cookedBy: uuid("cooked_by").references(() => users.id),
     note: text("note"),
+    /**
+     * Ingredient UUIDs (from {@link ingredients}) omitted from this
+     * instance: struck through on the drafted recipe page and dropped
+     * from the Bring! export. Set on the draft; kept through finalise.
+     */
+    omittedIngredientIds: jsonb("omitted_ingredient_ids")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
   },
   (t) => [
     check(

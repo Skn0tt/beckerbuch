@@ -1,8 +1,100 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client";
+import type { db as dbFactory } from "../db/client";
 import { ingredients, recipes } from "../db/schema";
 import { deletePhoto, storePhotoBytes, validatePhotoBytes } from "../blobs";
 import { buildTsQuery, updateSearchVector } from "../search";
+
+type Tx = Parameters<Parameters<ReturnType<typeof dbFactory>["transaction"]>[0]>[0];
+
+/** An ingredient row destined for the DB, optionally carrying an existing id. */
+export type SyncIngredientRow = {
+  id?: string | null;
+  position: number;
+  amount: string | null;
+  unit: string | null;
+  item: string;
+};
+
+/**
+ * Reconcile a recipe's ingredient rows against `rows` while **preserving the
+ * UUIDs** of rows that carry a known id. Recipe edits used to DELETE + re-INSERT
+ * every ingredient, which regenerated all UUIDs on any save ("UUID churn") and
+ * silently invalidated anything keyed by ingredient id (e.g. per-instance
+ * omissions). This diffs instead:
+ *
+ *   1. delete existing rows whose id was not submitted;
+ *   2. park surviving rows to transient negative positions (the
+ *      `ingredients_recipe_position` unique index would otherwise collide while
+ *      we shuffle 0..n-1 — mirrors the recipe_instances reorder sentinel);
+ *   3. update rows that carry a known id to their final position/content;
+ *   4. insert id-less rows (and any row whose id is unknown/forged) with a
+ *      fresh UUID at their final position.
+ *
+ * Must run inside a transaction.
+ */
+export async function syncIngredients(
+  tx: Tx,
+  recipeId: string,
+  rows: SyncIngredientRow[],
+): Promise<void> {
+  const existing = await tx
+    .select({ id: ingredients.id })
+    .from(ingredients)
+    .where(eq(ingredients.recipeId, recipeId));
+  const existingIds = new Set(existing.map((r) => r.id));
+
+  const submittedIds = new Set(
+    rows.map((r) => r.id).filter((id): id is string => !!id && existingIds.has(id)),
+  );
+
+  const toDelete = [...existingIds].filter((id) => !submittedIds.has(id));
+  if (toDelete.length > 0) {
+    await tx.delete(ingredients).where(inArray(ingredients.id, toDelete));
+  }
+
+  // Park survivors out of the 0..n-1 range so final-position writes never
+  // collide on the unique (recipe_id, position) index mid-transaction.
+  let park = -1;
+  for (const id of submittedIds) {
+    await tx
+      .update(ingredients)
+      .set({ position: park })
+      .where(eq(ingredients.id, id));
+    park -= 1;
+  }
+
+  const toInsert: SyncIngredientRow[] = [];
+  for (const row of rows) {
+    if (row.id && submittedIds.has(row.id)) {
+      await tx
+        .update(ingredients)
+        .set({
+          position: row.position,
+          amount: row.amount,
+          unit: row.unit,
+          item: row.item,
+        })
+        .where(eq(ingredients.id, row.id));
+    } else {
+      // Id-less (new) row, or a row whose id doesn't belong to this recipe —
+      // insert fresh so we never trust a client-supplied UUID.
+      toInsert.push(row);
+    }
+  }
+
+  if (toInsert.length > 0) {
+    await tx.insert(ingredients).values(
+      toInsert.map((row) => ({
+        recipeId,
+        position: row.position,
+        amount: row.amount,
+        unit: row.unit,
+        item: row.item,
+      })),
+    );
+  }
+}
 
 export type CreateRecipeIngredient = {
   position: number;
@@ -145,6 +237,7 @@ export async function getRecipeForFlat(input: {
 }
 
 export type EditRecipeIngredient = {
+  id?: string | null;
   position: number;
   amount: string | null;
   unit: string | null;
@@ -220,16 +313,7 @@ export async function editRecipe(input: {
       .where(eq(recipes.id, input.id));
 
     if (input.patch.ingredients) {
-      await tx.delete(ingredients).where(eq(ingredients.recipeId, input.id));
-      await tx.insert(ingredients).values(
-        input.patch.ingredients.map((ingredient) => ({
-          recipeId: input.id,
-          position: ingredient.position,
-          amount: ingredient.amount,
-          unit: ingredient.unit,
-          item: ingredient.item,
-        })),
-      );
+      await syncIngredients(tx, input.id, input.patch.ingredients);
     }
 
     if (shouldUpdateSearchVector) {
