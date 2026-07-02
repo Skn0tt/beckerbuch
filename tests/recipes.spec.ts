@@ -362,33 +362,32 @@ test("search filters by name + ingredient + source host", async ({ page, flat })
     'a[href^="/recipes/"]:not([href="/recipes/new"])',
   );
 
-  // Match by name (with prefix).
+  // Search runs automatically after a short debounce — no Enter required.
   await search.fill("past");
-  await search.press("Enter");
   await expect(cards).toHaveCount(1);
   await expect(cards.first()).toContainText("Pasta al limone");
 
   // Match by ingredient.
   await search.fill("chicken");
-  await search.press("Enter");
   await expect(cards).toHaveCount(1);
   await expect(cards.first()).toContainText("Chicken curry");
 
   // Same query should keep the same result order across repeated searches.
   await search.fill("salt");
-  await search.press("Enter");
   await expect(cards).toHaveCount(2);
   const firstSaltOrder = await cards.evaluateAll((links) =>
     links.map((link) => (link as HTMLAnchorElement).getAttribute("href")),
   );
+  await search.fill("");
+  await expect(cards).toHaveCount(5);
   await search.fill("salt");
-  await search.press("Enter");
+  await expect(cards).toHaveCount(2);
   const secondSaltOrder = await cards.evaluateAll((links) =>
     links.map((link) => (link as HTMLAnchorElement).getAttribute("href")),
   );
   expect(secondSaltOrder).toEqual(firstSaltOrder);
 
-  // Match by source host.
+  // Match by source host. Pressing Enter still submits immediately.
   await search.fill("kingarthur");
   await search.press("Enter");
   await expect(cards).toHaveCount(1);
@@ -396,7 +395,6 @@ test("search filters by name + ingredient + source host", async ({ page, flat })
 
   // No match → friendly empty state.
   await search.fill("nothingmatchesthis");
-  await search.press("Enter");
   await expect(cards).toHaveCount(0);
   await expect(page.getByText(/No recipes match/)).toBeVisible();
 });
