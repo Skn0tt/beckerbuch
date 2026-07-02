@@ -1,4 +1,14 @@
-import { Box, Button, Group, NavLink as MantineNavLink, Stack, Text, TextInput } from "@mantine/core";
+import {
+  Box,
+  Button,
+  Card,
+  Group,
+  Image,
+  SimpleGrid,
+  Stack,
+  Text,
+  TextInput,
+} from "@mantine/core";
 import { useDebouncedCallback } from "@mantine/hooks";
 import { Form, Link, useLoaderData, useSubmit } from "react-router";
 import type { Route } from "./+types/home";
@@ -60,17 +70,59 @@ export default function Home() {
         <Text c="dimmed">{q ? `No recipes match "${q}"` : "No recipes yet"}</Text>
       ) : (
         <Box style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-          {list.map((r) => (
-            <MantineNavLink
-              key={r.id}
-              component={Link}
-              to={`/recipes/${r.id}`}
-              prefetch="intent"
-              label={r.name}
-            />
-          ))}
+          <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing="md">
+            {list.map((r) => (
+              <RecipeCard key={r.id} recipe={r} />
+            ))}
+          </SimpleGrid>
         </Box>
       )}
     </Stack>
+  );
+}
+
+function RecipeCard({
+  recipe: r,
+}: {
+  recipe: Awaited<ReturnType<typeof loader>>["recipes"][number];
+}) {
+  return (
+    <Card
+      component={Link}
+      to={`/recipes/${r.id}`}
+      prefetch="intent"
+      withBorder
+      padding="sm"
+      radius="md"
+    >
+      <Card.Section>
+        {r.photoBlobKey ? (
+          <Image
+            src={`/recipes/${r.id}/photo?v=${encodeURIComponent(r.photoBlobKey)}`}
+            alt={r.name}
+            h={140}
+            fit="cover"
+          />
+        ) : (
+          <Box
+            h={140}
+            bg="var(--mantine-color-gray-1)"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text size="2rem" fw={700} c="dimmed" aria-hidden>
+              {r.name.trim().charAt(0).toUpperCase() || "?"}
+            </Text>
+          </Box>
+        )}
+      </Card.Section>
+
+      <Text fw={500} mt="sm" lineClamp={2}>
+        {r.name}
+      </Text>
+    </Card>
   );
 }

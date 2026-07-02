@@ -69,6 +69,7 @@ export type RecipeListItem = {
   name: string;
   baseQuantity: number;
   updatedAt: Date;
+  photoBlobKey: string | null;
 };
 
 export async function searchRecipes(input: {
@@ -88,6 +89,7 @@ export async function searchRecipes(input: {
         name: recipes.name,
         baseQuantity: recipes.baseQuantity,
         updatedAt: recipes.updatedAt,
+        photoBlobKey: recipes.photoBlobKey,
       })
       .from(recipes)
       .where(
@@ -106,6 +108,7 @@ export async function searchRecipes(input: {
       name: recipes.name,
       baseQuantity: recipes.baseQuantity,
       updatedAt: recipes.updatedAt,
+      photoBlobKey: recipes.photoBlobKey,
     })
     .from(recipes)
     .where(eq(recipes.flatId, input.flatId))
