@@ -296,7 +296,8 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
 
             <Text size="sm" c="dimmed" hiddenFrom="sm">
               Use your browser&apos;s Share menu and pick Bring! to import this
-              list.
+              list. Bring! then sends a notification — tap it to finish the
+              import.
             </Text>
 
             {/* Combined deduped list (issue #7). */}
