@@ -309,6 +309,50 @@ test("upload a photo on create → see it on view; remove it on edit", async ({
   await expect(page.getByRole("img", { name: "Photo recipe" })).toHaveCount(0);
 });
 
+test("collection renders recipes as cards — photo image and placeholder", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+
+  // Recipe WITH a photo.
+  await page.getByRole("link", { name: "+ New recipe" }).click();
+  await page.getByLabel("Name").fill("Grid photo recipe");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill("water");
+  await page
+    .locator('input[type="file"]')
+    .setInputFiles({ name: "tiny.png", mimeType: "image/png", buffer: TINY_PNG });
+  await page.getByRole("button", { name: "Save recipe" }).click();
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
+
+  // Recipe WITHOUT a photo.
+  await page.goto("/");
+  await page.getByRole("link", { name: "+ New recipe" }).click();
+  await page.getByLabel("Name").fill("Grid plain recipe");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill("water");
+  await page.getByRole("button", { name: "Save recipe" }).click();
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
+
+  await page.goto("/");
+  await expect(page).toHaveURL("/");
+
+  // Both recipes show up as card links.
+  const photoCard = page.getByRole("link", { name: /Grid photo recipe/ });
+  const plainCard = page.getByRole("link", { name: /Grid plain recipe/ });
+  await expect(photoCard).toBeVisible();
+  await expect(plainCard).toBeVisible();
+
+  // The photo card renders an image that actually loads.
+  const photoImg = photoCard.getByRole("img", { name: "Grid photo recipe" });
+  await expect(photoImg).toBeVisible();
+  await expect
+    .poll(async () => await photoImg.evaluate((el: HTMLImageElement) => el.naturalWidth))
+    .toBeGreaterThan(0);
+
+  // The photo-less card falls back to a placeholder — no image inside it.
+  await expect(plainCard.getByRole("img")).toHaveCount(0);
+});
+
 test("rejects non-image upload with form error", async ({ page, flat }) => {
   await login(page, flat.user);
   await page.getByRole("link", { name: "+ New recipe" }).click();
