@@ -1,5 +1,6 @@
 import { Box, Button, Group, NavLink as MantineNavLink, Stack, Text, TextInput } from "@mantine/core";
-import { Form, Link, useLoaderData } from "react-router";
+import { useDebouncedCallback } from "@mantine/hooks";
+import { Form, Link, useLoaderData, useSubmit } from "react-router";
 import type { Route } from "./+types/home";
 import { requireFlatMember } from "../auth/require";
 import { searchRecipes } from "../lib/recipes";
@@ -22,6 +23,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export default function Home() {
   const { recipes: list, q } = useLoaderData<typeof loader>();
+  const submit = useSubmit();
+
+  const debouncedSubmit = useDebouncedCallback((form: HTMLFormElement) => {
+    // Replace history after the first search so each keystroke doesn't add a
+    // back-button entry; the initial search stays a normal navigation.
+    submit(form, { replace: q !== "" });
+  }, 250);
 
   return (
     <Stack
@@ -40,6 +48,7 @@ export default function Home() {
             placeholder="Search recipes…"
             aria-label="Search recipes"
             style={{ flex: 1 }}
+            onChange={(event) => debouncedSubmit(event.currentTarget.form!)}
           />
           <Button component={Link} to="/recipes/new" prefetch="intent" variant="default">
             + New recipe

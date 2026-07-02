@@ -371,12 +371,15 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
                   </Button>
                   <Text size="xs" c="dimmed">
                     Opens the share sheet — pick Bring! to import this list.
+                    Bring! then sends a notification — tap it to finish the
+                    import.
                   </Text>
                 </Stack>
               ) : (
                 <Text size="sm" c="dimmed">
                   Use your browser&apos;s Share menu and pick Bring! to import
-                  this list.
+                  this list. Bring! then sends a notification — tap it to finish
+                  the import.
                 </Text>
               )}
             </Box>
