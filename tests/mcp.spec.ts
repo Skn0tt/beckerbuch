@@ -190,7 +190,7 @@ async function addRecipeViaMcp(
   args: {
     name: string;
     baseQuantity?: number;
-    ingredients?: Array<{ amount?: number; unit?: string; item: string }>;
+    ingredients?: Array<{ amount?: string; unit?: string; item: string }>;
     steps?: string;
     sourceUrl?: string;
     photoUrl?: string;
@@ -270,8 +270,8 @@ test.describe("MCP server", () => {
         name: "MCP Pancakes",
         baseQuantity: 4,
         ingredients: [
-          { amount: 200, unit: "g", item: "flour" },
-          { amount: 300, unit: "ml", item: "milk" },
+          { amount: "200", unit: "g", item: "flour" },
+          { amount: "300", unit: "ml", item: "milk" },
           { item: "salt" },
         ],
         steps: "Mix and fry.",
@@ -286,7 +286,7 @@ test.describe("MCP server", () => {
     await expect(page.getByText("MCP Pancakes")).toBeVisible();
   });
 
-  test("add_recipe rejects non-numeric ingredient amounts", async ({
+  test("add_recipe stores non-numeric ingredient amounts as null", async ({
     page,
     flat,
   }) => {
@@ -307,8 +307,61 @@ test.describe("MCP server", () => {
         steps: "Backen",
       },
     });
-    expect(add.isError).toBe(true);
-    expect(textFromToolResult(add)).toContain("ingredients");
+    expect(add.isError).toBeFalsy();
+    const { id: recipeId } = recipeRefFromToolResult(add);
+
+    const get = await client.callTool({
+      name: "kochbuch_get_recipe",
+      arguments: { id: recipeId },
+    });
+    expect(get.isError).toBeFalsy();
+    const recipe = jsonFromToolResult<{
+      ingredients: Array<{ amount: string | null; unit: string | null; item: string }>;
+    }>(get);
+    expect(recipe.ingredients).toEqual([
+      { amount: null, unit: "Zweige", item: "Rosmarin, gehackt" },
+      { amount: null, unit: null, item: "Grobes Meersalz zum Bestreuen" },
+    ]);
+
+    await client.close();
+  });
+
+  test("add_recipe canonicalizes fraction and locale-decimal amounts", async ({
+    page,
+    flat,
+  }) => {
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    const add = await client.callTool({
+      name: "kochbuch_add_recipe",
+      arguments: {
+        name: "Fraction Recipe",
+        baseQuantity: 1,
+        ingredients: [
+          { amount: "1/2", unit: "tsp", item: "salt" },
+          { amount: "1,5", unit: "kg", item: "flour" },
+        ],
+        steps: "Mix.",
+      },
+    });
+    expect(add.isError).toBeFalsy();
+    const { id: recipeId } = recipeRefFromToolResult(add);
+
+    const get = await client.callTool({
+      name: "kochbuch_get_recipe",
+      arguments: { id: recipeId },
+    });
+    expect(get.isError).toBeFalsy();
+    const recipe = jsonFromToolResult<{
+      ingredients: Array<{ amount: string | null; unit: string | null; item: string }>;
+    }>(get);
+    expect(recipe.ingredients).toEqual([
+      { amount: "0.5", unit: "tsp", item: "salt" },
+      { amount: "1.5", unit: "kg", item: "flour" },
+    ]);
 
     await client.close();
   });
@@ -491,7 +544,7 @@ test.describe("MCP server", () => {
       name: "MCP Soup",
       baseQuantity: 4,
       ingredients: [
-        { amount: 1, unit: "l", item: "water" },
+        { amount: "1", unit: "l", item: "water" },
         { item: "salt" },
       ],
       steps: "Boil.",
@@ -547,7 +600,7 @@ test.describe("MCP server", () => {
     const recipeId = await addRecipeViaMcp(client, {
       name: "Old Name",
       baseQuantity: 2,
-      ingredients: [{ amount: 1, unit: "cup", item: "rice" }],
+      ingredients: [{ amount: "1", unit: "cup", item: "rice" }],
       steps: "Old steps",
     });
 
@@ -566,7 +619,7 @@ test.describe("MCP server", () => {
       arguments: {
         id: recipeId,
         ingredients: [
-          { amount: 200, unit: "g", item: "pasta" },
+          { amount: "200", unit: "g", item: "pasta" },
           { item: "pepper" },
         ],
       },
@@ -736,7 +789,7 @@ test.describe("MCP server", () => {
     const recipeId = await addRecipeViaMcp(client, {
       name: "Combo Edit",
       baseQuantity: 2,
-      ingredients: [{ amount: 1, unit: "cup", item: "rice" }],
+      ingredients: [{ amount: "1", unit: "cup", item: "rice" }],
     });
 
     // Repro: Copilot was observed editing a recipe with both ingredients
@@ -747,8 +800,8 @@ test.describe("MCP server", () => {
         id: recipeId,
         baseQuantity: 6,
         ingredients: [
-          { amount: 1, unit: "cup", item: "rice" },
-          { amount: 2, unit: "tbsp", item: "soy sauce" },
+          { amount: "1", unit: "cup", item: "rice" },
+          { amount: "2", unit: "tbsp", item: "soy sauce" },
         ],
       },
     });
