@@ -1,4 +1,5 @@
 import {
+  ActionIcon,
   Anchor,
   Box,
   Button,
@@ -10,8 +11,9 @@ import {
   Text,
   Title,
 } from "@mantine/core";
+import { useSyncExternalStore } from "react";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { data, useFetcher } from "react-router";
+import { data, useFetcher, useLocation, useNavigate } from "react-router";
 import QRCode from "qrcode";
 import { z } from "zod";
 import type { Route } from "./+types/h.$flatId";
@@ -32,6 +34,13 @@ import { hashInput } from "../lib/dedup";
 import { firstMessage, formDataToObject, parseParams } from "../lib/form";
 
 const ParamsSchema = z.object({ flatId: z.guid() });
+
+// navigator.share is a client-only, static-after-load capability. Read it via
+// useSyncExternalStore so SSR sees `false` and the client swaps to the real
+// value on hydration without a mismatch (and without a setState-in-effect).
+const emptySubscribe = () => () => {};
+const shareSupported = () =>
+  typeof navigator !== "undefined" && !!navigator.share;
 
 const ActionSchema = z.discriminatedUnion("intent", [
   z.object({ intent: z.literal("regenerate") }),
@@ -242,6 +251,40 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
   } = loaderData;
   const rejectedSet = new Set(rejectedIds);
   const fetcher = useFetcher();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // navigator.share is only available client-side (and not in every browser).
+  // useSyncExternalStore keeps SSR (`false`) and the first client render in
+  // sync, then reflects real support once hydrated — no hydration mismatch.
+  const canShare = useSyncExternalStore(
+    emptySubscribe,
+    shareSupported,
+    () => false,
+  );
+
+  const shareToBring = async () => {
+    try {
+      await navigator.share({
+        title: `Shopping list — ${flat.name}`,
+        url: handoffUrl,
+      });
+    } catch (err) {
+      // The user dismissing the share sheet rejects with AbortError — that's
+      // an expected, non-error path, so swallow it (and any share failure;
+      // there's nothing actionable to surface here).
+      if ((err as Error)?.name !== "AbortError") {
+        // no-op
+      }
+    }
+  };
+
+  // This page lives outside the authenticated app shell (it's a public,
+  // shareable link), so it has no header/back chrome of its own. Offer a back
+  // arrow only when we arrived here with in-app history (e.g. after Finalise) —
+  // location.key is "default" when the link was opened cold, where there is
+  // nothing to go back to.
+  const showBack = location.key !== "default";
 
   const jsonLd = {
     "@context": "https://schema.org/",
@@ -260,7 +303,26 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
         dangerouslySetInnerHTML={{ __html: jsonLdHtml }}
       />
       <Stack gap="md">
-        <Title order={1}>Shopping list</Title>
+        <Group gap="xs" wrap="nowrap">
+          {/* Always mount the back slot (toggling only visibility) so the
+              "Shopping list" title keeps the same x-position whether or not
+              the back arrow is offered. */}
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg"
+            aria-label="Back"
+            onClick={() => navigate(-1)}
+            tabIndex={showBack ? undefined : -1}
+            aria-hidden={showBack ? undefined : true}
+            style={{ visibility: showBack ? "visible" : "hidden" }}
+          >
+            <Text component="span" fz={24} lh={1}>
+              ←
+            </Text>
+          </ActionIcon>
+          <Title order={1}>Shopping list</Title>
+        </Group>
 
         {groups.length === 0 ? (
           <Text c="dimmed">Nothing to shop right now.</Text>
@@ -294,11 +356,33 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
               </Stack>
             </Card>
 
-            <Text size="sm" c="dimmed" hiddenFrom="sm">
-              Use your browser&apos;s Share menu and pick Bring! to import this
-              list. Bring! then sends a notification — tap it to finish the
-              import.
-            </Text>
+            {/* Mobile: share the list straight into Bring! via the OS share
+                sheet. Works inside a standalone/home-screen PWA, where there
+                is no browser Share menu to fall back on. */}
+            <Box hiddenFrom="sm">
+              {canShare ? (
+                <Stack gap={4}>
+                  <Button
+                    fullWidth
+                    onClick={shareToBring}
+                    data-testid="share-to-bring"
+                  >
+                    Send to Bring!
+                  </Button>
+                  <Text size="xs" c="dimmed">
+                    Opens the share sheet — pick Bring! to import this list.
+                    Bring! then sends a notification — tap it to finish the
+                    import.
+                  </Text>
+                </Stack>
+              ) : (
+                <Text size="sm" c="dimmed">
+                  Use your browser&apos;s Share menu and pick Bring! to import
+                  this list. Bring! then sends a notification — tap it to finish
+                  the import.
+                </Text>
+              )}
+            </Box>
 
             {/* Combined deduped list (issue #7). */}
             <Stack gap="xs" data-testid="combined-list">

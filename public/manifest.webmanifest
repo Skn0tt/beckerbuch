@@ -1,0 +1,22 @@
+{
+  "name": "beckerbuch",
+  "short_name": "beckerbuch",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#E07856",
+  "background_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "type": "image/png",
+      "sizes": "180x180"
+    }
+  ]
+}
