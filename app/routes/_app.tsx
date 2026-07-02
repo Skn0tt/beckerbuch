@@ -1,4 +1,5 @@
 import {
+  ActionIcon,
   Anchor,
   AppShell,
   Box,
@@ -8,7 +9,7 @@ import {
   UnstyledButton,
   VisuallyHidden,
 } from "@mantine/core";
-import { Link, Outlet, redirect, useLocation } from "react-router";
+import { Link, Outlet, redirect, useLocation, useNavigate } from "react-router";
 import type { Route } from "./+types/_app";
 import { tryGetAuthedContext } from "../auth/require";
 import { UserAvatar } from "../components/user-avatar";
@@ -55,9 +56,27 @@ const MOBILE_NAV = [
   { to: "/kitchen", label: "Kitchen" },
 ];
 
+// Top-level destinations reachable from the mobile tab bar. On these there is
+// nowhere to go "back" to, so the header back arrow is hidden.
+const TOP_LEVEL_ROUTES = new Set(["/", "/kitchen"]);
+
 export default function AppLayout({ loaderData }: Route.ComponentProps) {
   const { user, flat } = loaderData;
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const showBack = !TOP_LEVEL_ROUTES.has(location.pathname);
+
+  const goBack = () => {
+    // location.key is "default" for the first entry in the history stack, i.e.
+    // when the app was cold-started on this route (deep link / PWA launch) and
+    // there is no in-app page to pop back to. Fall back to the collection.
+    if (location.key === "default") {
+      navigate("/");
+    } else {
+      navigate(-1);
+    }
+  };
 
   return (
     <AppShell
@@ -67,15 +86,36 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     >
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
-          <Anchor
-            component={Link}
-            to="/"
-            prefetch="intent"
-            underline="never"
-            c="inherit"
-          >
-            <Title order={3}>{flat.name}</Title>
-          </Anchor>
+          <Group gap="xs" wrap="nowrap">
+            {/* Always mount the back slot (toggling only visibility) so the
+                flat name keeps the same x-position across top-level and
+                sub-routes — otherwise the heading shifts ~44px when the
+                button appears/disappears. */}
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="lg"
+              aria-label="Back"
+              onClick={goBack}
+              tabIndex={showBack ? undefined : -1}
+              aria-hidden={showBack ? undefined : true}
+              style={{ visibility: showBack ? "visible" : "hidden" }}
+            >
+              <Text component="span" fz={24} lh={1}>
+                ←
+              </Text>
+            </ActionIcon>
+            <Anchor
+              component={Link}
+              to="/"
+              prefetch="intent"
+              underline="never"
+              c="inherit"
+              data-testid="flat-name"
+            >
+              <Title order={3}>{flat.name}</Title>
+            </Anchor>
+          </Group>
           <Group gap="sm">
             <VisuallyHidden data-testid="current-user">
               {user.displayName}
