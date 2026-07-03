@@ -127,13 +127,6 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
             // The OpenAI SDK refuses to construct without an API
             // key. The mock helper accepts any value.
             OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "test-openai-key",
-            // Turn the ingredient adapter off in E2E: the embedding
-            // mock emits deterministic one-hot vectors, and a real
-            // low-rank projection would destroy their orthogonality
-            // (distinct ingredients would false-merge). Adapter
-            // quality is covered by tests/ingredient-adapter.spec.ts
-            // and the offline cross-validation instead.
-            DEDUP_ADAPTER: "off",
             // `@netlify/blobs` reads this to route store ops to the
             // local BlobsServer above.
             NETLIFY_BLOBS_CONTEXT: blobsContext,

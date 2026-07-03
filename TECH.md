@@ -473,45 +473,6 @@ fixture and register an OpenAI route via
 per input string (identical/variant texts embed identically), so
 tests never hit the real API.
 
-#### Embedding adapter (optional)
-
-The general-purpose model puts German word-order / compound variants of
-the *same* ingredient too far apart — "Knoblauchzehen" vs "Zehen
-Knoblauch", "gehackte Tomaten" vs "Tomaten, gehackt" — so with the raw
-cosine they never cluster. OpenAI embedding models can't be fine-tuned,
-so we optionally apply a **learned linear adapter** `W` on top of the
-frozen vectors and cluster in the projected space: `z = W·x`, cosine on
-`z`. `W` (default rank 64 → full 1536 input) is trained offline on
-labeled ingredient pairs in `ml/ingredient-adapter/` (see its README) and
-committed as a JSON artifact. On the current ~125-pair dataset the linear
-map lifts pooled held-out AUC from 0.769 (no adapter) to 0.843, and pulls
-the motivating case "Knoblauchzehe" ⇔ "Zehe Knoblauch" from 0.805 to
-0.970 cosine. We deliberately ship **linear, not a nonlinear MLP**: an MLP
-(`--arch=mlp`) has ~200k params against 125 labels and overfits, scoring
-*below* the no-adapter baseline (0.58–0.66 AUC) in cross-validation. The
-MLP trainer + `adapter.ts` inference paths are retained for when the
-dataset grows, but the shipped artifact is linear.
-
-The adapter is applied in `clusterByEmbedding` (`app/lib/dedup.ts`)
-*after* the cache read, so `ingredient_embeddings` keeps storing raw
-OpenAI vectors and retraining `W` never invalidates the cache — the
-embedding request and cache key are unchanged (input stays 1536-dim, only
-the output is low-rank). Inference lives in `app/lib/adapter.ts`:
-`projectVector` is a plain matmul, and a defensive dim-mismatch no-op
-means a stale artifact from a different model can never break Finalise.
-
-Config: the artifact is baked into the bundle — `app/lib/adapter.ts`
-statically `import`s `app/lib/adapter/ingredient-adapter.json`, so the
-bundler traces it into the Netlify function and production needs **zero
-configuration**. The adapter is always on: dedup projects vectors through
-it, tags the model name `embedding:<model>+adapter`, and uses the
-artifact's `recommendedThreshold` as the default cutoff (still overridable
-by `DEDUP_SIMILARITY_THRESHOLD`). The only knob is the opt-*out*
-`DEDUP_ADAPTER=off` — a plain config env, not test-only code — which the
-deterministic-mock E2E specs set: the mock emits one-hot basis vectors, so
-an active adapter would give distinct ingredients non-zero cosine and
-falsely merge them. Prod leaves it on; the E2E tests turn it off.
-
 ---
 
 ## 7. The Finalise transaction
