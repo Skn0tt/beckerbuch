@@ -51,6 +51,7 @@ const ActionSchema = z.discriminatedUnion("intent", [
       .max(1000, "Portions must be between 1 and 1000."),
   }),
   z.object({ intent: z.literal("mark-cooked") }),
+  z.object({ intent: z.literal("back-to-draft") }),
   z.object({ intent: z.literal("delete") }),
   z.object({
     intent: z.literal("toggle-omit"),
@@ -225,6 +226,82 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { ok: true as const };
   }
 
+  if (parsed.data.intent === "back-to-draft") {
+    const flatId = ctx.flat.id;
+    // Preserve the one-draft-per-recipe invariant: refuse if an open
+    // draft instance already exists for this recipe.
+    const existingDraft = await db()
+      .select({ id: recipeInstances.id })
+      .from(recipeInstances)
+      .where(
+        and(
+          eq(recipeInstances.flatId, flatId),
+          eq(recipeInstances.recipeId, recipe.id),
+          isNull(recipeInstances.finalisedAt),
+        ),
+      )
+      .limit(1);
+    if (existingDraft.length > 0) {
+      return { error: "This recipe is already in your draft." };
+    }
+    // Clear finalised_at on the in-stock instance and append it to the end
+    // of the draft. Appending dodges the partial unique index on
+    // (flat_id, position) WHERE finalised_at IS NULL. Retry on a
+    // concurrent-collision (someone else drafting/demoting at once).
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const demoted = await db().transaction(async (tx) => {
+          const [stock] = await tx
+            .select({ id: recipeInstances.id })
+            .from(recipeInstances)
+            .where(
+              and(
+                eq(recipeInstances.flatId, flatId),
+                eq(recipeInstances.recipeId, recipe.id),
+                isNotNull(recipeInstances.finalisedAt),
+                isNull(recipeInstances.cookedAt),
+              ),
+            )
+            .orderBy(asc(recipeInstances.position))
+            .limit(1);
+          if (!stock) return false;
+          const [{ value: nextPos }] = await tx
+            .select({
+              value: sql<number>`coalesce(${max(recipeInstances.position)}, -1) + 1`,
+            })
+            .from(recipeInstances)
+            .where(
+              and(
+                eq(recipeInstances.flatId, flatId),
+                isNull(recipeInstances.finalisedAt),
+              ),
+            );
+          await tx
+            .update(recipeInstances)
+            .set({ finalisedAt: null, position: nextPos })
+            .where(
+              and(
+                eq(recipeInstances.id, stock.id),
+                eq(recipeInstances.flatId, flatId),
+                isNotNull(recipeInstances.finalisedAt),
+                isNull(recipeInstances.cookedAt),
+              ),
+            );
+          return true;
+        });
+        if (!demoted) {
+          return { error: "This recipe isn't in stock." };
+        }
+        return { ok: true as const };
+      } catch (err: unknown) {
+        const code = (err as { code?: string }).code;
+        if (code === "23505" && attempt < 2) continue; // unique_violation, retry
+        throw err;
+      }
+    }
+    return { error: "Couldn't move back to draft. Please try again." };
+  }
+
   if (parsed.data.intent === "toggle-omit") {
     const { ingredientId, omit } = parsed.data;
     // The ingredient must belong to this recipe.
@@ -389,6 +466,47 @@ function CookedButton({
   );
 }
 
+function BackToDraftButton({
+  recipeName,
+  csrfToken,
+}: {
+  recipeName: string;
+  csrfToken: string;
+}) {
+  const [opened, { open, close }] = useDisclosure(false);
+  return (
+    <>
+      <Button variant="outline" color="gray" onClick={open}>
+        ← Back to draft
+      </Button>
+      <Modal opened={opened} onClose={close} title="Move back to draft?" size="sm">
+        <Stack gap="sm">
+          <Text size="sm">
+            Move <strong>{recipeName}</strong> back to the draft? It leaves In
+            stock and becomes editable again, keeping its portions, cook, note
+            and omitted ingredients.
+          </Text>
+          <Group justify="flex-end" gap="sm">
+            <Button variant="default" onClick={close}>
+              Cancel
+            </Button>
+            <Form method="post" onSubmit={close}>
+              <CsrfField token={csrfToken} />
+              <input type="hidden" name="intent" value="back-to-draft" />
+              <Button
+                type="submit"
+                aria-label={`Confirm move ${recipeName} back to draft`}
+              >
+                ← Back to draft
+              </Button>
+            </Form>
+          </Group>
+        </Stack>
+      </Modal>
+    </>
+  );
+}
+
 function CartIcon({ size = 18 }: { size?: number }) {
   return (
     <svg
@@ -527,7 +645,10 @@ export default function RecipeView() {
 
       <Box>
         {stockInstance ? (
-          <CookedButton recipeName={recipe.name} csrfToken={csrfToken} />
+          <Group gap="sm">
+            <CookedButton recipeName={recipe.name} csrfToken={csrfToken} />
+            <BackToDraftButton recipeName={recipe.name} csrfToken={csrfToken} />
+          </Group>
         ) : draftInstance ? (
           <DraftControls
             recipeName={recipe.name}

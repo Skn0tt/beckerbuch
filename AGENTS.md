@@ -104,19 +104,34 @@ Prefer `show --annotate` over a freeform `ask_user` form for visual
 review: the user can point at things directly instead of describing
 them in prose.
 
-### 2. Never `git commit` without explicit user go-ahead
+### 2. Deliver screenshots as proof for UI changes
+
+Any change that affects the UI is not done until you show the user
+**screenshots as proof**. Don't just claim it works — prove it
+visually. Capture the before/after (or the new state) using the
+`playwright-cli` `--debug=cli` flow documented in rule 1 (real
+container, real tenant, real auth), and open each PNG with the `view`
+tool so it renders inline in your reply.
+
+Cover the states that matter for the change — e.g. a new button in its
+resting state, any modal/confirmation it opens, and the resulting state
+after the action. If a change is genuinely non-visual (pure
+server/schema/refactor with no rendered difference), say so explicitly
+instead of skipping silently.
+
+### 3. Never `git commit` without explicit user go-ahead
 
 Even for "obvious" changes. Summarise the diff, suggest a commit
 message, then wait for an explicit "commit" / "ship it" / "lgtm".
 
-### 3. Verify by running tests
+### 4. Verify by running tests
 
 A change isn't done until `npm test` is green. Type-check and lint
 are baseline, not verification. If you can't run tests for a
 genuine reason (e.g. Docker isn't running), say so explicitly
 rather than skipping.
 
-### 4. Commit trailer
+### 5. Commit trailer
 
 Every commit ends with:
 
