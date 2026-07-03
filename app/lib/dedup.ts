@@ -19,7 +19,6 @@ import type { DedupGroup } from "../db/schema";
 import { parseAmount } from "./amount";
 import { formatIngredient } from "./scale";
 import { clusterBySimilarity, embedTexts } from "./embeddings";
-import { getIngredientAdapter, projectVector } from "./adapter";
 
 export type DedupInputItem = {
   /** Stable id within this dedup call (we use ingredient row id). */
@@ -319,11 +318,6 @@ export function postProcess(
  * Embed every item text, cluster by cosine similarity, and return the
  * clusters as `{ merges }`. Singletons are omitted — postProcess fills
  * them in.
- *
- * When an adapter is configured ({@link getIngredientAdapter}) each raw
- * vector is projected through the learned matrix before clustering, so
- * similarity is measured in the fine-tuned space. Raw vectors stay in
- * the cache untouched.
  */
 async function clusterByEmbedding(
   input: DedupInput,
@@ -332,12 +326,7 @@ async function clusterByEmbedding(
 ): Promise<RawMerges> {
   const texts = input.items.map((it) => it.item);
   const byText = await embedTexts(model, texts);
-  const adapter = getIngredientAdapter();
-  const embeddings = input.items.map((it) => {
-    const vec = byText.get(it.item);
-    if (!vec) return undefined;
-    return adapter ? projectVector(vec, adapter) : vec;
-  });
+  const embeddings = input.items.map((it) => byText.get(it.item));
 
   const clusters = clusterBySimilarity(embeddings, threshold);
   const merges: { ids: string[] }[] = [];
@@ -362,20 +351,10 @@ export async function dedup(input: DedupInput): Promise<DedupResult> {
   }
 
   const model = process.env.DEDUP_EMBEDDING_MODEL ?? DEFAULT_EMBEDDING_MODEL;
-  // Threshold precedence: explicit env override wins; otherwise the
-  // adapter's own recommended cutoff (the projected space has a
-  // different similarity distribution than raw OpenAI); otherwise the
-  // raw-space default.
-  const adapter = getIngredientAdapter();
   const threshold = Number(
-    process.env.DEDUP_SIMILARITY_THRESHOLD ??
-      (adapter
-        ? adapter.recommendedThreshold
-        : DEFAULT_SIMILARITY_THRESHOLD),
+    process.env.DEDUP_SIMILARITY_THRESHOLD ?? DEFAULT_SIMILARITY_THRESHOLD,
   );
-  const backendName = adapter
-    ? `embedding:${model}+adapter`
-    : `embedding:${model}`;
+  const backendName = `embedding:${model}`;
 
   let raw: RawMerges;
   try {
