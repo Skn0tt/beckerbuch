@@ -10,7 +10,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requireFlatMember(request);
   const kitchen = await loadKitchen(ctx.flat.id);
   const csrfToken = csrfTokenForSession(ctx.session.id);
-  return { kitchen, csrfToken };
+  return { kitchen, flatId: ctx.flat.id, csrfToken };
 }
 
 export function shouldRevalidate({

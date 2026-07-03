@@ -13,7 +13,7 @@ import {
 } from "@mantine/core";
 import { useSyncExternalStore } from "react";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { data, useFetcher, useLocation, useNavigate } from "react-router";
+import { data, useLocation, useNavigate } from "react-router";
 import QRCode from "qrcode";
 import { z } from "zod";
 import type { Route } from "./+types/h.$flatId";
@@ -23,14 +23,14 @@ import {
   ingredients,
   recipeInstances,
   recipes,
-  type DedupGroup,
 } from "../db/schema";
 import { formatIngredient } from "../lib/scale";
 import {
   buildDedupInputFromData,
   snapshotDedupForFlat,
 } from "../lib/dedup-snapshot";
-import { hashInput } from "../lib/dedup";
+import { computeCombinedList } from "../lib/combined-list";
+import { CombinedList } from "../components/combined-list";
 import { firstMessage, formDataToObject, parseParams } from "../lib/form";
 
 const ParamsSchema = z.object({ flatId: z.guid() });
@@ -119,7 +119,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   for (const r of rows)
     for (const id of r.omittedIngredientIds) omittedIngredientIds.add(id);
   const currentInput = buildDedupInputFromData(rows, allIngs, omittedIngredientIds);
-  const currentHash = await hashInput(currentInput);
   const ingsByRecipe = new Map<string, typeof allIngs>();
   for (const ing of allIngs) {
     const list = ingsByRecipe.get(ing.recipeId) ?? [];
@@ -144,50 +143,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // If the saved snapshot is missing or stale (recipes/ingredients
   // changed since Finalise), we still render an unmerged combined list
   // but mark it as stale so the user can regenerate.
-  const snapshotFresh =
-    flat.dedupGroups !== null &&
-    flat.dedupInputHash !== null &&
-    flat.dedupInputHash === currentHash;
-
-  const rejectedIds = new Set(flat.dedupRejectedGroupIds ?? []);
-  // What we actually render: the snapshot groups if fresh, otherwise
-  // an all-singletons fallback derived from the current input.
-  const combinedGroups: DedupGroup[] = snapshotFresh
-    ? (flat.dedupGroups ?? [])
-    : currentInput.items.map((it) => ({
-        id: it.id,
-        item: it.item,
-        unit: it.unit,
-        amount: it.amount,
-        displayText: formatIngredient(
-          { amount: it.amount, unit: it.unit, item: it.item },
-          1,
-        ),
-        sources: [
-          {
-            id: it.id,
-            displayText: formatIngredient(
-              { amount: it.amount, unit: it.unit, item: it.item },
-              1,
-            ),
-            recipeName: it.recipeName,
-          },
-        ],
-      }));
-
-  // Sort joint (merged) groups to the top so the user sees the
-  // dedup wins first. Stable: groups with the same merged-ness keep
-  // their original order.
-  combinedGroups.sort((a, b) => {
-    const aMerged = a.sources.length > 1 ? 1 : 0;
-    const bMerged = b.sources.length > 1 ? 1 : 0;
-    return bMerged - aMerged;
-  });
+  const { combinedGroups, snapshotFresh, rejectedIds } =
+    await computeCombinedList(flat, currentInput);
+  const rejectedSet = new Set(rejectedIds);
 
   // The exact lines that go into the JSON-LD recipeIngredient. Rejected
   // groups expand back to their source lines.
   const allIngredients: string[] = combinedGroups.flatMap((g) =>
-    rejectedIds.has(g.id)
+    rejectedSet.has(g.id)
       ? g.sources.map((s) => s.displayText)
       : [g.displayText],
   );
@@ -197,7 +160,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     groups,
     allIngredients,
     combinedGroups,
-    rejectedIds: [...rejectedIds],
+    rejectedIds,
     snapshotFresh,
     handoffUrl,
     qrSvg,
@@ -253,8 +216,6 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
     handoffUrl,
     qrSvg,
   } = loaderData;
-  const rejectedSet = new Set(rejectedIds);
-  const fetcher = useFetcher();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -389,94 +350,13 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
             </Box>
 
             {/* Combined deduped list (issue #7). */}
-            <Stack gap="xs" data-testid="combined-list">
-              <Group justify="space-between" align="center">
-                <Title order={2} size="h4">
-                  Combined list
-                </Title>
-                {!snapshotFresh && (
-                  <fetcher.Form method="post">
-                    <input type="hidden" name="intent" value="regenerate" />
-                    <Button
-                      type="submit"
-                      size="xs"
-                      variant="light"
-                      color="yellow"
-                      loading={fetcher.state !== "idle"}
-                    >
-                      Regenerate
-                    </Button>
-                  </fetcher.Form>
-                )}
-              </Group>
-              {!snapshotFresh && (
-                <Text size="xs" c="dimmed">
-                  Shopping list changed since finalise — showing all
-                  ingredients unmerged.
-                </Text>
-              )}
-              <Stack gap={4}>
-                {combinedGroups.map((g) => {
-                  const isMerged = g.sources.length > 1;
-                  const isRejected = rejectedSet.has(g.id);
-                  return (
-                    <Card
-                      key={g.id}
-                      withBorder
-                      padding="xs"
-                      data-testid="combined-row"
-                      data-merged={isMerged ? "true" : "false"}
-                      data-rejected={isRejected ? "true" : "false"}
-                    >
-                      <Group justify="space-between" align="flex-start" wrap="nowrap">
-                        <Stack gap={2} style={{ flex: 1 }}>
-                          {isMerged && !isRejected && (
-                            <Text size="sm" fw={500}>
-                              {g.displayText}
-                            </Text>
-                          )}
-                          {!isMerged && (
-                            <Text size="sm">{g.displayText}</Text>
-                          )}
-                          {isMerged &&
-                            g.sources.map((s) => (
-                              <Text key={s.id} size="xs" c="dimmed">
-                                {isRejected ? "" : "· "}
-                                {s.displayText}{" "}
-                                <Text span size="xs" c="dimmed">
-                                  — {s.recipeName}
-                                </Text>
-                              </Text>
-                            ))}
-                        </Stack>
-                        {isMerged && (
-                          <fetcher.Form method="post">
-                            <input
-                              type="hidden"
-                              name="intent"
-                              value={isRejected ? "unsplit" : "split"}
-                            />
-                            <input type="hidden" name="groupId" value={g.id} />
-                            <Button
-                              type="submit"
-                              size="xs"
-                              variant="subtle"
-                              aria-label={
-                                isRejected
-                                  ? `Undo split for ${g.item}`
-                                  : `Split ${g.item}`
-                              }
-                            >
-                              {isRejected ? "Undo split" : "Split"}
-                            </Button>
-                          </fetcher.Form>
-                        )}
-                      </Group>
-                    </Card>
-                  );
-                })}
-              </Stack>
-            </Stack>
+            <CombinedList
+              title="Combined list"
+              interactive
+              combinedGroups={combinedGroups}
+              rejectedIds={rejectedIds}
+              snapshotFresh={snapshotFresh}
+            />
 
             <Stack gap="xs">
               <Title order={2} size="h4">

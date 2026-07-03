@@ -4,8 +4,10 @@ import {
   Avatar,
   Button,
   Card,
+  Center,
   Group,
   List,
+  Loader,
   Modal,
   Popover,
   Stack,
@@ -15,7 +17,12 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Form, Link, useFetcher, useNavigation } from "react-router";
 import {
   DndContext,
@@ -38,7 +45,8 @@ import { CSS } from "@dnd-kit/utilities";
 import { csrfFieldName } from "../auth/csrf-shared";
 import { CsrfField } from "../auth/csrf-field";
 import { UserAvatar } from "./user-avatar";
-import { formatIngredient } from "../lib/scale";
+import { CombinedList } from "./combined-list";
+import type { loader as combinedLoader } from "../routes/kitchen.combined";
 import type { KitchenEntry, KitchenMember } from "../lib/kitchen-data";
 
 type Lane = "draft" | "stock";
@@ -866,54 +874,6 @@ export function SortableLane({
 }
 
 /**
- * Flat list of all ingredients tied up in in-stock (finalised, not yet
- * cooked) recipe entries, sorted alphabetically by item name.
- * Each row shows the scaled ingredient text and the recipe it belongs to.
- */
-export function PlannedIngredients({ stock }: { stock: KitchenEntry[] }) {
-  type Row = { text: string; recipeName: string; key: string };
-  const rows: Row[] = [];
-  for (const entry of stock) {
-    const factor =
-      entry.baseQuantity > 0 ? entry.targetQuantity / entry.baseQuantity : 1;
-    for (const ing of entry.ingredients) {
-      const text = formatIngredient(ing, factor);
-      rows.push({
-        text,
-        recipeName: entry.recipeName,
-        key: `${entry.id}-${ing.position}`,
-      });
-    }
-  }
-  rows.sort((a, b) => a.text.localeCompare(b.text));
-
-  if (rows.length === 0) {
-    return (
-      <Text size="sm" c="dimmed">
-        No planned ingredients — finalise the draft to start cooking.
-      </Text>
-    );
-  }
-
-  return (
-    <List size="sm" spacing={4}>
-      {rows.map((row) => (
-        <List.Item key={row.key}>
-          <Group gap="xs" wrap="nowrap">
-            <Text span style={{ minWidth: 0, flex: 1 }}>
-              {row.text}
-            </Text>
-            <Text span size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
-              {row.recipeName}
-            </Text>
-          </Group>
-        </List.Item>
-      ))}
-    </List>
-  );
-}
-
-/**
  * Compact Draft + In-stock + Finalise tree. Rendered as the right
  * sidebar on the desktop home page; the /kitchen route uses the
  * individual cards directly with its own lane switcher.
@@ -936,6 +896,15 @@ export function KitchenSidebar({
 }) {
   const [ingredientsOpen, { open: openIngredients, close: closeIngredients }] =
     useDisclosure(false);
+
+  // The combined list is fetched on demand (never prefetched) so viewing it can
+  // lazily re-run the LLM dedup when stale. See routes/kitchen.combined.ts.
+  const combinedFetcher = useFetcher<typeof combinedLoader>();
+  const combined = combinedFetcher.data;
+  const openIngredientsModal = () => {
+    openIngredients();
+    combinedFetcher.load("/kitchen/combined");
+  };
 
   // Layout intent: the sidebar as a whole scrolls when content overflows
   // the viewport. The two lanes flow naturally one after the other rather
@@ -988,7 +957,7 @@ export function KitchenSidebar({
           <Button
             variant="subtle"
             size="xs"
-            onClick={openIngredients}
+            onClick={openIngredientsModal}
           >
             Ingredients
           </Button>
@@ -1013,7 +982,24 @@ export function KitchenSidebar({
         onClose={closeIngredients}
         title="Planned ingredients"
       >
-        <PlannedIngredients stock={stock} />
+        {combined === undefined ? (
+          <Center py="xl">
+            <Loader aria-label="Computing planned ingredients" />
+          </Center>
+        ) : (
+          <CombinedList
+            combinedGroups={combined.combinedGroups}
+            rejectedIds={combined.rejectedIds}
+            snapshotFresh={combined.snapshotFresh}
+            showSingletonSource
+            emptyState={
+              <Text size="sm" c="dimmed">
+                No planned ingredients — finalise the draft to start
+                cooking.
+              </Text>
+            }
+          />
+        )}
       </Modal>
     </Stack>
   );

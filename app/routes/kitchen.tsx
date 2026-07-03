@@ -1,15 +1,18 @@
 import {
   Anchor,
+  Center,
   Container,
+  Loader,
   SegmentedControl,
   Stack,
   Text,
-  Title,
 } from "@mantine/core";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { Link, redirect, useNavigate } from "react-router";
+import { useEffect } from "react";
+import { Link, redirect, useFetcher, useNavigate } from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/kitchen";
+import type { loader as combinedLoader } from "./kitchen.combined";
 import { db } from "../db/client";
 import { recipeInstances, flatMembers } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
@@ -19,9 +22,9 @@ import { loadKitchen } from "../lib/kitchen-data";
 import { snapshotDedupForFlat } from "../lib/dedup-snapshot";
 import {
   FinaliseButton,
-  PlannedIngredients,
   SortableLane,
 } from "../components/kitchen-sidebar";
+import { CombinedList } from "../components/combined-list";
 import { firstMessage, formDataToObject } from "../lib/form";
 
 const uuid = z.guid("Invalid instance.");
@@ -89,6 +92,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const data = await loadKitchen(ctx.flat.id);
   return {
     lane,
+    flatId: ctx.flat.id,
     draft: data.draft,
     stock: data.stock,
     members: data.members,
@@ -434,12 +438,47 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
             />
           )
         ) : (
-          <Stack gap="xs">
-            <Title order={4}>Planned ingredients</Title>
-            <PlannedIngredients stock={stock} />
-          </Stack>
+          <IngredientsLane />
         )}
       </Stack>
     </Container>
+  );
+}
+
+/**
+ * Mobile "Ingredients" tab body. Fetches the combined list on demand from the
+ * dedicated resource route (never prefetched) so viewing it can lazily re-run
+ * the LLM dedup when the snapshot is stale. Shows a spinner until it resolves.
+ */
+function IngredientsLane() {
+  const fetcher = useFetcher<typeof combinedLoader>();
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data === undefined) {
+      fetcher.load("/kitchen/combined");
+    }
+  }, [fetcher]);
+
+  const combined = fetcher.data;
+  if (combined === undefined) {
+    return (
+      <Center py="xl">
+        <Loader aria-label="Computing planned ingredients" />
+      </Center>
+    );
+  }
+  return (
+    <CombinedList
+      title="Planned ingredients"
+      combinedGroups={combined.combinedGroups}
+      rejectedIds={combined.rejectedIds}
+      snapshotFresh={combined.snapshotFresh}
+      showSingletonSource
+      emptyState={
+        <Text c="dimmed">
+          No planned ingredients — finalise the draft to start
+          cooking.
+        </Text>
+      }
+    />
   );
 }

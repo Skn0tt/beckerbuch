@@ -9,6 +9,7 @@ export default [
     route("logout", "routes/logout.tsx"),
     route("flat/settings", "routes/flat.settings.tsx"),
     route("kitchen", "routes/kitchen.tsx"),
+    route("kitchen/combined", "routes/kitchen.combined.ts"),
     route("recipes/new", "routes/recipes.new.tsx"),
     route("recipes/import", "routes/recipes.import.ts"),
     route("recipes/:id/edit", "routes/recipes.$id.edit.tsx"),
