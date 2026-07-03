@@ -33,8 +33,15 @@ const addRecipeInput = {
   ingredients: z
     .array(ingredientSchema)
     .min(1)
-    .describe("Ingredient lines, in order"),
-  steps: z.string().default("").describe("Free-text cooking steps"),
+    .describe(
+      "Ingredient lines, in order. Do not list kitchen staples like salt, pepper, sugar, or oil here — assume the cook already has them. Mention their amounts inline in the steps instead.",
+    ),
+  steps: z
+    .string()
+    .default("")
+    .describe(
+      "Free-text cooking steps. Give the amounts of kitchen staples (salt, pepper, sugar, oil) inline here rather than listing them as ingredients.",
+    ),
   sourceUrl: z.string().url().optional().describe("Where the recipe came from"),
   photoUrl: z
     .string()
@@ -83,11 +90,15 @@ const editRecipeInput = {
     .array(ingredientSchema)
     .min(1)
     .optional()
-    .describe("Replace the full ingredient list"),
+    .describe(
+      "Replace the full ingredient list. Do not list kitchen staples like salt, pepper, sugar, or oil here — assume the cook already has them. Mention their amounts inline in the steps instead.",
+    ),
   steps: z
     .string()
     .optional()
-    .describe("Replace the steps text; use an empty string to clear it"),
+    .describe(
+      "Replace the steps text; use an empty string to clear it. Give the amounts of kitchen staples (salt, pepper, sugar, oil) inline here rather than listing them as ingredients.",
+    ),
   sourceUrl: z
     .string()
     .url()
