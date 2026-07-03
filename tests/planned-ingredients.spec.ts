@@ -153,3 +153,36 @@ test("ingredients tab: re-merges over what's still to cook after a recipe is coo
   await expect(merged.getByText(/Tomato soup/)).toBeVisible();
   await expect(merged.getByText(/Bruschetta/)).toHaveCount(0);
 });
+
+test("ingredients tab: shows recipes from every in-stock finalise batch, not just the latest", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+
+  // Batch A: finalise a first recipe. It stays in stock (uncooked).
+  await createRecipeWithIngredient(page, "Pasta al limone", "400", "g", "spaghetti");
+  await page.goto("/kitchen");
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(`/h/${flat.id}`);
+
+  // Batch B: finalise a second recipe in a new draft while batch A is still
+  // uncooked. This creates two coexisting finalise batches — the case that
+  // used to make the ingredients tab go empty (it filtered to the latest
+  // finalise batch via MAX(finalised_at), hiding batch A entirely).
+  await createRecipeWithIngredient(page, "Risotto", "200", "g", "rice");
+  await page.goto("/kitchen");
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(`/h/${flat.id}`);
+
+  await page.goto("/kitchen?lane=ingredients");
+
+  // Both batches are in stock, so both ingredients must be listed — the newer
+  // batch B must not hide the older-but-still-uncooked batch A.
+  await expect(page.getByText("400 g spaghetti")).toBeVisible();
+  await expect(page.getByText("Pasta al limone")).toBeVisible();
+  await expect(page.getByText("200 g rice")).toBeVisible();
+  await expect(page.getByText("Risotto")).toBeVisible();
+});

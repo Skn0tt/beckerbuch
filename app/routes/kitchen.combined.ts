@@ -7,15 +7,14 @@ import { loadCombinedList, type CombinedList } from "../lib/combined-list";
  *
  * Both kitchen surfaces (the mobile `/kitchen?lane=ingredients` tab and the
  * desktop sidebar modal) fetch this via `useFetcher().load("/kitchen/combined")`
- * when the list is actually viewed. Fetchers are never prefetched on hover and
- * this route isn't part of any page's loader chain, so viewing the list is the
- * one deliberate place we let a READ lazily trigger the LLM dedup re-merge
- * (`recomputeIfStale`). That keeps the view merged over what's still to cook
- * without a stray hover or an unrelated layout revalidation firing the LLM.
+ * when the list is actually viewed. It reports everything currently in stock
+ * (finalised, not yet cooked) across all finalise batches — the same lane as
+ * the kitchen stock list — deduped on the fly by embedding similarity. It's a
+ * read-only view, so it holds no snapshot and performs no writes.
  */
 export async function loader({
   request,
 }: Route.LoaderArgs): Promise<CombinedList> {
   const ctx = await requireFlatMember(request);
-  return loadCombinedList(ctx.flat.id, { recomputeIfStale: true });
+  return loadCombinedList(ctx.flat.id);
 }
