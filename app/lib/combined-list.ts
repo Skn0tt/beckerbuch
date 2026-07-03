@@ -20,7 +20,7 @@ import {
 } from "../db/schema";
 import { formatIngredient } from "./scale";
 import { hashInput, type DedupInput } from "./dedup";
-import { buildDedupInputFromData } from "./dedup-snapshot";
+import { buildDedupInputFromData, snapshotDedupForFlat } from "./dedup-snapshot";
 
 export type CombinedList = {
   combinedGroups: DedupGroup[];
@@ -89,23 +89,34 @@ export async function computeCombinedList(
  * combines them. Used by callers that don't already have the in-stock rows
  * loaded with ingredient row ids (the kitchen views).
  *
- * This is a read-only snapshot read — it never triggers the LLM dedup. When
- * the snapshot is stale (the shopping list changed since finalise) the result
- * is flagged `snapshotFresh: false` and rendered as an all-singletons
- * fallback; re-merging happens at the next Finalise / handoff Regenerate.
+ * By default this is a read-only snapshot read — it never triggers the LLM
+ * dedup. When the snapshot is stale (the shopping list changed since finalise)
+ * the result is flagged `snapshotFresh: false` and rendered as an
+ * all-singletons fallback.
+ *
+ * Pass `{ recomputeIfStale: true }` to let a stale read lazily re-run the LLM
+ * dedup, persist the fresh snapshot, and return the merged result. This writes,
+ * so it must only be invoked from the on-demand resource route
+ * (`/kitchen/combined`), which is fetched via `useFetcher().load()` when a
+ * kitchen surface is actually viewed and is therefore never prefetched on hover
+ * nor tied to unrelated layout revalidation.
  */
 export async function loadCombinedList(
   flatId: string,
+  opts?: { recomputeIfStale?: boolean },
 ): Promise<CombinedList> {
-  const [flat] = await db()
-    .select({
-      dedupGroups: flats.dedupGroups,
-      dedupInputHash: flats.dedupInputHash,
-      dedupRejectedGroupIds: flats.dedupRejectedGroupIds,
-    })
-    .from(flats)
-    .where(eq(flats.id, flatId))
-    .limit(1);
+  const readFlat = () =>
+    db()
+      .select({
+        dedupGroups: flats.dedupGroups,
+        dedupInputHash: flats.dedupInputHash,
+        dedupRejectedGroupIds: flats.dedupRejectedGroupIds,
+      })
+      .from(flats)
+      .where(eq(flats.id, flatId))
+      .limit(1);
+
+  const [flat] = await readFlat();
 
   if (!flat) {
     return { combinedGroups: [], snapshotFresh: false, rejectedIds: [] };
@@ -147,5 +158,28 @@ export async function loadCombinedList(
           .orderBy(asc(ingredients.position));
 
   const currentInput = buildDedupInputFromData(rows, allIngs);
-  return computeCombinedList(flat, currentInput);
+  let result = await computeCombinedList(flat, currentInput);
+
+  // Lazy on-read re-merge. When a kitchen surface actually views the list and
+  // the snapshot is stale (e.g. a recipe was cooked, shrinking the in-stock
+  // set), run the LLM dedup once, persist it, and recombine so the view is
+  // merged over what's still to cook. Best-effort: on any failure we keep the
+  // all-singletons fallback rather than blocking the read.
+  if (
+    opts?.recomputeIfStale &&
+    !result.snapshotFresh &&
+    currentInput.items.length > 0
+  ) {
+    try {
+      await snapshotDedupForFlat(flatId);
+      const [refreshed] = await readFlat();
+      if (refreshed) {
+        result = await computeCombinedList(refreshed, currentInput);
+      }
+    } catch (err) {
+      console.warn("[combined-list] recompute-on-read failed:", err);
+    }
+  }
+
+  return result;
 }

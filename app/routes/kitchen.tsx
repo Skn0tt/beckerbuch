@@ -8,17 +8,17 @@ import {
   Text,
 } from "@mantine/core";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { Suspense } from "react";
-import { Await, Link, redirect, useNavigate } from "react-router";
+import { useEffect } from "react";
+import { Link, redirect, useFetcher, useNavigate } from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/kitchen";
+import type { loader as combinedLoader } from "./kitchen.combined";
 import { db } from "../db/client";
 import { recipeInstances, flatMembers } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
 import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { isSameOrigin } from "../auth/origin";
 import { loadKitchen } from "../lib/kitchen-data";
-import { loadCombinedList } from "../lib/combined-list";
 import { snapshotDedupForFlat } from "../lib/dedup-snapshot";
 import {
   FinaliseButton,
@@ -90,18 +90,12 @@ export async function loader({ request }: Route.LoaderArgs) {
         : "draft";
 
   const data = await loadKitchen(ctx.flat.id);
-  // Deferred: the ingredients tab shows a spinner while the combined list
-  // loads. It's a read-only snapshot read (no LLM), so this is fast when the
-  // snapshot is fresh; deferring keeps navigation unblocked regardless.
-  const combined =
-    lane === "ingredients" ? loadCombinedList(ctx.flat.id) : null;
   return {
     lane,
     flatId: ctx.flat.id,
     draft: data.draft,
     stock: data.stock,
     members: data.members,
-    combined,
     csrfToken: csrfTokenForSession(ctx.session.id),
   };
 }
@@ -301,15 +295,6 @@ export async function action({ request }: Route.ActionArgs) {
     if (updated.length === 0) {
       return { error: "Already cooked or not in stock." };
     }
-    // Cooking removes a recipe from the in-stock set, changing the combined
-    // shopping list. Refresh the dedup snapshot (best-effort, same as
-    // finalise) so the read-only "Planned ingredients" view stays merged over
-    // what's still to cook.
-    try {
-      await snapshotDedupForFlat(ctx.flat.id);
-    } catch (err) {
-      console.warn("[mark-cooked] dedup snapshot failed:", err);
-    }
     return { ok: true };
   }
 
@@ -377,8 +362,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Kitchen({ loaderData }: Route.ComponentProps) {
-  const { lane, draft, stock, csrfToken, members, combined } =
-    loaderData;
+  const { lane, draft, stock, csrfToken, members } = loaderData;
   const navigate = useNavigate();
   return (
     <Container size="sm" py="md">
@@ -454,33 +438,47 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
             />
           )
         ) : (
-          <Suspense
-            fallback={
-              <Center py="xl">
-                <Loader aria-label="Computing planned ingredients" />
-              </Center>
-            }
-          >
-            <Await resolve={combined}>
-              {(c) => (
-                <CombinedList
-                  title="Planned ingredients"
-                  combinedGroups={c?.combinedGroups ?? []}
-                  rejectedIds={c?.rejectedIds ?? []}
-                  snapshotFresh={c?.snapshotFresh ?? true}
-                  showSingletonSource
-                  emptyState={
-                    <Text c="dimmed">
-                      No planned ingredients — finalise the draft to start
-                      cooking.
-                    </Text>
-                  }
-                />
-              )}
-            </Await>
-          </Suspense>
+          <IngredientsLane />
         )}
       </Stack>
     </Container>
+  );
+}
+
+/**
+ * Mobile "Ingredients" tab body. Fetches the combined list on demand from the
+ * dedicated resource route (never prefetched) so viewing it can lazily re-run
+ * the LLM dedup when the snapshot is stale. Shows a spinner until it resolves.
+ */
+function IngredientsLane() {
+  const fetcher = useFetcher<typeof combinedLoader>();
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data === undefined) {
+      fetcher.load("/kitchen/combined");
+    }
+  }, [fetcher]);
+
+  const combined = fetcher.data;
+  if (combined === undefined) {
+    return (
+      <Center py="xl">
+        <Loader aria-label="Computing planned ingredients" />
+      </Center>
+    );
+  }
+  return (
+    <CombinedList
+      title="Planned ingredients"
+      combinedGroups={combined.combinedGroups}
+      rejectedIds={combined.rejectedIds}
+      snapshotFresh={combined.snapshotFresh}
+      showSingletonSource
+      emptyState={
+        <Text c="dimmed">
+          No planned ingredients — finalise the draft to start
+          cooking.
+        </Text>
+      }
+    />
   );
 }

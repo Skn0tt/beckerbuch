@@ -35,7 +35,6 @@ import { csrfFieldName } from "../auth/csrf-shared";
 import { isSameOrigin } from "../auth/origin";
 import { deletePhoto } from "../blobs";
 import { formatIngredient } from "../lib/scale";
-import { snapshotDedupForFlat } from "../lib/dedup-snapshot";
 import { firstMessage, formDataToObject, parseParams } from "../lib/form";
 import { RecipeSteps } from "../components/recipe-steps";
 
@@ -216,15 +215,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       .returning({ id: recipeInstances.id });
     if (updated.length === 0) {
       return { error: "Already cooked or not in stock." };
-    }
-    // Cooking removes a recipe from the in-stock set, changing the combined
-    // shopping list. Refresh the dedup snapshot (best-effort, same as
-    // finalise) so the read-only "Planned ingredients" view stays merged over
-    // what's still to cook.
-    try {
-      await snapshotDedupForFlat(ctx.flat.id);
-    } catch (err) {
-      console.warn("[mark-cooked] dedup snapshot failed:", err);
     }
     return { ok: true as const };
   }

@@ -18,13 +18,12 @@ import {
 } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 import {
-  Suspense,
   useEffect,
   useRef,
   useState,
   type ReactNode,
 } from "react";
-import { Await, Form, Link, useFetcher, useNavigation } from "react-router";
+import { Form, Link, useFetcher, useNavigation } from "react-router";
 import {
   DndContext,
   PointerSensor,
@@ -47,7 +46,7 @@ import { csrfFieldName } from "../auth/csrf-shared";
 import { CsrfField } from "../auth/csrf-field";
 import { UserAvatar } from "./user-avatar";
 import { CombinedList } from "./combined-list";
-import type { CombinedList as CombinedListData } from "../lib/combined-list";
+import type { loader as combinedLoader } from "../routes/kitchen.combined";
 import type { KitchenEntry, KitchenMember } from "../lib/kitchen-data";
 
 type Lane = "draft" | "stock";
@@ -861,19 +860,26 @@ export function KitchenSidebar({
   draft,
   stock,
   members,
-  combined,
   csrfToken,
   formAction = "/kitchen",
 }: {
   draft: KitchenEntry[];
   stock: KitchenEntry[];
   members: KitchenMember[];
-  combined: Promise<CombinedListData>;
   csrfToken: string;
   formAction?: string;
 }) {
   const [ingredientsOpen, { open: openIngredients, close: closeIngredients }] =
     useDisclosure(false);
+
+  // The combined list is fetched on demand (never prefetched) so viewing it can
+  // lazily re-run the LLM dedup when stale. See routes/kitchen.combined.ts.
+  const combinedFetcher = useFetcher<typeof combinedLoader>();
+  const combined = combinedFetcher.data;
+  const openIngredientsModal = () => {
+    openIngredients();
+    combinedFetcher.load("/kitchen/combined");
+  };
 
   // Layout intent: the sidebar as a whole scrolls when content overflows
   // the viewport. The two lanes flow naturally one after the other rather
@@ -926,7 +932,7 @@ export function KitchenSidebar({
           <Button
             variant="subtle"
             size="xs"
-            onClick={openIngredients}
+            onClick={openIngredientsModal}
           >
             Ingredients
           </Button>
@@ -951,30 +957,24 @@ export function KitchenSidebar({
         onClose={closeIngredients}
         title="Planned ingredients"
       >
-        <Suspense
-          fallback={
-            <Center py="xl">
-              <Loader aria-label="Computing planned ingredients" />
-            </Center>
-          }
-        >
-          <Await resolve={combined}>
-            {(c) => (
-              <CombinedList
-                combinedGroups={c.combinedGroups}
-                rejectedIds={c.rejectedIds}
-                snapshotFresh={c.snapshotFresh}
-                showSingletonSource
-                emptyState={
-                  <Text size="sm" c="dimmed">
-                    No planned ingredients — finalise the draft to start
-                    cooking.
-                  </Text>
-                }
-              />
-            )}
-          </Await>
-        </Suspense>
+        {combined === undefined ? (
+          <Center py="xl">
+            <Loader aria-label="Computing planned ingredients" />
+          </Center>
+        ) : (
+          <CombinedList
+            combinedGroups={combined.combinedGroups}
+            rejectedIds={combined.rejectedIds}
+            snapshotFresh={combined.snapshotFresh}
+            showSingletonSource
+            emptyState={
+              <Text size="sm" c="dimmed">
+                No planned ingredients — finalise the draft to start
+                cooking.
+              </Text>
+            }
+          />
+        )}
       </Modal>
     </Stack>
   );
