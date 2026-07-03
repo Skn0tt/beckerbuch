@@ -17,7 +17,7 @@
 | Framework            | **React Router v7** (Remix successor), TypeScript, SSR                 |
 | Hosting              | **Netlify** (`@netlify/vite-plugin-react-router`)                      |
 | Styling / components | **Mantine** (component library + hooks: `@mantine/core`, `@mantine/form`, `@mantine/notifications`, `@mantine/dropzone`); drag-and-drop via `@hello-pangea/dnd` |
-| Database             | **Neon Postgres** (Netlify DB) in production; **Testcontainers** (`postgres:16`) in tests. Pinned to Postgres 16. |
+| Database             | **Neon Postgres** (Netlify DB) in production; **Testcontainers** (`pgvector/pgvector:pg16`) in tests. Pinned to Postgres 16. |
 | ORM / migrations     | **Drizzle ORM** + `drizzle-kit`                                        |
 | DB driver            | **`pg`** (standard node-postgres). *Not* `@neondatabase/serverless`    |
 | Auth                 | Hand-rolled: argon2id passwords, signed cookie sessions, invite tokens |
@@ -400,7 +400,7 @@ The URL is stable for the life of the flat — bookmarkable on the
 phone as "our shopping list lives here". It always shows whatever
 is currently in-stock; there is no per-finalise URL.
 
-### 6.3 Combined shopping list (LLM dedup)
+### 6.3 Combined shopping list (embedding dedup)
 
 Snapshot lifecycle:
 
@@ -409,19 +409,39 @@ Snapshot lifecycle:
    we build a structured input of every in-stock ingredient
    (`{id, amount, unit, item, recipe}`, scaled to the target
    quantity) and call the dedup backend.
-2. The model returns only groupings:
-   `{ merges: [{ ids: ["i1", "i2"] }, …] }`. No amounts, no units,
-   no display text — the server owns all of that. Anything the
-   model doesn't list stays as a singleton.
+2. The backend **embeds** each ingredient's `item` text (via the
+   OpenAI embeddings endpoint) and clusters the items by cosine
+   similarity: a single-linkage / union-find pass over the items,
+   grouping any pair at or above `DEDUP_SIMILARITY_THRESHOLD` into a
+   connected component. Only groupings come out —
+   `{ merges: [{ ids: ["i1", "i2"] }, …] }` — no amounts, no units,
+   no display text. Anything not clustered with anything else stays a
+   singleton.
 3. The server post-processes: drops unit-incompatible suggestions
    (mass / volume / tsp_tbsp / unknown-unit families never cross),
    sums amounts in a canonical base unit, picks the display item
    name deterministically (most-frequent → shortest), and composes
    `displayText` via the existing `formatIngredient` helper. The
    resulting `DedupGroup[]` is persisted on the `flats` row along
-   with the input hash, generation time, and model name.
-4. If the LLM call or validation fails, we write a no-merge
+   with the input hash, generation time, and model name
+   (`embedding:<model>`).
+4. If the embeddings call or validation fails, we write a no-merge
    snapshot — Finalise never fails because the model is down.
+
+Embeddings are cached in the `ingredient_embeddings` table, keyed by
+`(model, text)` where `text` is a normalized form of the item string
+(Unicode NFC, whitespace collapsed, lowercased). Normalizing the cache
+key means case/whitespace variants ("Rote Linsen" / "rote Linsen") share
+one vector and always cluster, independent of the threshold — and it can
+only ever merge trivially-different texts, never distinct ingredients.
+Each finalise reads the cache first and only requests vectors for the
+misses (batched, chunked ≤512/call), then `insert … on conflict do
+nothing`. The cache is shared across recipes and flats, so repeat
+ingredients and regenerates avoid re-paying. The `embedding` column is a
+native pgvector `vector` with **no fixed dimension**, so switching
+`DEDUP_EMBEDDING_MODEL` (which changes the vector length) needs no
+migration — clustering is done in JS, so no ANN index (which would
+require a fixed dimension) is needed.
 
 The handoff loader reads the snapshot. If the current in-stock
 input hash diverges from the stored one (recipes edited after
@@ -434,15 +454,24 @@ Writes (`split`, `unsplit`, `regenerate`) are public and keyed on
 the flat UUID, consistent with the rest of the handoff page's
 trust model.
 
-Backend selection: `DEDUP_MODEL` overrides the model name passed to
-the OpenAI SDK (default `gpt-5-mini`, via the Netlify AI Gateway —
-no key configured in code, Netlify injects `OPENAI_API_KEY` /
-`OPENAI_BASE_URL`). During `npm test` each Playwright worker runs a
-bespoke HTTPS-MITM forward proxy (`tests/proxy/`); specs that exercise
-dedup opt in to the `mocks` fixture and register an OpenAI route via
-`mocks.route("https://api.openai.com/v1/chat/completions", openAiDedupHandler())`
-(from `tests/mock-handlers.ts`), which returns a deterministic merge
-plan, so tests never hit a real LLM.
+Config: `DEDUP_EMBEDDING_MODEL` overrides the embedding model
+(default `text-embedding-3-small`) and `DEDUP_SIMILARITY_THRESHOLD`
+tunes the cosine cutoff (default `0.82`). Unlike the chat models,
+embeddings are **pinned directly to OpenAI** — the client is
+constructed with `baseURL` = `EMBEDDING_OPENAI_BASE_URL` (default
+`https://api.openai.com/v1`) and `apiKey` =
+`EMBEDDING_OPENAI_API_KEY`. This is deliberate: in prod Netlify injects
+`OPENAI_BASE_URL` pointing at the Netlify AI Gateway, which serves
+*chat* models only — routing `text-embedding-*` there returns
+`400 unable to find suitable provider`. Pinning the embeddings client
+bypasses the gateway and matches the test mock. During `npm test` each
+Playwright worker runs a bespoke HTTPS-MITM forward proxy
+(`tests/proxy/`); specs that exercise dedup opt in to the `mocks`
+fixture and register an OpenAI route via
+`mocks.route("https://api.openai.com/v1/embeddings", openAiEmbeddingHandler())`
+(from `tests/mock-handlers.ts`), which returns a deterministic vector
+per input string (identical/variant texts embed identically), so
+tests never hit the real API.
 
 ---
 
@@ -549,7 +578,8 @@ The test process owns the database lifecycle end-to-end:
 
 - **Postgres** is launched by Playwright `globalSetup`
   (`tests/global-setup.ts`) via Testcontainers
-  (`@testcontainers/postgresql`, image pinned to `postgres:16`).
+  (`@testcontainers/postgresql`, image pinned to `pgvector/pgvector:pg16`
+  — stock `postgres:16` plus the pgvector extension).
   No `docker-compose.yml`, no orchestration script,
   no `.env.development`. The container's connection string is
   written into `process.env.DATABASE_URL` so worker fixtures
@@ -659,9 +689,9 @@ npm test
 
 That's it. `npm test` is `playwright test`, which:
 
-1. Runs `tests/global-setup.ts` — boots a `postgres:16` container
-   via Testcontainers, applies the schema with `drizzle-kit push`,
-   exports `DATABASE_URL`.
+1. Runs `tests/global-setup.ts` — boots a `pgvector/pgvector:pg16`
+   container via Testcontainers, applies the schema with
+   `drizzle-kit push`, exports `DATABASE_URL`.
 2. Starts a Vite dev server per Playwright worker via the `server`
    worker fixture (`tests/fixtures.ts`) — same React Router app,
    plus `@netlify/vite-plugin` for the Netlify primitives (Blobs,
@@ -673,7 +703,7 @@ That's it. `npm test` is `playwright test`, which:
 3. Runs the suite. Each test that asks for a tenant gets a fresh
    user/flat via the `tenant` fixture (§10.3) and logs in via the
    real form using the `login()` helper.
-4. No teardown — the `postgres:16` container is started with
+4. No teardown — the `pgvector/pgvector:pg16` container is started with
    `withReuse()`, so it survives across `playwright test` invocations
    on a developer machine for fast iteration. CI cold-starts each
    run.
@@ -700,14 +730,16 @@ at the UI freely. No second context to spin up.
 
 Designed in, not hoped for:
 
-- **Pinned major version.** Testcontainers uses `postgres:16` to
-  match Neon's default major. Bumped in lockstep.
+- **Pinned major version.** Testcontainers uses `pgvector/pgvector:pg16`
+  (stock Postgres 16 plus pgvector) to match Neon's default major.
+  Bumped in lockstep.
 - **Standard `pg` driver everywhere.** Not
   `@neondatabase/serverless`. The standard driver works against both
   raw Postgres and Neon's PgBouncer-backed pooler URL — keeps code
   portable and avoids serverless-driver-only behaviour.
 - **Only Neon-supported extensions in v1:** `pg_trgm`, `unaccent`,
-  `pgcrypto`. Built-in FTS (`tsvector`/`tsquery`) is core Postgres,
+  `pgcrypto`, `vector` (pgvector, for embedding dedup — §6.3).
+  Built-in FTS (`tsvector`/`tsquery`) is core Postgres,
   identical on both. Any new extension is gated on Neon's supported
   list.
 - **Real safety net (Phase 6):** add a CI job that runs the

@@ -1,20 +1,24 @@
 /**
- * LLM-based deduplication of shopping-list ingredients across recipes
- * (issue #7).
+ * Embedding-based deduplication of shopping-list ingredients across
+ * recipes (issues #7, #63).
  *
- * The LLM only returns the *pairings* — which input ids refer to the
+ * We embed each ingredient's *item* text, cluster the items by cosine
+ * similarity, and treat each cluster as a set of lines referring to the
  * same ingredient. All unit-compat checking, amount arithmetic, and
  * display formatting happens in the shared {@link postProcess} below,
- * so the model's job is purely semantic and its output is tiny.
+ * so clustering's only job is producing the groupings.
  *
- * In tests the network is intercepted by `tests/proxy/` (see that
- * directory), so this module always calls real OpenAI in shape; the
- * proxy responds with a deterministic merge plan during npm test.
+ * Embeddings are cached in the `ingredient_embeddings` table (see
+ * {@link embedTexts}) so we don't re-pay/re-wait across recipes and
+ * flats. In tests the network is intercepted by `tests/proxy/`, so this
+ * module always calls real OpenAI in shape; the proxy responds with
+ * deterministic vectors during npm test.
  */
 import { randomUUID } from "node:crypto";
 import type { DedupGroup } from "../db/schema";
 import { parseAmount } from "./amount";
 import { formatIngredient } from "./scale";
+import { clusterBySimilarity, embedTexts } from "./embeddings";
 
 export type DedupInputItem = {
   /** Stable id within this dedup call (we use ingredient row id). */
@@ -29,7 +33,7 @@ export type DedupInput = {
   items: DedupInputItem[];
 };
 
-/** Minimal contract the LLM returns. */
+/** Minimal contract fed into {@link postProcess}: which ids merge. */
 export type RawMerges = {
   merges: { ids: string[] }[];
 };
@@ -40,8 +44,26 @@ export type DedupResult = {
   model: string;
 };
 
-/** Anything bigger than this skips the LLM entirely. */
-const MAX_INPUT_ITEMS = 200;
+/**
+ * Anything bigger than this skips embeddings entirely and returns all
+ * singletons. A shopping list is the union across a flat's planned
+ * recipes, so it can be large; the guard only exists to bound worst-case
+ * O(n²) clustering + the embedding request. Override via MAX_INPUT_ITEMS.
+ */
+const MAX_INPUT_ITEMS = Number(process.env.MAX_INPUT_ITEMS ?? 5000);
+
+/** Default embedding model; override via DEDUP_EMBEDDING_MODEL. */
+const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
+
+/**
+ * Cosine-similarity threshold for treating two ingredient texts as the
+ * same thing. Tuned on ~340 real prod ingredient texts embedded with
+ * text-embedding-3-small: 0.82 is the lowest cutoff that produces zero
+ * hard-negative violations (e.g. Paprika vs Paprikapulver, celeriac vs
+ * celery stalk stay apart) while still catching the near-dup families.
+ * Override via DEDUP_SIMILARITY_THRESHOLD.
+ */
+const DEFAULT_SIMILARITY_THRESHOLD = 0.82;
 
 // ---------------------------------------------------------------------------
 // Unit compatibility table.
@@ -217,8 +239,8 @@ function mergedGroup(items: DedupInputItem[]): DedupGroup {
 }
 
 // ---------------------------------------------------------------------------
-// Post-processor — takes raw LLM merges and the original input, returns
-// the final list of DedupGroups (including singletons for unmerged ids).
+// Post-processor — takes raw merges and the original input, returns the
+// final list of DedupGroups (including singletons for unmerged ids).
 //
 // Defensively splits incompatible-unit merges and drops nonsense
 // suggestions (unknown ids, ids in multiple merges). Never throws on
@@ -289,108 +311,38 @@ export function postProcess(
 }
 
 // ---------------------------------------------------------------------------
-// Backends.
+// Embedding backend + public entry point.
 // ---------------------------------------------------------------------------
 
-interface Backend {
-  name: string;
-  call(input: DedupInput): Promise<RawMerges>;
-}
+/**
+ * Embed every item text, cluster by cosine similarity, and return the
+ * clusters as `{ merges }`. Singletons are omitted — postProcess fills
+ * them in.
+ */
+async function clusterByEmbedding(
+  input: DedupInput,
+  model: string,
+  threshold: number,
+): Promise<RawMerges> {
+  const texts = input.items.map((it) => it.item);
+  const byText = await embedTexts(model, texts);
+  const embeddings = input.items.map((it) => byText.get(it.item));
 
-function openaiBackend(model: string): Backend {
-  return {
-    name: `openai:${model}`,
-    async call(input) {
-      // Lazy import so test runs (which use the fake backend) don't
-      // need the openai package installed at all.
-      const { default: OpenAI } = await import("openai");
-      const client = new OpenAI();
-      const system =
-        "You group shopping-list ingredients across multiple recipes for a flat-share. " +
-        "Return ONLY the groups of input ids that refer to the same ingredient. " +
-        "Handle plurals, casing, minor spelling variants, and language variants " +
-        "(e.g. Zwiebel = onion, Knoblauch = garlic). Singletons MUST NOT appear in the " +
-        "response — anything you don't list stays ungrouped. Do not invent ids.";
-      const userMsg = JSON.stringify({ items: input.items });
-      // Netlify Functions cap at ~30s. The finalise action still
-      // needs to commit + redirect after this returns, so we bail out
-      // well before the platform does. On abort the call throws and
-      // the outer catch in `dedup()` returns the singletons fallback.
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 20_000);
-      let completion;
-      try {
-        completion = await client.chat.completions.create(
-          {
-            model,
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: userMsg },
-            ],
-            response_format: {
-              type: "json_schema",
-              json_schema: {
-                name: "ingredient_merges",
-                strict: true,
-                schema: {
-                  type: "object",
-                  additionalProperties: false,
-                  properties: {
-                    merges: {
-                      type: "array",
-                      items: {
-                        type: "object",
-                        additionalProperties: false,
-                        properties: {
-                          ids: {
-                            type: "array",
-                            items: { type: "string" },
-                          },
-                        },
-                        required: ["ids"],
-                      },
-                    },
-                  },
-                  required: ["merges"],
-                },
-              },
-            },
-          },
-          { signal: controller.signal },
-        );
-      } finally {
-        clearTimeout(timer);
-      }
-      const raw = completion.choices[0]?.message?.content ?? "{}";
-      const parsed = JSON.parse(raw) as RawMerges;
-      return parsed;
-    },
-  };
-}
-
-function backendFor(name: string): Backend {
-  // The default and "openai" both map to OpenAI via the AI Gateway.
-  const colon = name.indexOf(":");
-  if (name === "openai" || colon === -1) {
-    return openaiBackend(process.env.DEDUP_MODEL ?? "gpt-4.1-mini");
+  const clusters = clusterBySimilarity(embeddings, threshold);
+  const merges: { ids: string[] }[] = [];
+  for (const cluster of clusters) {
+    if (cluster.length < 2) continue;
+    merges.push({ ids: cluster.map((i) => input.items[i].id) });
   }
-  // "openai:gpt-5-nano" — explicit model override.
-  if (name.startsWith("openai:")) {
-    return openaiBackend(name.slice("openai:".length));
-  }
-  throw new Error(`Unknown DEDUP_BACKEND: ${name}`);
+  return { merges };
 }
-
-// ---------------------------------------------------------------------------
-// Public entry point.
-// ---------------------------------------------------------------------------
 
 export async function dedup(input: DedupInput): Promise<DedupResult> {
   // Nothing to dedupe.
   if (input.items.length === 0) {
     return { groups: [], model: "none" };
   }
-  // Too big — skip the LLM and return all singletons.
+  // Too big — skip embeddings and return all singletons.
   if (input.items.length > MAX_INPUT_ITEMS) {
     return {
       groups: input.items.map(singletonGroup),
@@ -398,28 +350,28 @@ export async function dedup(input: DedupInput): Promise<DedupResult> {
     };
   }
 
-  const backendName = process.env.DEDUP_BACKEND ?? "openai";
-  const backend = backendFor(backendName);
+  const model = process.env.DEDUP_EMBEDDING_MODEL ?? DEFAULT_EMBEDDING_MODEL;
+  const threshold = Number(
+    process.env.DEDUP_SIMILARITY_THRESHOLD ?? DEFAULT_SIMILARITY_THRESHOLD,
+  );
+  const backendName = `embedding:${model}`;
 
   let raw: RawMerges;
   try {
-    raw = await backend.call(input);
-    if (!raw || !Array.isArray(raw.merges)) {
-      throw new Error("Backend returned malformed response");
-    }
+    raw = await clusterByEmbedding(input, model, threshold);
   } catch (err) {
     console.warn(
-      `[dedup] backend ${backend.name} failed, falling back to no-merge:`,
+      `[dedup] backend ${backendName} failed, falling back to no-merge:`,
       err,
     );
     return {
       groups: input.items.map(singletonGroup),
-      model: `${backend.name}:failed`,
+      model: `${backendName}:failed`,
     };
   }
 
   const groups = postProcess(input, raw);
-  return { groups, model: backend.name };
+  return { groups, model: backendName };
 }
 
 /**

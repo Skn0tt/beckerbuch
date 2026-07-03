@@ -1,12 +1,12 @@
 import { expect, test } from "./fixtures";
 import { login } from "./login";
 import type { Page } from "@playwright/test";
-import { openAiDedupHandler } from "./mock-handlers";
+import { openAiEmbeddingHandler } from "./mock-handlers";
 
-const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings";
 
 test.beforeEach(async ({ mocks }) => {
-  await mocks.route(OPENAI_CHAT_URL, openAiDedupHandler());
+  await mocks.route(OPENAI_EMBEDDINGS_URL, openAiEmbeddingHandler());
 });
 
 /**
@@ -124,8 +124,9 @@ test("incompatible units stay as separate rows ('200 g flour' + '2 cups flour')"
   await createRecipeWithIngredient(page, "Pancakes", "2", "cups", "flour");
   await finalise(page, flat.id);
 
-  // The fake backend pairs both ids (same item), but the post-processor
-  // splits them by unit family. Result: two separate single-source rows.
+  // The mock embeds both ids identically (same item), so they cluster,
+  // but the post-processor splits them by unit family. Result: two
+  // separate single-source rows.
   const rows = page.getByTestId("combined-row");
   await expect(rows.filter({ hasText: /200 g flour/ })).toHaveCount(1);
   await expect(rows.filter({ hasText: /2 cups flour/ })).toHaveCount(1);
@@ -156,27 +157,33 @@ test("public — anonymous visitor sees combined list and can split", async ({
   await anon.close();
 });
 
-test("LLM failure during finalise: redirect still happens, list renders as singletons", async ({
+test("embeddings failure during finalise: redirect still happens, list renders as singletons", async ({
   page,
   flat,
   mocks,
 }) => {
-  // Force the LLM call to fail. The OpenAI SDK throws on 500, dedup()
-  // catches and returns the all-singletons fallback. Same code path
-  // the 20s AbortController triggers when the real API is too slow.
-  await mocks.route(OPENAI_CHAT_URL, openAiDedupHandler({ fail: true }));
+  // Force the embeddings call to fail. The OpenAI SDK throws on 500,
+  // dedup() catches and returns the all-singletons fallback. Same code
+  // path the 20s AbortController triggers when the real API is too slow.
+  await mocks.route(OPENAI_EMBEDDINGS_URL, openAiEmbeddingHandler({ fail: true }));
 
   await login(page, flat.user);
-  await createRecipeWithIngredient(page, "Pasta al pomodoro", "300", "g", "tomato");
-  await createRecipeWithIngredient(page, "Tomato soup", "300", "g", "tomatos");
+  // Use nonsense variants unique to this spec. The embedding cache is
+  // shared across the whole (reused) test DB, so a text that any other
+  // spec already embedded would be a cache hit and never reach the
+  // failing API. "fnord"/"fnords" share a normalized key (they'd merge
+  // on success) but are never embedded elsewhere → guaranteed cache
+  // miss → the forced failure is actually exercised.
+  await createRecipeWithIngredient(page, "Pasta al pomodoro", "300", "g", "fnord");
+  await createRecipeWithIngredient(page, "Tomato soup", "300", "g", "fnords");
 
   // Finalise must still redirect — no 504, no hang.
   await finalise(page, flat.id);
 
   // Both ingredients render as separate rows (singletons), no merge.
   const combined = page.getByTestId("combined-list");
-  await expect(combined.getByText("300 g tomato", { exact: true })).toBeVisible();
-  await expect(combined.getByText("300 g tomatos", { exact: true })).toBeVisible();
+  await expect(combined.getByText("300 g fnord", { exact: true })).toBeVisible();
+  await expect(combined.getByText("300 g fnords", { exact: true })).toBeVisible();
 });
 
 test("stale snapshot: editing a recipe after finalise shows Regenerate; clicking it re-merges", async ({
