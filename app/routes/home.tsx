@@ -1,5 +1,16 @@
-import { Box, Button, Group, NavLink as MantineNavLink, Stack, Text, TextInput } from "@mantine/core";
-import { Form, Link, useLoaderData } from "react-router";
+import {
+  Box,
+  Button,
+  Card,
+  Group,
+  Image,
+  SimpleGrid,
+  Stack,
+  Text,
+  TextInput,
+} from "@mantine/core";
+import { useDebouncedCallback } from "@mantine/hooks";
+import { Form, Link, useLoaderData, useSubmit } from "react-router";
 import type { Route } from "./+types/home";
 import { requireFlatMember } from "../auth/require";
 import { searchRecipes } from "../lib/recipes";
@@ -22,6 +33,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export default function Home() {
   const { recipes: list, q } = useLoaderData<typeof loader>();
+  const submit = useSubmit();
+
+  const debouncedSubmit = useDebouncedCallback((form: HTMLFormElement) => {
+    // Replace history after the first search so each keystroke doesn't add a
+    // back-button entry; the initial search stays a normal navigation.
+    submit(form, { replace: q !== "" });
+  }, 250);
 
   return (
     <Stack
@@ -40,6 +58,7 @@ export default function Home() {
             placeholder="Search recipes…"
             aria-label="Search recipes"
             style={{ flex: 1 }}
+            onChange={(event) => debouncedSubmit(event.currentTarget.form!)}
           />
           <Button component={Link} to="/recipes/new" prefetch="intent" variant="default">
             + New recipe
@@ -51,17 +70,59 @@ export default function Home() {
         <Text c="dimmed">{q ? `No recipes match "${q}"` : "No recipes yet"}</Text>
       ) : (
         <Box style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-          {list.map((r) => (
-            <MantineNavLink
-              key={r.id}
-              component={Link}
-              to={`/recipes/${r.id}`}
-              prefetch="intent"
-              label={r.name}
-            />
-          ))}
+          <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing="md">
+            {list.map((r) => (
+              <RecipeCard key={r.id} recipe={r} />
+            ))}
+          </SimpleGrid>
         </Box>
       )}
     </Stack>
+  );
+}
+
+function RecipeCard({
+  recipe: r,
+}: {
+  recipe: Awaited<ReturnType<typeof loader>>["recipes"][number];
+}) {
+  return (
+    <Card
+      component={Link}
+      to={`/recipes/${r.id}`}
+      prefetch="intent"
+      withBorder
+      padding="sm"
+      radius="md"
+    >
+      <Card.Section>
+        {r.photoBlobKey ? (
+          <Image
+            src={`/recipes/${r.id}/photo?v=${encodeURIComponent(r.photoBlobKey)}`}
+            alt={r.name}
+            h={140}
+            fit="cover"
+          />
+        ) : (
+          <Box
+            h={140}
+            bg="var(--mantine-color-gray-1)"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text size="2rem" fw={700} c="dimmed" aria-hidden>
+              {r.name.trim().charAt(0).toUpperCase() || "?"}
+            </Text>
+          </Box>
+        )}
+      </Card.Section>
+
+      <Text fw={500} mt="sm" lineClamp={2}>
+        {r.name}
+      </Text>
+    </Card>
   );
 }

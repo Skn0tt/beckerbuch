@@ -309,6 +309,50 @@ test("upload a photo on create → see it on view; remove it on edit", async ({
   await expect(page.getByRole("img", { name: "Photo recipe" })).toHaveCount(0);
 });
 
+test("collection renders recipes as cards — photo image and placeholder", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+
+  // Recipe WITH a photo.
+  await page.getByRole("link", { name: "+ New recipe" }).click();
+  await page.getByLabel("Name").fill("Grid photo recipe");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill("water");
+  await page
+    .locator('input[type="file"]')
+    .setInputFiles({ name: "tiny.png", mimeType: "image/png", buffer: TINY_PNG });
+  await page.getByRole("button", { name: "Save recipe" }).click();
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
+
+  // Recipe WITHOUT a photo.
+  await page.goto("/");
+  await page.getByRole("link", { name: "+ New recipe" }).click();
+  await page.getByLabel("Name").fill("Grid plain recipe");
+  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill("water");
+  await page.getByRole("button", { name: "Save recipe" }).click();
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
+
+  await page.goto("/");
+  await expect(page).toHaveURL("/");
+
+  // Both recipes show up as card links.
+  const photoCard = page.getByRole("link", { name: /Grid photo recipe/ });
+  const plainCard = page.getByRole("link", { name: /Grid plain recipe/ });
+  await expect(photoCard).toBeVisible();
+  await expect(plainCard).toBeVisible();
+
+  // The photo card renders an image that actually loads.
+  const photoImg = photoCard.getByRole("img", { name: "Grid photo recipe" });
+  await expect(photoImg).toBeVisible();
+  await expect
+    .poll(async () => await photoImg.evaluate((el: HTMLImageElement) => el.naturalWidth))
+    .toBeGreaterThan(0);
+
+  // The photo-less card falls back to a placeholder — no image inside it.
+  await expect(plainCard.getByRole("img")).toHaveCount(0);
+});
+
 test("rejects non-image upload with form error", async ({ page, flat }) => {
   await login(page, flat.user);
   await page.getByRole("link", { name: "+ New recipe" }).click();
@@ -362,33 +406,32 @@ test("search filters by name + ingredient + source host", async ({ page, flat })
     'a[href^="/recipes/"]:not([href="/recipes/new"])',
   );
 
-  // Match by name (with prefix).
+  // Search runs automatically after a short debounce — no Enter required.
   await search.fill("past");
-  await search.press("Enter");
   await expect(cards).toHaveCount(1);
   await expect(cards.first()).toContainText("Pasta al limone");
 
   // Match by ingredient.
   await search.fill("chicken");
-  await search.press("Enter");
   await expect(cards).toHaveCount(1);
   await expect(cards.first()).toContainText("Chicken curry");
 
   // Same query should keep the same result order across repeated searches.
   await search.fill("salt");
-  await search.press("Enter");
   await expect(cards).toHaveCount(2);
   const firstSaltOrder = await cards.evaluateAll((links) =>
     links.map((link) => (link as HTMLAnchorElement).getAttribute("href")),
   );
+  await search.fill("");
+  await expect(cards).toHaveCount(5);
   await search.fill("salt");
-  await search.press("Enter");
+  await expect(cards).toHaveCount(2);
   const secondSaltOrder = await cards.evaluateAll((links) =>
     links.map((link) => (link as HTMLAnchorElement).getAttribute("href")),
   );
   expect(secondSaltOrder).toEqual(firstSaltOrder);
 
-  // Match by source host.
+  // Match by source host. Pressing Enter still submits immediately.
   await search.fill("kingarthur");
   await search.press("Enter");
   await expect(cards).toHaveCount(1);
@@ -396,7 +439,6 @@ test("search filters by name + ingredient + source host", async ({ page, flat })
 
   // No match → friendly empty state.
   await search.fill("nothingmatchesthis");
-  await search.press("Enter");
   await expect(cards).toHaveCount(0);
   await expect(page.getByText(/No recipes match/)).toBeVisible();
 });
