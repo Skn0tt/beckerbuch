@@ -1,26 +1,32 @@
 /**
- * Shared computation of the "Combined list" (deduped shopping list) that is
- * rendered both on the handoff page (`/h/$flatId`) and in the kitchen's
- * "Planned ingredients" view.
+ * The "Combined list" (deduped shopping list) rendered on two surfaces that
+ * scope it to *different* sets of recipes:
  *
- * The source of truth is the dedup snapshot persisted on the `flats` row
- * (written at Finalise / Regenerate — see lib/dedup-snapshot.ts). If that
- * snapshot is missing or stale relative to the current in-stock ingredients,
- * we fall back to an all-singletons list and flag it as stale so the caller
- * can offer a Regenerate affordance.
+ *   - The handoff / shopping page (`/h/$flatId`) shows the **latest finalise
+ *     batch** — the trip you're about to shop for. It renders the dedup
+ *     snapshot persisted on the `flats` row (written at Finalise / Regenerate,
+ *     see lib/dedup-snapshot.ts) so manual split/unsplit edits survive, and
+ *     falls back to all-singletons + a Regenerate affordance when stale. See
+ *     {@link computeCombinedList}.
+ *
+ *   - The kitchen "Planned ingredients" view shows **everything currently in
+ *     stock** (finalised, not yet cooked), regardless of finalise batch — the
+ *     same lane as the kitchen stock list. It's read-only (no manual edits),
+ *     so it ignores the snapshot and just clusters the current in-stock
+ *     ingredients by embedding similarity on the fly. See
+ *     {@link loadCombinedList}.
  */
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "../db/client";
 import {
-  flats,
   ingredients,
   recipeInstances,
   recipes,
   type DedupGroup,
 } from "../db/schema";
 import { formatIngredient } from "./scale";
-import { hashInput, type DedupInput } from "./dedup";
-import { buildDedupInputFromData, snapshotDedupForFlat } from "./dedup-snapshot";
+import { dedup, hashInput, type DedupInput } from "./dedup";
+import { buildDedupInputFromData } from "./dedup-snapshot";
 
 export type CombinedList = {
   combinedGroups: DedupGroup[];
@@ -84,102 +90,65 @@ export async function computeCombinedList(
 }
 
 /**
- * Loads the combined list for a flat from scratch: reads the persisted dedup
- * snapshot and the current latest-finalised in-stock ingredients, then
- * combines them. Used by callers that don't already have the in-stock rows
- * loaded with ingredient row ids (the kitchen views).
+ * Loads the combined ("Planned ingredients") list for a flat's kitchen
+ * surfaces: every recipe currently **in stock** — finalised and not yet
+ * cooked — regardless of which finalise batch it belongs to. This is the same
+ * lane the kitchen stock list shows (see lib/kitchen-data.ts), NOT the
+ * latest-finalise-batch set the handoff/shopping page uses.
  *
- * By default this is a read-only snapshot read — it never triggers the LLM
- * dedup. When the snapshot is stale (the shopping list changed since finalise)
- * the result is flagged `snapshotFresh: false` and rendered as an
- * all-singletons fallback.
- *
- * Pass `{ recomputeIfStale: true }` to let a stale read lazily re-run the LLM
- * dedup, persist the fresh snapshot, and return the merged result. This writes,
- * so it must only be invoked from the on-demand resource route
- * (`/kitchen/combined`), which is fetched via `useFetcher().load()` when a
- * kitchen surface is actually viewed and is therefore never prefetched on hover
- * nor tied to unrelated layout revalidation.
+ * The view is read-only (no manual split/unsplit), so it never touches the
+ * persisted dedup snapshot on the flat row — that snapshot exists only to
+ * preserve manual edits on the handoff page. Here we cluster the current
+ * in-stock ingredients by embedding similarity on the fly. Embeddings are
+ * cached (see lib/embeddings.ts), so this is a couple of reads plus in-memory
+ * clustering, and it never writes. On any embedding failure `dedup` degrades
+ * to an all-singletons list.
  */
-export async function loadCombinedList(
-  flatId: string,
-  opts?: { recomputeIfStale?: boolean },
-): Promise<CombinedList> {
-  const readFlat = () =>
-    db()
-      .select({
-        dedupGroups: flats.dedupGroups,
-        dedupInputHash: flats.dedupInputHash,
-        dedupRejectedGroupIds: flats.dedupRejectedGroupIds,
-      })
-      .from(flats)
-      .where(eq(flats.id, flatId))
-      .limit(1);
-
-  const [flat] = await readFlat();
-
-  if (!flat) {
-    return { combinedGroups: [], snapshotFresh: false, rejectedIds: [] };
-  }
-
-  // Latest-finalised, not-yet-cooked recipe instances — the same set the
-  // dedup snapshot is computed over (see lib/dedup-snapshot.ts).
-  const latestFinalisedSubquery = sql<Date>`(
-    select max(${recipeInstances.finalisedAt})
-    from ${recipeInstances}
-    where ${recipeInstances.flatId} = ${flatId}
-  )`;
+export async function loadCombinedList(flatId: string): Promise<CombinedList> {
   const rows = await db()
     .select({
       recipeId: recipes.id,
       recipeName: recipes.name,
       baseQuantity: recipes.baseQuantity,
       targetQuantity: recipeInstances.targetQuantity,
+      omittedIngredientIds: recipeInstances.omittedIngredientIds,
     })
     .from(recipeInstances)
     .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
     .where(
       and(
         eq(recipeInstances.flatId, flatId),
-        sql`${recipeInstances.finalisedAt} = ${latestFinalisedSubquery}`,
+        isNotNull(recipeInstances.finalisedAt),
         isNull(recipeInstances.cookedAt),
       ),
     )
     .orderBy(asc(recipeInstances.position));
 
-  const recipeIds = rows.map((r) => r.recipeId);
-  const allIngs =
-    recipeIds.length === 0
-      ? []
-      : await db()
-          .select()
-          .from(ingredients)
-          .where(inArray(ingredients.recipeId, recipeIds))
-          .orderBy(asc(ingredients.position));
-
-  const currentInput = buildDedupInputFromData(rows, allIngs);
-  let result = await computeCombinedList(flat, currentInput);
-
-  // Lazy on-read re-merge. When a kitchen surface actually views the list and
-  // the snapshot is stale (e.g. a recipe was cooked, shrinking the in-stock
-  // set), run the LLM dedup once, persist it, and recombine so the view is
-  // merged over what's still to cook. Best-effort: on any failure we keep the
-  // all-singletons fallback rather than blocking the read.
-  if (
-    opts?.recomputeIfStale &&
-    !result.snapshotFresh &&
-    currentInput.items.length > 0
-  ) {
-    try {
-      await snapshotDedupForFlat(flatId);
-      const [refreshed] = await readFlat();
-      if (refreshed) {
-        result = await computeCombinedList(refreshed, currentInput);
-      }
-    } catch (err) {
-      console.warn("[combined-list] recompute-on-read failed:", err);
-    }
+  if (rows.length === 0) {
+    return { combinedGroups: [], snapshotFresh: true, rejectedIds: [] };
   }
 
-  return result;
+  const recipeIds = [...new Set(rows.map((r) => r.recipeId))];
+  const allIngs = await db()
+    .select()
+    .from(ingredients)
+    .where(inArray(ingredients.recipeId, recipeIds))
+    .orderBy(asc(ingredients.position));
+
+  // Union of ingredients omitted on any in-stock instance; dedup collapses
+  // instances by recipeId, so a single set is enough (matches buildDedupInput).
+  const omitted = new Set<string>();
+  for (const r of rows) for (const id of r.omittedIngredientIds) omitted.add(id);
+
+  const input = buildDedupInputFromData(rows, allIngs, omitted);
+  const { groups } = await dedup(input);
+
+  // Merged groups first so the dedup wins are visible; stable within a tier.
+  groups.sort((a, b) => {
+    const aMerged = a.sources.length > 1 ? 1 : 0;
+    const bMerged = b.sources.length > 1 ? 1 : 0;
+    return bMerged - aMerged;
+  });
+
+  return { combinedGroups: groups, snapshotFresh: true, rejectedIds: [] };
 }
