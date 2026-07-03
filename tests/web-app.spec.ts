@@ -1,12 +1,12 @@
 import { expect, test } from "./fixtures";
 import { login } from "./login";
 import type { Page } from "@playwright/test";
-import { openAiDedupHandler } from "./mock-handlers";
+import { openAiEmbeddingHandler } from "./mock-handlers";
 
 test.beforeEach(async ({ mocks }) => {
   await mocks.route(
-    "https://api.openai.com/v1/chat/completions",
-    openAiDedupHandler(),
+    "https://api.openai.com/v1/embeddings",
+    openAiEmbeddingHandler(),
   );
 });
 

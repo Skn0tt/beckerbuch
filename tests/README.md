@@ -91,7 +91,7 @@ test("import a recipe", async ({ page, flat, mocks }) => {
     /^https:\/\/share\.kptncook\.com\/[^/]+$/,
     kptncookShareRedirectHandler([MOCK_RECIPES.cinnamonBuns]),
   );
-  await mocks.route("https://api.openai.com/v1/chat/completions", async (route) => {
+  await mocks.route("https://api.openai.com/v1/embeddings", async (route) => {
     await route.fulfill({ status: 200, json: { /* … */ } });
   });
 });

@@ -1,11 +1,11 @@
 import { expect, test } from "./fixtures";
 import { login } from "./login";
-import { openAiDedupHandler } from "./mock-handlers";
+import { openAiEmbeddingHandler } from "./mock-handlers";
 
 test.beforeEach(async ({ mocks }) => {
   await mocks.route(
-    "https://api.openai.com/v1/chat/completions",
-    openAiDedupHandler(),
+    "https://api.openai.com/v1/embeddings",
+    openAiEmbeddingHandler(),
   );
 });
 
@@ -192,13 +192,27 @@ test("omission survives an unrelated edit (stable ingredient ids)", async ({
   await login(page, flat.user);
   await createPasta(page);
   await addToDraft(page);
+
+  // The omit toggle is an optimistic-UI fetcher: the "Include lemons"
+  // label flips immediately while the POST and its loader revalidation
+  // are still in flight. Clicking the "Edit recipe" <Link> during that
+  // revalidation makes React Router occasionally drop the navigation
+  // (~20% flake). Await the revalidation GET so the router has left its
+  // loading state before we navigate away.
+  const revalidated = page.waitForResponse(
+    (res) =>
+      res.request().method() === "GET" &&
+      /\/recipes\/[0-9a-f-]{36}\.data/.test(res.url()),
+  );
   await page.getByRole("button", { name: "Omit lemons" }).click();
   await expect(
     page.getByRole("button", { name: "Include lemons" }),
   ).toBeVisible();
+  await revalidated;
 
   // Edit an unrelated field (the name) and save.
   await page.getByRole("link", { name: "Edit recipe" }).click();
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}\/edit$/);
   await page.getByLabel("Name").fill("Pasta al limone (better)");
   await expect(page.getByLabel("Name")).toHaveValue("Pasta al limone (better)");
   await page.getByRole("button", { name: "Save changes" }).click();

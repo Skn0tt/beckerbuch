@@ -15,7 +15,7 @@ export default async function globalSetup() {
   }
 
   console.log("[global-setup] Starting Postgres container…");
-  const container = await new PostgreSqlContainer("postgres:16")
+  const container = await new PostgreSqlContainer("pgvector/pgvector:pg16")
     .withDatabase("cookbook_test")
     .withUsername("cookbook")
     .withPassword("cookbook")
@@ -34,6 +34,7 @@ export default async function globalSetup() {
     CREATE EXTENSION IF NOT EXISTS citext;
     CREATE EXTENSION IF NOT EXISTS pg_trgm;
     CREATE EXTENSION IF NOT EXISTS unaccent;
+    CREATE EXTENSION IF NOT EXISTS vector;
   `);
   await client.end();
 

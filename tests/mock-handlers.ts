@@ -94,56 +94,50 @@ export function kptncookImagesHandler(): RouteHandler {
 }
 
 // --------------------------------------------------------------------
-// OpenAI dedup
+// OpenAI embeddings (shopping-list dedup, issue #63)
 
-export type OpenAiDedupOptions =
-  | { fail: true }
-  | {
-      fail?: false;
-      /**
-       * Explicit merges to return. Each entry is the list of input
-       * item ids that should be merged. If omitted, falls back to the
-       * deterministic "group by lowercased item with trailing s
-       * stripped" algorithm — handy as a sensible default for specs
-       * that don't care about the exact grouping.
-       */
-      merges?: Array<{ ids: string[] }>;
-    };
+export type OpenAiEmbeddingOptions = { fail?: boolean };
 
-interface DedupItem {
-  id?: unknown;
-  item?: unknown;
-}
+/**
+ * Deterministic embedding for a piece of text. We reduce the text to a
+ * normalized key (lowercase + trim + trailing-`s` strip) and emit a
+ * one-hot vector whose single hot dimension is chosen by hashing that
+ * key. Identical/variant texts ("tomato" / "tomatos") therefore get the
+ * *same* vector (cosine 1 → cluster together), while unrelated texts get
+ * orthogonal vectors (cosine 0 → stay apart). This fabricates just
+ * enough proximity to reproduce the old LLM merge assertions. (The real
+ * code normalizes case/whitespace before embedding; this mock's stronger
+ * normalization is a test-only device.)
+ */
+const EMBEDDING_DIM = 1536;
 
-function deriveMerges(items: DedupItem[]): Array<{ ids: string[] }> {
-  const buckets = new Map<string, string[]>();
-  for (const it of items) {
-    const item = typeof it?.item === "string" ? it.item : "";
-    const id = typeof it?.id === "string" ? it.id : null;
-    if (!id) continue;
-    const key = item.toLowerCase().trim().replace(/s$/, "");
-    const list = buckets.get(key) ?? [];
-    list.push(id);
-    buckets.set(key, list);
+function fakeEmbedding(text: string): number[] {
+  const key = text.toLowerCase().trim().replace(/s$/, "");
+  // FNV-1a hash → bucket index.
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
   }
-  const merges: Array<{ ids: string[] }> = [];
-  for (const list of buckets.values()) {
-    if (list.length >= 2) merges.push({ ids: list });
-  }
-  return merges;
+  const index = Math.abs(hash) % EMBEDDING_DIM;
+  const vec = new Array<number>(EMBEDDING_DIM).fill(0);
+  vec[index] = 1;
+  return vec;
 }
 
 /**
- * Handler for the OpenAI chat-completions endpoint, dedup-shaped
- * response. Matches whatever URL the SDK ends up using (default
- * api.openai.com or Netlify AI Gateway).
+ * Handler for the OpenAI embeddings endpoint
+ * (https://api.openai.com/v1/embeddings). Returns a deterministic
+ * vector per input string derived from a normalized key, so
+ * identical/variant ingredient texts embed identically and cluster
+ * together.
  *
- * With `{ fail: true }`, returns HTTP 500 — use to exercise the
- * app's LLM-failure fallback. Otherwise returns a structured
- * dedup response derived from the request body (or the explicit
- * `merges` if supplied).
+ * With `{ fail: true }`, returns HTTP 500 — use to exercise the app's
+ * embeddings-failure fallback (all singletons).
  */
-export function openAiDedupHandler(options: OpenAiDedupOptions = {}): RouteHandler {
+export function openAiEmbeddingHandler(
+  options: OpenAiEmbeddingOptions = {},
+): RouteHandler {
   return async (route) => {
     if (options.fail) {
       await route.fulfill({
@@ -153,49 +147,35 @@ export function openAiDedupHandler(options: OpenAiDedupOptions = {}): RouteHandl
       return;
     }
 
-    type DedupRequestBody = { messages?: unknown; model?: unknown };
-    let body: DedupRequestBody | null = null;
+    type EmbeddingRequestBody = { input?: unknown; model?: unknown };
+    let body: EmbeddingRequestBody | null = null;
     try {
       const json = route.request().postDataJSON() as unknown;
-      if (json && typeof json === "object") body = json as DedupRequestBody;
+      if (json && typeof json === "object") body = json as EmbeddingRequestBody;
     } catch {
       body = null;
     }
 
-    let merges = options.merges;
-    if (!merges) {
-      const messages = Array.isArray(body?.messages) ? body.messages : [];
-      const userMsg = (messages as Array<{ role?: unknown; content?: unknown }>).find(
-        (m) => m?.role === "user",
-      );
-      let items: DedupItem[] = [];
-      if (userMsg && typeof userMsg.content === "string") {
-        try {
-          const parsed = JSON.parse(userMsg.content) as { items?: unknown };
-          if (Array.isArray(parsed?.items)) items = parsed.items as DedupItem[];
-        } catch {
-          // ignore
-        }
-      }
-      merges = deriveMerges(items);
-    }
+    const rawInput = body?.input;
+    const inputs: string[] = Array.isArray(rawInput)
+      ? rawInput.map((x) => (typeof x === "string" ? x : String(x)))
+      : typeof rawInput === "string"
+        ? [rawInput]
+        : [];
 
-    const content = JSON.stringify({ merges });
+    const data = inputs.map((text, index) => ({
+      object: "embedding",
+      index,
+      embedding: fakeEmbedding(text),
+    }));
+
     await route.fulfill({
       status: 200,
       json: {
-        id: "chatcmpl-test",
-        object: "chat.completion",
-        created: Math.floor(Date.now() / 1000),
-        model: typeof body?.model === "string" ? body.model : "gpt-5-mini",
-        choices: [
-          {
-            index: 0,
-            message: { role: "assistant", content },
-            finish_reason: "stop",
-          },
-        ],
-        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        object: "list",
+        data,
+        model: typeof body?.model === "string" ? body.model : "text-embedding-3-small",
+        usage: { prompt_tokens: 0, total_tokens: 0 },
       },
     });
   };

@@ -26,6 +26,29 @@ const tsvector = customType<{ data: string }>({
   },
 });
 
+/**
+ * Dimensionless pgvector column. We deliberately do NOT fix the
+ * dimension: different embedding models emit different lengths
+ * (text-embedding-3-small = 1536, -3-large = 3072, …), so a
+ * dimensionless column stores any of them and switching
+ * DEDUP_EMBEDDING_MODEL needs no migration. Clustering happens in JS,
+ * so we don't need a fixed-dimension ANN index.
+ *
+ * pgvector's text format is `[1,2,3]`, so we map to/from `number[]`
+ * here and callers deal in plain arrays.
+ */
+const vector = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return "vector";
+  },
+  toDriver(value: number[]): string {
+    return `[${value.join(",")}]`;
+  },
+  fromDriver(value: string): number[] {
+    return JSON.parse(value) as number[];
+  },
+});
+
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   email: citext("email").notNull().unique(),
@@ -308,3 +331,28 @@ export const oauthTokens = pgTable(
 
 export type OauthClient = typeof oauthClients.$inferSelect;
 export type OauthToken = typeof oauthTokens.$inferSelect;
+
+/**
+ * Cache of ingredient-text embeddings, keyed by (model, exact text).
+ * Populated during shopping-list dedup so we don't re-pay/re-wait on
+ * embeddings across recipes and flats. See app/lib/embeddings.ts.
+ *
+ * `text` stores the exact item string (no normalization) so the cached
+ * vector is always faithful to what the model saw. `embedding` is a
+ * dimensionless pgvector column (see the `vector` customType above).
+ */
+export const ingredientEmbeddings = pgTable(
+  "ingredient_embeddings",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    model: text("model").notNull(),
+    text: text("text").notNull(),
+    embedding: vector("embedding").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [uniqueIndex("ingredient_embeddings_model_text").on(t.model, t.text)],
+);
+
+export type IngredientEmbedding = typeof ingredientEmbeddings.$inferSelect;

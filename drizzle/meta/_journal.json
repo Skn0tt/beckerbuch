@@ -50,6 +50,13 @@
       "when": 1783019703434,
       "tag": "0006_romantic_impossible_man",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783064974755,
+      "tag": "0007_funny_the_leader",
+      "breakpoints": true
     }
   ]
 }
