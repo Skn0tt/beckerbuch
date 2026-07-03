@@ -316,3 +316,46 @@ test("finalise draft → in-stock lane → mark cooked → empty", async ({
   await expect(page.getByText("In stock 0", { exact: true })).toBeVisible();
   await expect(page.getByText(/Nothing in stock yet/)).toBeVisible();
 });
+
+test("finalise → demote back to draft from the recipe page", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+  await createPasta(page);
+  const recipeUrl = page.url();
+
+  await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
+
+  // Finalise → recipe moves to In stock.
+  await page.goto("/kitchen");
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(/\/h\/[0-9a-f-]{36}$/);
+
+  // On the recipe page the in-stock actions are shown.
+  await page.goto(recipeUrl);
+  await expect(page.getByRole("button", { name: "Mark as cooked" })).toBeVisible();
+  const backToDraft = page.getByRole("button", { name: "← Back to draft" });
+  await expect(backToDraft).toBeVisible();
+
+  // Demote → confirm modal → back in draft.
+  await backToDraft.click();
+  await page
+    .getByRole("button", { name: "Confirm move Pasta al limone back to draft" })
+    .click();
+
+  // Draft controls return on the recipe page.
+  await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Mark as cooked" }),
+  ).toHaveCount(0);
+
+  // Kitchen reflects the move: Draft 1, In stock 0.
+  await page.goto("/kitchen");
+  await expect(page.getByText("Draft 1", { exact: true })).toBeVisible();
+  await expect(page.getByText("In stock 0", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Pasta al limone" })).toBeVisible();
+});
+

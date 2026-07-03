@@ -178,6 +178,10 @@ to the collection. Sidebar stays put.
   quantity. The button flips to "✓ in draft" while it's there. The
   same recipe can be added more than once (each becomes a separate
   draft entry).
+- When the recipe is **in stock**, the detail view shows **Mark as cooked**
+  alongside a **← Back to draft** action (behind a confirmation) that
+  demotes the single in-stock instance back into the draft, keeping its
+  portions, cook, note and omitted ingredients. See DESIGN.md §4.5.
 - A `…` overflow on the header hosts less-frequent actions (e.g.
   Delete recipe).
 

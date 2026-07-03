@@ -180,6 +180,15 @@ is binary — there is no "cooked half of it" state. If we shopped for a
 larger quantity and only cooked part of it, that's a recipe still fully in
 stock in spirit; v1 doesn't try to model that precisely.
 
+An in-stock recipe can also be **demoted back to draft** from its detail
+page (a **← Back to draft** action, behind a confirmation). This is the
+per-recipe inverse of finalise: it clears the instance's `finalised_at`,
+appends it to the end of the draft, and keeps its portions, designated
+cook, note and omitted ingredients so it's immediately editable again.
+Finalise itself is still bulk and one-way for the draft as a whole — this
+just lets you pull a single recipe back out of stock when it was shopped
+for by mistake or plans changed.
+
 ### 4.6 Cooked history
 
 A simple chronological log: what got cooked, when, by whom, at what
