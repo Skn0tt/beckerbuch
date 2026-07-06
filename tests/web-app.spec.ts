@@ -1,12 +1,12 @@
 import { expect, test } from "./fixtures";
 import { login } from "./login";
 import type { Page } from "@playwright/test";
-import { openAiEmbeddingHandler } from "./mock-handlers";
+import { geminiEmbeddingHandler } from "./mock-handlers";
 
 test.beforeEach(async ({ mocks }) => {
   await mocks.route(
-    "https://api.openai.com/v1/embeddings",
-    openAiEmbeddingHandler(),
+    "https://generativelanguage.googleapis.com/**",
+    geminiEmbeddingHandler(),
   );
 });
 

@@ -409,8 +409,9 @@ Snapshot lifecycle:
    we build a structured input of every in-stock ingredient
    (`{id, amount, unit, item, recipe}`, scaled to the target
    quantity) and call the dedup backend.
-2. The backend **embeds** each ingredient's `item` text (via the
-   OpenAI embeddings endpoint) and clusters the items by cosine
+2. The backend **embeds** each ingredient's `item` text (via Google's
+   native Gemini embedding API — `SEMANTIC_SIMILARITY` task, 1024 dims)
+   and clusters the items by cosine
    similarity: a single-linkage / union-find pass over the items,
    grouping any pair at or above `DEDUP_SIMILARITY_THRESHOLD` into a
    connected component. Only groupings come out —
@@ -435,7 +436,8 @@ key means case/whitespace variants ("Rote Linsen" / "rote Linsen") share
 one vector and always cluster, independent of the threshold — and it can
 only ever merge trivially-different texts, never distinct ingredients.
 Each finalise reads the cache first and only requests vectors for the
-misses (batched, chunked ≤512/call), then `insert … on conflict do
+misses (batched, chunked ≤96/call for Gemini, ≤512 for OpenAI), then
+`insert … on conflict do
 nothing`. The cache is shared across recipes and flats, so repeat
 ingredients and regenerates avoid re-paying. The `embedding` column is a
 native pgvector `vector` with **no fixed dimension**, so switching
@@ -455,20 +457,36 @@ the flat UUID, consistent with the rest of the handoff page's
 trust model.
 
 Config: `DEDUP_EMBEDDING_MODEL` overrides the embedding model
-(default `text-embedding-3-small`) and `DEDUP_SIMILARITY_THRESHOLD`
-tunes the cosine cutoff (default `0.82`). Unlike the chat models,
-embeddings are **pinned directly to OpenAI** — the client is
-constructed with `baseURL` = `EMBEDDING_OPENAI_BASE_URL` (default
-`https://api.openai.com/v1`) and `apiKey` =
-`EMBEDDING_OPENAI_API_KEY`. This is deliberate: in prod Netlify injects
-`OPENAI_BASE_URL` pointing at the Netlify AI Gateway, which serves
-*chat* models only — routing `text-embedding-*` there returns
-`400 unable to find suitable provider`. Pinning the embeddings client
-bypasses the gateway and matches the test mock. During `npm test` each
-Playwright worker runs a bespoke HTTPS-MITM forward proxy
-(`tests/proxy/`); specs that exercise dedup opt in to the `mocks`
-fixture and register an OpenAI route via
-`mocks.route("https://api.openai.com/v1/embeddings", openAiEmbeddingHandler())`
+(default `gemini-embedding-001`) and `DEDUP_SIMILARITY_THRESHOLD`
+tunes the cosine cutoff (default `0.95`). The provider is chosen by
+model id: any `gemini-*` model uses Google's **native**
+`batchEmbedContents` API (auth via `x-goog-api-key` =
+`EMBEDDING_GEMINI_API_KEY`, falling back to `GEMINI_API_KEY`; base URL
+`EMBEDDING_GEMINI_BASE_URL`, default
+`https://generativelanguage.googleapis.com/v1beta`). Any other model id
+falls back to the OpenAI-compatible path, **pinned directly to OpenAI** —
+the client is constructed with `baseURL` = `EMBEDDING_OPENAI_BASE_URL`
+(default `https://api.openai.com/v1`) and `apiKey` =
+`EMBEDDING_OPENAI_API_KEY`. That pinning is deliberate: in prod Netlify
+injects `OPENAI_BASE_URL` pointing at the Netlify AI Gateway, which
+serves *chat* models only — routing `text-embedding-*` there returns
+`400 unable to find suitable provider`.
+
+We switched the default from OpenAI `text-embedding-3-small` (@0.82) to
+Gemini after an offline eval (`ml/embedding-eval/`) on a gold set derived
+from real prod ingredient texts: Gemini clearly won for German/English
+shopping-list dedup, separating true synonyms and cross-lingual pairs
+(Möhren/Karotten, Parmesan/Parmigiano, Knoblauch/garlic) that
+`text-embedding-3-small` collapsed, and more than doubling recall at zero
+false merges. Gemini runs "hot" (high cosine even for unrelated pairs),
+which is why its threshold (`0.95`) sits well above the old OpenAI value
+(`0.82`) — the two numbers live on different scales and are not
+comparable.
+
+During `npm test` each Playwright worker runs a bespoke HTTPS-MITM
+forward proxy (`tests/proxy/`); specs that exercise dedup opt in to the
+`mocks` fixture and register a Gemini route via
+`mocks.route("https://generativelanguage.googleapis.com/**", geminiEmbeddingHandler())`
 (from `tests/mock-handlers.ts`), which returns a deterministic vector
 per input string (identical/variant texts embed identically), so
 tests never hit the real API.

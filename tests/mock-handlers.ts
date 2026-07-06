@@ -180,3 +180,56 @@ export function openAiEmbeddingHandler(
     });
   };
 }
+
+// --------------------------------------------------------------------
+// Google Gemini embeddings (native batchEmbedContents)
+
+export type GeminiEmbeddingOptions = { fail?: boolean };
+
+/**
+ * Handler for Google's native embeddings endpoint
+ * (https://generativelanguage.googleapis.com/v1beta/models/*:batchEmbedContents).
+ * Mirrors {@link openAiEmbeddingHandler}: returns the same deterministic
+ * per-text vector so identical/variant ingredient texts embed
+ * identically and cluster together — just wrapped in Gemini's
+ * `{ embeddings: [{ values }] }` response shape and reading the
+ * `{ requests: [{ content: { parts: [{ text }] } }] }` request shape.
+ *
+ * With `{ fail: true }`, returns HTTP 500 — use to exercise the app's
+ * embeddings-failure fallback (all singletons).
+ */
+export function geminiEmbeddingHandler(
+  options: GeminiEmbeddingOptions = {},
+): RouteHandler {
+  return async (route) => {
+    if (options.fail) {
+      await route.fulfill({
+        status: 500,
+        json: { error: { message: "forced test failure" } },
+      });
+      return;
+    }
+
+    type GeminiRequestBody = {
+      requests?: { content?: { parts?: { text?: unknown }[] } }[];
+    };
+    let body: GeminiRequestBody | null = null;
+    try {
+      const json = route.request().postDataJSON() as unknown;
+      if (json && typeof json === "object") body = json as GeminiRequestBody;
+    } catch {
+      body = null;
+    }
+
+    const inputs: string[] = Array.isArray(body?.requests)
+      ? body!.requests.map((r) => {
+          const t = r?.content?.parts?.[0]?.text;
+          return typeof t === "string" ? t : String(t ?? "");
+        })
+      : [];
+
+    const embeddings = inputs.map((text) => ({ values: fakeEmbedding(text) }));
+
+    await route.fulfill({ status: 200, json: { embeddings } });
+  };
+}

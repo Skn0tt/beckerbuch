@@ -16,8 +16,8 @@
  * genuinely different ingredients.
  *
  * In tests the network is intercepted by `tests/proxy/`, which fulfils
- * the OpenAI embeddings endpoint with deterministic vectors (see
- * `tests/mock-handlers.ts`).
+ * the active provider's embeddings endpoint with deterministic vectors
+ * (see `tests/mock-handlers.ts`).
  */
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../db/client";
@@ -34,9 +34,9 @@ export function normalizeForEmbedding(text: string): string {
 
 /**
  * Return an embedding for every distinct text in `texts`, reading from
- * the cache first and requesting only the misses from OpenAI. The
- * returned map is keyed by the exact input text; texts that normalize to
- * the same canonical form share a single vector.
+ * the cache first and requesting only the misses from the embedding
+ * provider. The returned map is keyed by the exact input text; texts
+ * that normalize to the same canonical form share a single vector.
  */
 export async function embedTexts(
   model: string,
@@ -102,6 +102,27 @@ export async function embedTexts(
 }
 
 /**
+ * Embed an array of texts, dispatching to the right provider by model
+ * id. `gemini-*` models go to Google's native embedding API; everything
+ * else uses the OpenAI-compatible path.
+ *
+ * The default prod model is Google's `gemini-embedding-001` (see
+ * {@link DEFAULT_EMBEDDING_MODEL} in dedup.ts). An offline eval on a
+ * gold set derived from real prod ingredient texts found it clearly best
+ * for German/English shopping-list dedup — it separates true synonyms
+ * (Möhren/Karotten, Parmesan/Parmigiano) that OpenAI's
+ * text-embedding-3-small collapses into near-neighbours, more than
+ * doubling recall at zero false merges. See `ml/embedding-eval/`.
+ */
+async function requestEmbeddings(
+  model: string,
+  input: string[],
+): Promise<number[][]> {
+  if (model.startsWith("gemini")) return requestGeminiEmbeddings(model, input);
+  return requestOpenAiEmbeddings(model, input);
+}
+
+/**
  * Raw OpenAI embeddings call (array input → array of vectors), chunked
  * to stay under the API's input-array limit and pinned to OpenAI
  * directly.
@@ -115,7 +136,7 @@ export async function embedTexts(
  */
 const EMBEDDING_BATCH_SIZE = 512;
 
-async function requestEmbeddings(
+async function requestOpenAiEmbeddings(
   model: string,
   input: string[],
 ): Promise<number[][]> {
@@ -145,6 +166,82 @@ async function requestEmbeddings(
       const vectors = [...res.data]
         .sort((a, b) => a.index - b.index)
         .map((d) => d.embedding as number[]);
+      out.push(...vectors);
+    }
+    return out;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Native Google Generative Language embeddings via `batchEmbedContents`
+ * (array of texts → array of vectors). We request the
+ * `SEMANTIC_SIMILARITY` task type (symmetric text-to-text comparison,
+ * which is what clustering does) at 1024 dimensions — the config the
+ * offline eval tuned the {@link DEFAULT_SIMILARITY_THRESHOLD} against.
+ *
+ * Reduced-dimension Gemini vectors are not L2-normalized, but we only
+ * ever compare them with {@link cosineSimilarity}, which normalizes, so
+ * that's fine. Auth is a dedicated key (`EMBEDDING_GEMINI_API_KEY`,
+ * falling back to `GEMINI_API_KEY`) via the `x-goog-api-key` header.
+ * Tests intercept `generativelanguage.googleapis.com`.
+ */
+const GEMINI_BATCH_SIZE = 96;
+const GEMINI_OUTPUT_DIMENSIONALITY = 1024;
+
+async function requestGeminiEmbeddings(
+  model: string,
+  input: string[],
+): Promise<number[][]> {
+  const baseURL =
+    process.env.EMBEDDING_GEMINI_BASE_URL ??
+    "https://generativelanguage.googleapis.com/v1beta";
+  const apiKey =
+    process.env.EMBEDDING_GEMINI_API_KEY ?? process.env.GEMINI_API_KEY;
+  const url = `${baseURL}/models/${model}:batchEmbedContents`;
+
+  // Netlify Functions cap at ~30s; bail well before the platform does.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25_000);
+  try {
+    const out: number[][] = [];
+    for (let start = 0; start < input.length; start += GEMINI_BATCH_SIZE) {
+      const batch = input.slice(start, start + GEMINI_BATCH_SIZE);
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(apiKey ? { "x-goog-api-key": apiKey } : {}),
+        },
+        body: JSON.stringify({
+          requests: batch.map((text) => ({
+            model: `models/${model}`,
+            content: { parts: [{ text }] },
+            taskType: "SEMANTIC_SIMILARITY",
+            outputDimensionality: GEMINI_OUTPUT_DIMENSIONALITY,
+          })),
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        throw new Error(
+          `gemini embeddings: HTTP ${res.status} ${res.statusText}: ${(
+            await res.text()
+          ).slice(0, 300)}`,
+        );
+      }
+      const json = (await res.json()) as {
+        embeddings?: { values: number[] }[];
+      };
+      const vectors = json.embeddings?.map((e) => e.values);
+      if (!vectors || vectors.length !== batch.length) {
+        throw new Error(
+          `gemini embeddings: expected ${batch.length} vectors, got ${
+            vectors?.length ?? 0
+          }`,
+        );
+      }
       out.push(...vectors);
     }
     return out;

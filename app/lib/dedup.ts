@@ -11,8 +11,8 @@
  * Embeddings are cached in the `ingredient_embeddings` table (see
  * {@link embedTexts}) so we don't re-pay/re-wait across recipes and
  * flats. In tests the network is intercepted by `tests/proxy/`, so this
- * module always calls real OpenAI in shape; the proxy responds with
- * deterministic vectors during npm test.
+ * module always calls the real embedding provider in shape; the proxy
+ * responds with deterministic vectors during npm test.
  */
 import { randomUUID } from "node:crypto";
 import type { DedupGroup } from "../db/schema";
@@ -53,17 +53,24 @@ export type DedupResult = {
 const MAX_INPUT_ITEMS = Number(process.env.MAX_INPUT_ITEMS ?? 5000);
 
 /** Default embedding model; override via DEDUP_EMBEDDING_MODEL. */
-const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
+const DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001";
 
 /**
  * Cosine-similarity threshold for treating two ingredient texts as the
- * same thing. Tuned on ~340 real prod ingredient texts embedded with
- * text-embedding-3-small: 0.82 is the lowest cutoff that produces zero
- * hard-negative violations (e.g. Paprika vs Paprikapulver, celeriac vs
- * celery stalk stay apart) while still catching the near-dup families.
- * Override via DEDUP_SIMILARITY_THRESHOLD.
+ * same thing. Re-tuned for gemini-embedding-001 (SEMANTIC_SIMILARITY
+ * task, 1024 dims) on a gold set derived from real prod ingredient
+ * texts (see `ml/embedding-eval/`): 0.95 is the lowest cutoff that
+ * produces zero hard-negative violations (Paprika vs Paprikapulver,
+ * Zitrone vs Limette, Parmesan vs Pecorino stay apart) while still
+ * catching the near-dup families — including cross-lingual pairs and
+ * German synonyms (Möhren/Karotten) that the previous OpenAI model
+ * collapsed or missed. Gemini runs "hot" (mean cosine is high even for
+ * unrelated pairs), so this threshold is much higher than the old
+ * text-embedding-3-small value of 0.82 — do not compare the two numbers
+ * directly; they live on different scales. Override via
+ * DEDUP_SIMILARITY_THRESHOLD.
  */
-const DEFAULT_SIMILARITY_THRESHOLD = 0.82;
+const DEFAULT_SIMILARITY_THRESHOLD = 0.95;
 
 // ---------------------------------------------------------------------------
 // Unit compatibility table.
