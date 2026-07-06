@@ -29,7 +29,8 @@ const tsvector = customType<{ data: string }>({
 /**
  * Dimensionless pgvector column. We deliberately do NOT fix the
  * dimension: different embedding models emit different lengths
- * (text-embedding-3-small = 1536, -3-large = 3072, …), so a
+ * (gemini-embedding-001 = 1024, text-embedding-3-small = 1536,
+ * -3-large = 3072, …), so a
  * dimensionless column stores any of them and switching
  * DEDUP_EMBEDDING_MODEL needs no migration. Clustering happens in JS,
  * so we don't need a fixed-dimension ANN index.

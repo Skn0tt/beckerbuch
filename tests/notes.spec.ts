@@ -1,9 +1,9 @@
 import { expect, test } from "./fixtures";
 import { login } from "./login";
-import { openAiEmbeddingHandler } from "./mock-handlers";
+import { geminiEmbeddingHandler } from "./mock-handlers";
 
 test.beforeEach(async ({ mocks }) => {
-  await mocks.route("https://api.openai.com/v1/embeddings", openAiEmbeddingHandler());
+  await mocks.route("https://generativelanguage.googleapis.com/**", geminiEmbeddingHandler());
 });
 
 async function createPasta(page: import("@playwright/test").Page) {

@@ -1,12 +1,12 @@
 import { expect, test } from "./fixtures";
 import { login } from "./login";
 import type { Page } from "@playwright/test";
-import { openAiEmbeddingHandler } from "./mock-handlers";
+import { geminiEmbeddingHandler } from "./mock-handlers";
 
-const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings";
+const GEMINI_EMBEDDINGS_URL = "https://generativelanguage.googleapis.com/**";
 
 test.beforeEach(async ({ mocks }) => {
-  await mocks.route(OPENAI_EMBEDDINGS_URL, openAiEmbeddingHandler());
+  await mocks.route(GEMINI_EMBEDDINGS_URL, geminiEmbeddingHandler());
 });
 
 /**
@@ -162,10 +162,11 @@ test("embeddings failure during finalise: redirect still happens, list renders a
   flat,
   mocks,
 }) => {
-  // Force the embeddings call to fail. The OpenAI SDK throws on 500,
-  // dedup() catches and returns the all-singletons fallback. Same code
-  // path the 20s AbortController triggers when the real API is too slow.
-  await mocks.route(OPENAI_EMBEDDINGS_URL, openAiEmbeddingHandler({ fail: true }));
+  // Force the embeddings call to fail. requestEmbeddings throws on a
+  // non-OK response, dedup() catches and returns the all-singletons
+  // fallback. Same code path the 25s AbortController triggers when the
+  // real API is too slow.
+  await mocks.route(GEMINI_EMBEDDINGS_URL, geminiEmbeddingHandler({ fail: true }));
 
   await login(page, flat.user);
   // Use nonsense variants unique to this spec. The embedding cache is
