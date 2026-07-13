@@ -217,12 +217,11 @@ real Postgres container, a tenant, and a login for free. This is the
 #    It prints: Run "playwright-cli attach tw-XXXX" to attach to this test
 PLAYWRIGHT_HTML_OPEN=never npm test -- --debug=cli recipes.spec.ts
 
-# 2. `playwright-cli` is NOT on PATH here. It ships inside playwright-core;
-#    invoke it directly (or alias it):
-PWCLI="node node_modules/playwright-core/lib/tools/cli-client/cli.js"
-$PWCLI attach tw-XXXX
-$PWCLI --s=tw-XXXX step-over     # advance while staying paused
-$PWCLI --s=tw-XXXX screenshot    # PNG lands in .playwright-cli/ (gitignored)
+# 2. There's no bare `playwright-cli` binary on PATH; invoke it via
+#    `npx playwright cli <command>`:
+npx playwright cli attach tw-XXXX
+npx playwright cli --s=tw-XXXX step-over    # advance while staying paused
+npx playwright cli --s=tw-XXXX screenshot   # PNG lands in .playwright-cli/ (gitignored)
 ```
 
 - Pass `--s=<session>` on every follow-up command after `attach`.
