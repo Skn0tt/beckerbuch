@@ -207,16 +207,25 @@ exporting `TESTCONTAINERS_REUSE_ENABLE=true` speeds up local iteration.
 
 There is no `npm run dev`; the E2E suite is the inner loop. The easiest way
 to reach a running, seeded, logged-in instance is to start a test and step
-to the end of it rather than booting the app by hand — the test fixtures
-give you a real Postgres container, a tenant, and an authenticated session
-for free. Use the `--debug=cli` + `playwright-cli attach` flow already
-documented in **rule 1** above (and [TECH.md §11.1](./TECH.md)):
+through it rather than booting the app by hand — the fixtures give you a
+real Postgres container, a tenant, and a login for free. This is the
+`--debug=cli` + `playwright-cli attach` flow from **rule 1** /
+[TECH.md §11.1](./TECH.md). Verified working in this VM; two gotchas:
 
 ```bash
-npm test -- --debug=cli some.spec   # prints a session id to attach to
+# 1. Start a paused session (from a login shell so Node >= 22.16 — see above).
+#    It prints: Run "playwright-cli attach tw-XXXX" to attach to this test
+PLAYWRIGHT_HTML_OPEN=never npm test -- --debug=cli recipes.spec.ts
+
+# 2. `playwright-cli` is NOT on PATH here. It ships inside playwright-core;
+#    invoke it directly (or alias it):
+PWCLI="node node_modules/playwright-core/lib/tools/cli-client/cli.js"
+$PWCLI attach tw-XXXX
+$PWCLI --s=tw-XXXX step-over     # advance while staying paused
+$PWCLI --s=tw-XXXX screenshot    # PNG lands in .playwright-cli/ (gitignored)
 ```
 
-Then `playwright-cli attach <id>`, `step-over` to the state you want, and
-`screenshot`. Prefer this over manually running
-`react-router-serve` — that path leaves you with an empty DB, no tenant, and
-no session.
+- Pass `--s=<session>` on every follow-up command after `attach`.
+- Use `step-over` to walk to the state you want. **Do not `resume`** unless
+  you want the spec to run to completion — that finishes the test and
+  **closes the browser**, ending the session.
