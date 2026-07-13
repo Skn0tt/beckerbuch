@@ -203,11 +203,20 @@ Docker 29 needs for fuse-overlayfs). The `pgvector/pgvector:pg16` image is
 pre-pulled. Tests use `withReuse()`, so the container survives across runs;
 exporting `TESTCONTAINERS_REUSE_ENABLE=true` speeds up local iteration.
 
-### Seeing the app without a test (no dev server)
+### Poking at a running instance (no dev server)
 
-Per [TECH.md §11](./TECH.md) there is no `npm run dev`; the E2E suite is the
-inner loop (use `npx playwright test --debug`/`--ui`/`--headed`). To poke a
-plain running instance: `npm run build`, then run
-`react-router-serve build/server/server-build.js` with `DATABASE_URL`
-pointing at a Postgres, `SESSION_SECRET`, and `ADMIN_TOKEN` set, and mint a
-flat + invite link via `POST /admin/tenants` (header `X-Admin-Token`).
+There is no `npm run dev`; the E2E suite is the inner loop. The easiest way
+to reach a running, seeded, logged-in instance is to start a test and step
+to the end of it rather than booting the app by hand — the test fixtures
+give you a real Postgres container, a tenant, and an authenticated session
+for free. Use the `--debug=cli` + `playwright-cli attach` flow already
+documented in **rule 1** above (and [TECH.md §11.1](./TECH.md)):
+
+```bash
+npm test -- --debug=cli some.spec   # prints a session id to attach to
+```
+
+Then `playwright-cli attach <id>`, `step-over` to the state you want, and
+`screenshot`. Prefer this over manually running
+`react-router-serve` — that path leaves you with an empty DB, no tenant, and
+no session.
