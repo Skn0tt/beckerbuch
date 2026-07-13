@@ -161,3 +161,70 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 React Router 7 + TypeScript, Mantine, Drizzle + `pg`, argon2id,
 Postgres 16 (Testcontainers in tests, Neon in prod), Netlify Functions,
 Playwright E2E.
+
+## Cursor Cloud specific instructions
+
+Dependencies (`npm install`, Playwright's chromium browser, Docker + the
+`pgvector/pgvector:pg16` image) are already installed by the environment's
+update script. The two things below are *not* automatic and bite every
+fresh session — handle them before running `npm test`.
+
+### 1. Use Node ≥ 22.16 (nvm provides v22.22.2 in login shells)
+
+`npm test` must run under Node **≥ 22.16**. The mock proxy
+(`tests/playwright-mocks/`) routes the app's outbound HTTPS through mockttp
+by setting `NODE_USE_ENV_PROXY=1` on the `react-router-serve` child — a
+feature only present from Node 22.16. Under an older Node the app ignores
+the proxy and hits the real internet, so any spec that mocks an upstream
+fails with real-API errors (e.g. Gemini `HTTP 403 Forbidden` in
+`handoff-dedup`/`planned-ingredients`, kptncook import failures).
+
+- A **login / tmux shell** sources `~/.bashrc` → nvm → Node **v22.22.2**,
+  which is correct. The tmux workflow in the cloud guidance already does
+  this.
+- The non-login shell used by one-off command runners defaults to an older
+  pinned Node (v22.14.0). If `npm test` shows the dedup/kptncook failures
+  above, check `node -v` first — that's almost always the cause. Prefix a
+  run with `export PATH="$HOME/.nvm/versions/node/$(nvm version default)/bin:$PATH"`
+  or run inside a tmux login shell.
+
+### 2. Start the Docker daemon first (Testcontainers)
+
+`npm test` boots Postgres via Testcontainers, so a Docker daemon must be
+running. It is installed but not auto-started. Start it once per session:
+
+```bash
+sudo dockerd > /tmp/dockerd.log 2>&1 &
+```
+
+`/etc/docker/daemon.json` is already configured for this VM
+(`fuse-overlayfs` storage driver + `containerd-snapshotter` disabled, which
+Docker 29 needs for fuse-overlayfs). The `pgvector/pgvector:pg16` image is
+pre-pulled. Tests use `withReuse()`, so the container survives across runs;
+exporting `TESTCONTAINERS_REUSE_ENABLE=true` speeds up local iteration.
+
+### Poking at a running instance (no dev server)
+
+There is no `npm run dev`; the E2E suite is the inner loop. The easiest way
+to reach a running, seeded, logged-in instance is to start a test and step
+through it rather than booting the app by hand — the fixtures give you a
+real Postgres container, a tenant, and a login for free. This is the
+`--debug=cli` + `playwright-cli attach` flow from **rule 1** /
+[TECH.md §11.1](./TECH.md). Verified working in this VM; two gotchas:
+
+```bash
+# 1. Start a paused session (from a login shell so Node >= 22.16 — see above).
+#    It prints: Run "playwright-cli attach tw-XXXX" to attach to this test
+PLAYWRIGHT_HTML_OPEN=never npm test -- --debug=cli recipes.spec.ts
+
+# 2. There's no bare `playwright-cli` binary on PATH; invoke it via
+#    `npx playwright cli <command>`:
+npx playwright cli attach tw-XXXX
+npx playwright cli --s=tw-XXXX step-over    # advance while staying paused
+npx playwright cli --s=tw-XXXX screenshot   # PNG lands in .playwright-cli/ (gitignored)
+```
+
+- Pass `--s=<session>` on every follow-up command after `attach`.
+- Use `step-over` to walk to the state you want. **Do not `resume`** unless
+  you want the spec to run to completion — that finishes the test and
+  **closes the browser**, ending the session.
