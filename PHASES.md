@@ -1,26 +1,35 @@
 # Implementation phases
 
-DESIGN.md, UI.md, TECH.md are committed. This file plans the build.
+DESIGN.md, UI.md, TECH.md are committed. This file planned the build.
+
+> **Status (living):** Phases 1–5 are done, and most of Phase 6 has
+> landed in production (deploy, Blobs, Neon). Treat this file as a
+> **historical build log**, not a todo list — don't "skip ahead" by
+> re-implementing what's already here. Living product/tech truth is
+> [`DESIGN.md`](./DESIGN.md), [`UI.md`](./UI.md), [`TECH.md`](./TECH.md),
+> and [`AGENTS.md`](./AGENTS.md). When this file contradicts the code,
+> fix this file (AGENTS.md rule).
+>
+> Still open from Phase 6: Neon-branch-per-PR Playwright parity job
+> (TECH.md §13).
 
 ## Locked-in constraints
 
-1. **Phase 1 is a sign-off gate.** No feature work starts until the
-   testing setup is reviewed and approved.
-2. **No dev mode in v1.** The primary developer interaction is
-   writing and running E2E tests. Visual debugging via
-   `npm run test:debug`, `npm run test:ui`, or `await page.pause()`.
+1. **Phase 1 was a sign-off gate.** Feature work waited on the
+   testing setup being reviewed and approved. (Gate passed.)
+2. **No `npm run dev` in v1.** The primary developer interaction is
+   writing and running E2E tests. Visual debugging via Playwright
+   CLI flags (`npx playwright test --debug`, `--ui`) or
+   `await page.pause()` — not npm script aliases.
 3. **Postgres is launched by Playwright via Testcontainers** — no
-   `docker-compose.yml`, no orchestration script.
+   `docker-compose.yml`, no orchestration script. Image pinned to
+   `pgvector/pgvector:pg16`.
 4. **No test-only code in the app, no auth shortcuts.** Tests act
    like real users: every spec fills the login form at start via a
    thin `login(page, user)` helper. Setup that can't be done through
    the UI (DB reset, seeding) goes through direct Drizzle access
    from the test process. No `/_test/*` routes, no `loginAs` /
    `mintSession` shortcut, no `storageState` machinery.
-
-These constraints simplify the surface drastically. TECH.md §1,
-§10, §11, §11.2 will need a follow-up rewrite to match — captured
-as Phase 1.10.
 
 ## Stack reminder
 
@@ -60,7 +69,7 @@ asserts the empty-state. Green means ready for Phase 2.
 
 ### 1.3 `tests/global-setup.ts` — owns the database lifecycle
 
-- `new PostgreSqlContainer("postgres:16")` pinned
+- `new PostgreSqlContainer("pgvector/pgvector:pg16")` pinned
 - Init script enables `pgcrypto`, `pg_trgm`, `unaccent`
 - Wait for ready → set `process.env.DATABASE_URL`
 - Run `drizzle-kit push` (apply schema)
@@ -109,11 +118,13 @@ asserts the empty-state. Green means ready for Phase 2.
 - `playwright.config.ts`:
   - `globalSetup: ./tests/global-setup.ts`
   - (no separate `globalTeardown` — `globalSetup` returns its own teardown function)
-  - `webServer`: `netlify dev` with `.env.test` loaded;
-    `DATABASE_URL` already in `process.env` from globalSetup
-  - `baseURL: http://localhost:8888`
+  - **No global `webServer`** — each Playwright worker spawns its
+    own `react-router-serve` of the production build via the
+    `server` fixture (`tests/fixtures.ts`), with a per-worker
+    Netlify Blobs emulator. `DATABASE_URL` is already in
+    `process.env` from globalSetup.
   - **No `storageState`** — every test starts fresh
-  - `fullyParallel: false` for v1 (single shared container)
+  - `fullyParallel: true` (per-test tenants; safe by construction)
 - `tests/smoke.spec.ts`:
   1. (opt-in) `tenant` fixture → fresh user/flat exist
   2. `await login(page)`
@@ -195,7 +206,8 @@ Must include, at minimum:
 - Pointers to DESIGN.md (product), UI.md (screens), TECH.md
   (architecture), and this file (phases).
 
-🛑 **STOP — wait for sign-off on the testing setup before Phase 2.**
+~~🛑 **STOP — wait for sign-off on the testing setup before Phase 2.**~~
+*(Historical gate — passed. Kept for context.)*
 
 ## Phase 2 — Auth & user management
 
@@ -270,11 +282,13 @@ all covered by E2E.
   exactly what a user would. If we later need to test "user is
   shown 'Welcome back, Tom' on second login", we don't even use
   the helper — we drive the form directly.
-- **Visual exploration paths**:
-  - `npm run test:debug` — Playwright stepping
-  - `npm run test:ui` — time-travel UI
+- **Visual exploration paths** (Playwright CLI — no npm aliases):
+  - `npx playwright test --debug` — stepping
+  - `npx playwright test --ui` — time-travel UI
   - `await page.pause()` in any spec — full app loaded & seeded,
     container alive; click around freely
+  - `--debug=cli` + `npx playwright cli attach …` — AI/human attach
+    flow (see AGENTS.md)
 - **Test isolation** = a fresh tenant (user + flat) per test via
   the `tenant` fixture. No global TRUNCATE; multi-tenancy gives us
   isolation for free. Container is reused across specs in a single

@@ -7,25 +7,26 @@ work through the in-stock board as you cook.
 
 See [`DESIGN.md`](./DESIGN.md) for the product story,
 [`UI.md`](./UI.md) for screens, [`TECH.md`](./TECH.md) for architecture,
-and [`PHASES.md`](./PHASES.md) for the build plan.
+and [`PHASES.md`](./PHASES.md) for the (mostly completed) build plan.
 
 ## Quickstart
 
-You need **Node 22+** and a running **Docker daemon** (Docker Desktop,
+You need **Node ≥ 22.16** and a running **Docker daemon** (Docker Desktop,
 Colima, OrbStack — anything that exposes a Docker socket Testcontainers
 can find).
 
 ```bash
 git clone …
-cd kochbuch
+cd beckerbuch   # or whatever you named the clone
 npm install
 npm test
 ```
 
-That's it. `npm test` boots a `postgres:16` container via Testcontainers,
-applies the schema, starts the app via `netlify dev`, and runs the
-Playwright suite. There is no `npm run dev` — see [TECH.md §11](./TECH.md)
-for why and how to drive the app interactively through Playwright instead.
+That's it. `npm test` boots a `pgvector/pgvector:pg16` container via
+Testcontainers, applies the schema, builds the app, starts a per-worker
+`react-router-serve` process, and runs the Playwright suite. There is no
+`npm run dev` — see [TECH.md §11](./TECH.md) for why and how to drive the
+app interactively through Playwright instead.
 
 ## Scripts
 
@@ -38,7 +39,8 @@ for why and how to drive the app interactively through Playwright instead.
 
 For visual debugging, use Playwright's CLI flags directly:
 `npx playwright test --debug`, `--ui`, `--headed`, or sprinkle
-`await page.pause()` in a spec.
+`await page.pause()` in a spec. For the AI/`playwright-cli` attach
+flow, see [`AGENTS.md`](./AGENTS.md).
 
 ## Connecting ChatGPT (MCP)
 
@@ -55,4 +57,8 @@ signed in to your flat first). After approval it can call:
 
 - `kochbuch_add_recipe` — name, baseQuantity, ingredients, steps,
   optional sourceUrl, optional photoUrl (server fetches the image)
-
+- `kochbuch_search_recipes` — free-text search over the flat's collection
+- `kochbuch_get_recipe` — fetch one recipe by id
+- `kochbuch_edit_recipe` — patch name / quantities / ingredients / steps
+- `fetch_recipe` — resolve a URL / kptncook id into a normalized payload
+  (does not store; pass the result to `kochbuch_add_recipe` to save)
