@@ -157,7 +157,13 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
       footer={{ height: { base: 60, md: 0 } }}
       padding={0}
     >
-      <AppShell.Header style={{ position: "relative" }}>
+      {/*
+        Do not set position on Header — Mantine's fixed header is the
+        containing block for the absolute nav-progress bar. Overriding it
+        to `relative` puts the header back in flow and doubles the main
+        offset (header height + --app-shell-header-offset padding).
+      */}
+      <AppShell.Header>
         {isNavigating && (
           <Box
             data-testid="nav-progress"
