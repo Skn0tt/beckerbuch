@@ -6,7 +6,7 @@
     "test": "playwright test",
     "db:generate": "drizzle-kit generate",
     "lint": "eslint . && react-router typegen && tsc --noEmit",
-    "build": "COOKBOOK_PRERENDER=1 react-router build"
+    "build": "COOKBOOK_PRERENDER=1 react-router build && node scripts/strip-prerender-data.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
