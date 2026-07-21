@@ -1,20 +1,23 @@
 import { sql } from "drizzle-orm";
 import type { db as dbFactory } from "./db/client";
-import { recipes } from "./db/schema";
+import { ingredients, recipes } from "./db/schema";
 
 type Tx = Parameters<Parameters<ReturnType<typeof dbFactory>["transaction"]>[0]>[0];
 
 /**
  * Recompute and persist `recipes.search_vector` for one recipe by joining its
- * own row + the (already-inserted) ingredients table. Called inside the same
- * transaction that wrote the recipe / ingredients, so the new content is
- * already visible.
+ * own row + the (already-inserted) ingredients table, and each ingredient's
+ * own `search_vector` from its `item` text. Called inside the same transaction
+ * that wrote the recipe / ingredients, so the new content is already visible.
  *
- * Weight tiers (per TECH.md §5.1):
+ * Recipe weight tiers (per TECH.md §5.1):
  *   A — name
  *   B — ingredient items (concatenated)
  *   C — source_host
  *   D — steps
+ *
+ * Ingredient vectors use the same `simple` + `unaccent` config so planned-
+ * ingredients FTS matches recipe search tokenization.
  */
 export async function updateSearchVector(tx: Tx, recipeId: string): Promise<void> {
   await tx.execute(sql`
@@ -34,6 +37,12 @@ export async function updateSearchVector(tx: Tx, recipeId: string): Promise<void
       || setweight(to_tsvector('simple', unaccent(coalesce(r.source_host, ''))), 'C')
       || setweight(to_tsvector('simple', unaccent(coalesce(r.steps, ''))), 'D')
     where r.id = ${recipeId}
+  `);
+
+  await tx.execute(sql`
+    update ${ingredients}
+    set search_vector = to_tsvector('simple', unaccent(coalesce(item, '')))
+    where recipe_id = ${recipeId}
   `);
 }
 

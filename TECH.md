@@ -145,12 +145,14 @@ ingredients
   amount      numeric                        -- nullable for "salt to taste"
   unit        text                           -- nullable
   item        text not null
+  search_vector tsvector                     -- maintained with recipe FTS (see §5)
   unique (recipe_id, position)
 ```
 
 Indexes:
 - `recipes(flat_id)`
 - `gin (recipes.search_vector)` for FTS
+- `gin (ingredients.search_vector)` for planned-ingredients FTS
 - `gin (recipes.name gin_trgm_ops)` and `gin (ingredients.item gin_trgm_ops)` for fuzzy
 
 ### 3.3 Recipe instances and finalised lists
@@ -301,15 +303,19 @@ highlighted matches.
 ### 5.1 Index
 
 ```sql
--- maintained by trigger on insert/update of recipes & ingredients
+-- maintained on recipe create/edit (app/search.ts updateSearchVector)
 recipes.search_vector :=
     setweight(to_tsvector('simple', unaccent(coalesce(name, ''))), 'A')
   ||setweight(to_tsvector('simple', unaccent(string_agg(ingredients.item, ' '))), 'B')
   ||setweight(to_tsvector('simple', unaccent(coalesce(source_host, ''))), 'C')
   ||setweight(to_tsvector('simple', unaccent(coalesce(steps, ''))), 'D');
 
+ingredients.search_vector :=
+    to_tsvector('simple', unaccent(coalesce(item, '')));
+
 create index recipes_fts on recipes using gin (search_vector);
 create index recipes_name_trgm on recipes using gin (name gin_trgm_ops);
+create index ingredients_fts on ingredients using gin (search_vector);
 create index ingredients_item_trgm on ingredients using gin (item gin_trgm_ops);
 ```
 
@@ -318,7 +324,11 @@ create index ingredients_item_trgm on ingredients using gin (item gin_trgm_ops);
   uniformly. Stemming is a v2 if we feel we need it.
 - `unaccent` flattens `Hähnchen` → `hahnchen` so users don't need to
   type umlauts.
-
+- Per-ingredient `search_vector` powers the kitchen Planned ingredients
+  filter (`GET /kitchen/combined/search?q=…`): FTS over in-stock item
+  texts, plus name-only FTS on in-stock recipe names, then filters the
+  deduped combined list. Same `buildTsQuery` prefix/`:*` tokenizer as
+  recipe collection search.
 ### 5.2 Query path
 
 For a user query `q`:
@@ -476,10 +486,12 @@ top for Split/override. The kitchen **Planned ingredients** view
 (`loadCombinedList`, all currently in-stock recipes) sorts **A–Z by
 representative `item` name** instead — merged and singleton rows
 interleave — because that surface is read-only and meant for scanning.
-On mobile (`/kitchen?lane=ingredients`) a tucked-away client filter
-(icon → expands left over the heading on the same row) matches against
-item / display text / source recipe names; the desktop sidebar modal
-has no filter (browser find is enough).
+On mobile (`/kitchen?lane=ingredients`) a tucked-away filter
+(icon → expands left over the heading on the same row) debounces the
+query and calls `/kitchen/combined/search` — Postgres FTS on
+`ingredients.search_vector` for in-stock items, plus name-only FTS on
+in-stock recipe names. The desktop sidebar modal has no filter
+(browser find is enough).
 
 Writes (`split`, `unsplit`, `regenerate`) are public and keyed on
 the flat UUID, consistent with the rest of the handoff page's

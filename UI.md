@@ -343,7 +343,7 @@ MOBILE — Ingredients (planned, all in-stock)
 - "Finalise →" opens **Finalise confirmation** (§7) as a sheet.
 - In stock: `[ ✓ Cooked ]` is a deliberately big tap target (kitchen-with-greasy-hands ergonomics). Tap → "Marked cooked. **Undo**" toast for ~5s before writing to history.
 - Empty draft: shows a friendly empty state with `[ Browse recipes → ]` jumping to the Recipes tab.
-- **Ingredients** lane: read-only combined list over every in-stock recipe (not just the latest finalise batch). Rows are A–Z by representative item name. A subtle search icon expands a client-side filter **left over the “Planned ingredients” heading** (same row — no extra vertical space; matches item / display text / recipe name). Desktop exposes the same list via the sidebar "Ingredients" modal without a filter (browser find). Handoff (§8) still pins merged groups to the top for Split/override.
+- **Ingredients** lane: read-only combined list over every in-stock recipe (not just the latest finalise batch). Rows are A–Z by representative item name. A subtle search icon expands a filter **left over the “Planned ingredients” heading** (same row — no extra vertical space). After a short debounce the query hits `/kitchen/combined/search` (Postgres FTS on ingredient item texts + in-stock recipe names; prefix `:*`). Desktop exposes the same list via the sidebar "Ingredients" modal without a filter (browser find). Handoff (§8) still pins merged groups to the top for Split/override.
 
 ---
 
