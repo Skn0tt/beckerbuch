@@ -1,16 +1,23 @@
 import { Box, Grid } from "@mantine/core";
-import { Outlet } from "react-router";
+import { Suspense } from "react";
+import { Await, Outlet } from "react-router";
 import type { Route } from "./+types/_workspace";
 import { requireFlatMember } from "../auth/require";
 import { csrfTokenForSession } from "../auth/csrf.server";
 import { loadKitchen } from "../lib/kitchen-data";
 import { KitchenSidebar } from "../components/kitchen-sidebar";
+import { KitchenSidebarSkeleton } from "../components/app-skeleton";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requireFlatMember(request);
-  const kitchen = await loadKitchen(ctx.flat.id);
   const csrfToken = csrfTokenForSession(ctx.session.id);
-  return { kitchen, flatId: ctx.flat.id, csrfToken };
+  // Stream the sidebar: auth is enough to paint the shell; kitchen rows
+  // fill in when the query lands.
+  return {
+    kitchen: loadKitchen(ctx.flat.id),
+    flatId: ctx.flat.id,
+    csrfToken,
+  };
 }
 
 export function shouldRevalidate({
@@ -43,12 +50,18 @@ export default function WorkspaceLayout({ loaderData }: Route.ComponentProps) {
           <Outlet />
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 4 }} visibleFrom="md">
-          <KitchenSidebar
-            draft={kitchen.draft}
-            stock={kitchen.stock}
-            members={kitchen.members}
-            csrfToken={csrfToken}
-          />
+          <Suspense fallback={<KitchenSidebarSkeleton />}>
+            <Await resolve={kitchen}>
+              {(data) => (
+                <KitchenSidebar
+                  draft={data.draft}
+                  stock={data.stock}
+                  members={data.members}
+                  csrfToken={csrfToken}
+                />
+              )}
+            </Await>
+          </Suspense>
         </Grid.Col>
       </Grid>
     </Box>

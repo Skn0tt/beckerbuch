@@ -9,7 +9,14 @@ import {
   UnstyledButton,
   VisuallyHidden,
 } from "@mantine/core";
-import { Link, Outlet, redirect, useLocation, useNavigate } from "react-router";
+import {
+  Link,
+  Outlet,
+  redirect,
+  useLocation,
+  useNavigate,
+  useNavigation,
+} from "react-router";
 import type { Route } from "./+types/_app";
 import { tryGetAuthedContext } from "../auth/require";
 import { UserAvatar } from "../components/user-avatar";
@@ -64,6 +71,8 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
   const { user, flat } = loaderData;
   const location = useLocation();
   const navigate = useNavigate();
+  const navigation = useNavigation();
+  const isNavigating = navigation.state !== "idle";
 
   const showBack = !TOP_LEVEL_ROUTES.has(location.pathname);
 
@@ -84,7 +93,14 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
       footer={{ height: { base: 60, md: 0 } }}
       padding={0}
     >
-      <AppShell.Header>
+      <AppShell.Header style={{ position: "relative" }}>
+        {isNavigating && (
+          <Box
+            data-testid="nav-progress"
+            aria-hidden
+            className="nav-progress"
+          />
+        )}
         <Group h="100%" px="md" justify="space-between">
           <Group gap="xs" wrap="nowrap">
             {/* Always mount the back slot (toggling only visibility) so the
@@ -151,7 +167,9 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
                   textDecoration: "none",
                   color: "inherit",
                   fontWeight: active ? 600 : 400,
-                  background: active ? "var(--mantine-color-default-hover)" : undefined,
+                  background: active
+                    ? "var(--mantine-color-default-hover)"
+                    : undefined,
                 }}
                 aria-current={active ? "page" : undefined}
               >

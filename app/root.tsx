@@ -22,6 +22,7 @@ import {
 } from "react-router";
 
 import type { Route } from "./+types/root";
+import { AppChromeSkeleton } from "./components/app-skeleton";
 import "./styles.css";
 
 export const links: Route.LinksFunction = () => [
@@ -44,6 +45,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
           name="apple-mobile-web-app-status-bar-style"
           content="default"
         />
+        {/*
+          Inline critical paint so the first HTML chunk isn't a white flash
+          while Mantine CSS arrives (and so streamed Suspense skeletons sit
+          on a calm surface immediately).
+        */}
+        <style
+          dangerouslySetInnerHTML={{
+            __html:
+              "html,body{background:#f6f5f3;margin:0}html{color-scheme:light dark}",
+          }}
+        />
         <ColorSchemeScript />
         <Meta />
         <Links />
@@ -58,6 +70,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </body>
     </html>
   );
+}
+
+export function HydrateFallback() {
+  return <AppChromeSkeleton />;
 }
 
 export default function App() {

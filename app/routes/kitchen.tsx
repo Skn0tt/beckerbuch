@@ -95,6 +95,9 @@ export async function loader({ request }: Route.LoaderArgs) {
         ? "ingredients"
         : "draft";
 
+  // Await here (unlike the home sidebar): lane switches are search-param
+  // navigations that would otherwise remount a Suspense fallback and flash
+  // a skeleton on every Draft ↔ Stock tap.
   const data = await loadKitchen(ctx.flat.id);
   return {
     lane,

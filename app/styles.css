@@ -47,3 +47,38 @@ html {
     opacity: 1;
   }
 }
+
+/* Thin header bar while a client navigation's loaders are in flight. */
+.nav-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  width: 40%;
+  background: var(--mantine-color-orange-6);
+  animation: nav-progress-slide 1.1s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes nav-progress-slide {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0.4;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(350%);
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-progress {
+    width: 100%;
+    animation: none;
+    opacity: 0.7;
+  }
+}
