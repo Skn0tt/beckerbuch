@@ -325,15 +325,16 @@ create index ingredients_item_trgm on ingredients using gin (item gin_trgm_ops);
 - `unaccent` flattens `Hähnchen` → `hahnchen` so users don't need to
   type umlauts.
 - Per-ingredient `search_vector` powers the kitchen Planned ingredients
-  filter (`GET /kitchen/combined/search?q=…`): FTS over in-stock item
-  texts, plus name-only FTS on in-stock recipe names, then filters the
-  deduped combined list. Same `buildTsQuery` prefix/`:*` tokenizer as
-  recipe collection search. Query strings are passed through `unaccent`
-  so they match vectors built with `unaccent`. When FTS returns no hits,
-  the loader embeds the query (cache-aware via `embedTexts`) and returns
-  groups whose representative `item` is within
-  `INGREDIENT_SEARCH_SIMILARITY_THRESHOLD` (default `0.85`, below dedup's
-  `0.95` so near-synonyms like Möhren/Karotten can still surface).
+  filter (`GET /kitchen/combined/search?q=…`). Cascade:
+  1. FTS over in-stock item texts + name-only FTS on in-stock recipe
+     names (`buildTsQuery` prefix/`:*`, query passed through `unaccent`).
+  2. On an empty FTS set, `pg_trgm` `word_similarity` against
+     `ingredients.item` (threshold default `0.3`, env
+     `INGREDIENT_SEARCH_TRIGRAM_THRESHOLD`) using the existing
+     `ingredients_item_trgm` index — catches typos like `avcad`→`avocado`.
+  3. Still empty → embed the query and return groups within
+     `INGREDIENT_SEARCH_SIMILARITY_THRESHOLD` (default `0.85`) for
+     near-synonyms like Möhren/Karotten.
 ### 5.2 Query path
 
 For a user query `q`:
@@ -493,12 +494,10 @@ representative `item` name** instead — merged and singleton rows
 interleave — because that surface is read-only and meant for scanning.
 On mobile (`/kitchen?lane=ingredients`) a tucked-away filter
 (icon → expands left over the heading on the same row) debounces the
-query and calls `/kitchen/combined/search` — Postgres FTS on
-`ingredients.search_vector` for in-stock items, plus name-only FTS on
-in-stock recipe names; if FTS is empty, an embedding cosine fallback
-ranks near-synonym item texts. The desktop sidebar modal has no filter
-(browser find is enough).
-
+query and calls `/kitchen/combined/search` — FTS on
+`ingredients.search_vector` / recipe names, then `pg_trgm`
+word_similarity for typos, then embedding cosine for near-synonyms.
+The desktop sidebar modal has no filter (browser find is enough).
 Writes (`split`, `unsplit`, `regenerate`) are public and keyed on
 the flat UUID, consistent with the rest of the handoff page's
 trust model.

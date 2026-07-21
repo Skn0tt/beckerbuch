@@ -1,7 +1,9 @@
 /**
  * Full-text search over the kitchen "Planned ingredients" list (in-stock
- * recipes only), with an embedding similarity fallback when FTS finds
- * nothing — so synonym queries like "carotten" can still surface "möhren".
+ * recipes only). Cascade when earlier stages miss:
+ *   1. FTS prefix match (shared tokens)
+ *   2. pg_trgm word_similarity (typos like avcad → avocado)
+ *   3. Embedding cosine (synonyms like carotten → möhren)
  */
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "../db/client";
@@ -18,6 +20,12 @@ import { loadCombinedList, type CombinedList } from "./combined-list";
 const DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001";
 /** Lower than dedup's 0.95 — synonyms sit below the merge cutoff on Gemini. */
 const DEFAULT_SEARCH_SIMILARITY_THRESHOLD = 0.85;
+/**
+ * pg_trgm word_similarity cutoff for typo fallback. Below the extension's
+ * default operator threshold (0.6) so short typos like "avcad"→"avocado"
+ * (~0.33) still hit; uses the existing `ingredients_item_trgm` index.
+ */
+const DEFAULT_TRIGRAM_WORD_SIMILARITY = 0.3;
 
 export async function searchPlannedIngredients(
   flatId: string,
@@ -48,13 +56,25 @@ export async function searchPlannedIngredients(
   if (ftsHits.size > 0) {
     return {
       ...combined,
-      combinedGroups: combined.combinedGroups.filter((g) =>
-        g.sources.some((s) => ftsHits.has(s.id)),
+      combinedGroups: filterGroupsByIngredientIds(
+        combined.combinedGroups,
+        ftsHits,
       ),
     };
   }
 
-  // FTS miss — try semantic near-neighbours (carotten ↔ möhren).
+  const trgmHits = await findTrigramIngredientIds(recipeIds, trimmed);
+  if (trgmHits.size > 0) {
+    return {
+      ...combined,
+      combinedGroups: filterGroupsByIngredientIds(
+        combined.combinedGroups,
+        trgmHits,
+      ),
+    };
+  }
+
+  // FTS + trigram miss — try semantic near-neighbours (carotten ↔ möhren).
   try {
     const semantic = await rankGroupsByEmbedding(
       combined.combinedGroups,
@@ -65,6 +85,13 @@ export async function searchPlannedIngredients(
     console.warn("[ingredient-search] embedding fallback failed:", err);
     return { ...combined, combinedGroups: [] };
   }
+}
+
+function filterGroupsByIngredientIds(
+  groups: DedupGroup[],
+  ids: Set<string>,
+): DedupGroup[] {
+  return groups.filter((g) => g.sources.some((s) => ids.has(s.id)));
 }
 
 /**
@@ -116,6 +143,34 @@ async function findFtsIngredientIds(
   }
 
   return hitIngredientIds;
+}
+
+/**
+ * Typo-tolerant fallback via pg_trgm. Uses word_similarity so a short
+ * mistyped query can match one word inside a longer item string.
+ */
+async function findTrigramIngredientIds(
+  recipeIds: string[],
+  query: string,
+): Promise<Set<string>> {
+  const threshold = Number(
+    process.env.INGREDIENT_SEARCH_TRIGRAM_THRESHOLD ??
+      DEFAULT_TRIGRAM_WORD_SIMILARITY,
+  );
+  // Normalize like FTS: lowercase + unaccent so "Avcad" matches "avocado".
+  const rows = await db()
+    .select({ id: ingredients.id })
+    .from(ingredients)
+    .where(
+      and(
+        inArray(ingredients.recipeId, recipeIds),
+        sql`word_similarity(
+          unaccent(lower(${query})),
+          unaccent(lower(${ingredients.item}))
+        ) >= ${threshold}`,
+      ),
+    );
+  return new Set(rows.map((r) => r.id));
 }
 
 async function rankGroupsByEmbedding(

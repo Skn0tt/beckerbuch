@@ -138,3 +138,13 @@ everything currently in stock.
      `/kitchen?lane=ingredients`.
   2. Filter to `carotten` (no FTS token overlap with `möhren`).
     - expect: Only the möhren row remains (embedding similarity fallback).
+
+#### 1.10. ingredients-tab-filter-trigram-typo-fallback
+
+**File:** `tests/planned-ingredients.spec.ts`
+
+**Steps:**
+  1. Log in, finalise recipes with `avocado` and `apple`, open
+     `/kitchen?lane=ingredients`.
+  2. Filter to `Avcad` (not a prefix of `avocado`).
+    - expect: Only the avocado row remains (pg_trgm word_similarity).
