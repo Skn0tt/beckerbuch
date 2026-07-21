@@ -200,7 +200,9 @@ target quantity. Used for:
 No edits, no ratings, no comments in v1. **No UI surface in v1 either** —
 the data is recorded so we can query it manually (and so future features
 like repeat-favourites have history to draw on), but there's no in-app
-view of it yet.
+view of it yet. Agents can pull a flat-scoped dump via the MCP tool
+`kochbuch_export_analysis` (normalized JSON tables: members, recipes,
+ingredients, cooked) and analyze locally.
 
 ## 5. Users & access
 

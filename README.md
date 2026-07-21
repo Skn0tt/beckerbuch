@@ -60,5 +60,7 @@ signed in to your flat first). After approval it can call:
 - `kochbuch_search_recipes` — free-text search over the flat's collection
 - `kochbuch_get_recipe` — fetch one recipe by id
 - `kochbuch_edit_recipe` — patch name / quantities / ingredients / steps
+- `kochbuch_export_analysis` — dump normalized JSON tables (`members`,
+  `recipes`, `ingredients`, `cooked`) for local analysis (DuckDB / pandas)
 - `fetch_recipe` — resolve a URL / kptncook id into a normalized payload
   (does not store; pass the result to `kochbuch_add_recipe` to save)
