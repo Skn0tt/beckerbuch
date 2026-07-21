@@ -13,8 +13,9 @@
  *     stock** (finalised, not yet cooked), regardless of finalise batch — the
  *     same lane as the kitchen stock list. It's read-only (no manual edits),
  *     so it ignores the snapshot and just clusters the current in-stock
- *     ingredients by embedding similarity on the fly. See
- *     {@link loadCombinedList}.
+ *     ingredients by embedding similarity on the fly. Ordered A–Z by
+ *     representative item name (unlike handoff, which pins merges to the top
+ *     for Split/override). See {@link loadCombinedList}.
  */
 import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "../db/client";
@@ -103,6 +104,10 @@ export async function computeCombinedList(
  * cached (see lib/embeddings.ts), so this is a couple of reads plus in-memory
  * clustering, and it never writes. On any embedding failure `dedup` degrades
  * to an all-singletons list.
+ *
+ * Sort: alphabetical by each group's representative `item` (merged and
+ * singleton rows interleaved) so the read-only list is easy to scan. Handoff
+ * keeps merged-first instead — see {@link computeCombinedList}.
  */
 export async function loadCombinedList(flatId: string): Promise<CombinedList> {
   const rows = await db()
@@ -143,12 +148,13 @@ export async function loadCombinedList(flatId: string): Promise<CombinedList> {
   const input = buildDedupInputFromData(rows, allIngs, omitted);
   const { groups } = await dedup(input);
 
-  // Merged groups first so the dedup wins are visible; stable within a tier.
-  groups.sort((a, b) => {
-    const aMerged = a.sources.length > 1 ? 1 : 0;
-    const bMerged = b.sources.length > 1 ? 1 : 0;
-    return bMerged - aMerged;
-  });
+  // A–Z by canonical item name so the shopping summary is easy to scan.
+  // (Handoff keeps merged-first for Split/override — see computeCombinedList.)
+  groups.sort(
+    (a, b) =>
+      a.item.localeCompare(b.item, undefined, { sensitivity: "base" }) ||
+      a.id.localeCompare(b.id),
+  );
 
   return { combinedGroups: groups, snapshotFresh: true, rejectedIds: [] };
 }

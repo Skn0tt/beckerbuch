@@ -470,6 +470,17 @@ Finalise), the page renders an all-singletons fallback and shows a
 group id in `flats.dedup_rejected_group_ids`; rejected groups expand
 back into source lines in both the visible list and the JSON-LD.
 
+**List order differs by surface.** Handoff sorts **merged groups
+first** (then stable within each tier) so near-dup wins stay at the
+top for Split/override. The kitchen **Planned ingredients** view
+(`loadCombinedList`, all currently in-stock recipes) sorts **A–Z by
+representative `item` name** instead — merged and singleton rows
+interleave — because that surface is read-only and meant for scanning.
+On mobile (`/kitchen?lane=ingredients`) a tucked-away client filter
+(icon → expands left over the heading on the same row) matches against
+item / display text / source recipe names; the desktop sidebar modal
+has no filter (browser find is enough).
+
 Writes (`split`, `unsplit`, `regenerate`) are public and keyed on
 the flat UUID, consistent with the rest of the handoff page's
 trust model.

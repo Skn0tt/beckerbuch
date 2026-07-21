@@ -19,8 +19,9 @@ sidebar with Draft + In stock (collapsible). Everything else — recipe
 edit, finalise, Bring! handoff, history, settings — opens as a modal.
 
 **Mobile = two bottom tabs.** `Recipes · Kitchen`. The Kitchen tab uses
-a segmented control to switch between Draft and In stock, mirroring the
-desktop sidebar. Lower-frequency surfaces (history, settings, sign out)
+a segmented control to switch between Draft, In stock, and Ingredients
+(planned shopping summary over everything currently in stock), mirroring
+the desktop sidebar. Lower-frequency surfaces (history, settings, sign out)
 live behind the **⚙** icon in the top bar — same on both form factors.
 
 ```
@@ -280,15 +281,15 @@ MOBILE — list                                         MOBILE — detail
 ## 6. Mobile — Kitchen tab
 
 **Purpose:** plan the shopping list and decide what to cook tonight.
-Single tab, segmented control between Draft and In stock.
+Single tab, segmented control between Draft, In stock, and Ingredients.
 
 ```
 MOBILE — Draft                                       MOBILE — In stock
 ┌──────────────────────────────────┐                ┌──────────────────────────────────┐
 │ Kitchen                       ⚙  │                │ Kitchen                       ⚙  │
 ├──────────────────────────────────┤                ├──────────────────────────────────┤
-│ [  Draft  |  In stock  ]         │                │ [  Draft  |  In stock  ]         │
-│   (4)         (2)                │                │   (4)         (2)                │
+│ [ Draft | In stock | Ingredients ]│                │ [ Draft | In stock | Ingredients ]│
+│   (4)       (2)                   │                │   (4)       (2)                   │
 ├──────────────────────────────────┤                ├──────────────────────────────────┤
 │ ┌──────────────────────────────┐ │                │ ┌──────────────────────────────┐ │
 │ │ Pasta al limone              │ │                │ │ Hähnchencurry                │ │
@@ -307,15 +308,33 @@ MOBILE — Draft                                       MOBILE — In stock
 │ │ serves [ 4 ⏶⏷]   👤 –       │ │                │ tab and finalise to refill.      │
 │ └──────────────────────────────┘ │                │                                  │
 │                                  │                │                                  │
-│ ▼ Combined list preview          │                │                                  │
-│   400 g spaghetti                │                │                                  │
-│   500 g chicken thigh            │                │                                  │
-│   …                              │                │                                  │
-│                                  │                │                                  │
 │ [    Finalise →              ]   │                │                                  │
 ├──────────────────────────────────┤                ├──────────────────────────────────┤
 │  Recipes  │  Kitchen             │                │  Recipes  │  Kitchen             │
 └──────────────────────────────────┘                └──────────────────────────────────┘
+
+MOBILE — Ingredients (planned, all in-stock)
+┌──────────────────────────────────┐
+│ Kitchen                       ⚙  │
+├──────────────────────────────────┤
+│ [ Draft | In stock | Ingredients ]│
+├──────────────────────────────────┤
+│ Planned ingredients          🔍  │
+│ ┌──────────────────────────────┐ │
+│ │ 400 g spaghetti              │ │  A–Z by item name
+│ │ Pasta al limone              │ │
+│ └──────────────────────────────┘ │
+│ ┌──────────────────────────────┐ │
+│ │ 600 g tomato            2×   │ │  merges interleaved alphabetically
+│ │ · 300 g tomato — Pasta …     │ │
+│ │ · 300 g tomatos — Tomato …   │ │
+│ └──────────────────────────────┘ │
+│                                  │
+│ 🔍 expands left over the title:  │
+│ [ Filter…                   ]🔍  │  ← same row, no extra vertical space
+├──────────────────────────────────┤
+│  Recipes  │  Kitchen             │
+└──────────────────────────────────┘
 ```
 
 - Tapping a recipe card → **Recipe detail** (§5).
@@ -324,6 +343,7 @@ MOBILE — Draft                                       MOBILE — In stock
 - "Finalise →" opens **Finalise confirmation** (§7) as a sheet.
 - In stock: `[ ✓ Cooked ]` is a deliberately big tap target (kitchen-with-greasy-hands ergonomics). Tap → "Marked cooked. **Undo**" toast for ~5s before writing to history.
 - Empty draft: shows a friendly empty state with `[ Browse recipes → ]` jumping to the Recipes tab.
+- **Ingredients** lane: read-only combined list over every in-stock recipe (not just the latest finalise batch). Rows are A–Z by representative item name. A subtle search icon expands a client-side filter **left over the “Planned ingredients” heading** (same row — no extra vertical space; matches item / display text / recipe name). Desktop exposes the same list via the sidebar "Ingredients" modal without a filter (browser find). Handoff (§8) still pins merged groups to the top for Split/override.
 
 ---
 
