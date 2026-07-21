@@ -325,16 +325,20 @@ create index ingredients_item_trgm on ingredients using gin (item gin_trgm_ops);
 - `unaccent` flattens `Hähnchen` → `hahnchen` so users don't need to
   type umlauts.
 - Per-ingredient `search_vector` powers the kitchen Planned ingredients
-  filter (`GET /kitchen/combined/search?q=…`). Cascade:
-  1. FTS over in-stock item texts + name-only FTS on in-stock recipe
-     names (`buildTsQuery` prefix/`:*`, query passed through `unaccent`).
-  2. On an empty FTS set, `pg_trgm` `word_similarity` against
-     `ingredients.item` (threshold default `0.3`, env
-     `INGREDIENT_SEARCH_TRIGRAM_THRESHOLD`) using the existing
-     `ingredients_item_trgm` index — catches typos like `avcad`→`avocado`.
-  3. Still empty → embed the query and return groups within
-     `INGREDIENT_SEARCH_SIMILARITY_THRESHOLD` (default `0.85`) for
-     near-synonyms like Möhren/Karotten.
+  filter (`GET /kitchen/combined/search?q=…`). Two stages only:
+  1. **Text** — one query: FTS prefix (`buildTsQuery` + `unaccent`) **or**
+     `pg_trgm` `word_similarity` ≥ `INGREDIENT_SEARCH_TRIGRAM_THRESHOLD`
+     (default `0.3`) on in-stock items, plus name-only FTS on in-stock
+     recipe names.
+  2. **Meaning** — only if text is empty: embed the query (cache-aware)
+     and keep groups within `INGREDIENT_SEARCH_SIMILARITY_THRESHOLD`
+     (default `0.85`) for near-synonyms like Möhren/Karotten.
+
+  Cost note: stage 1 is Postgres only. Stage 2 usually embeds just the
+  query string (planned item vectors are already cached from dedup). At
+  ~100 searches/week, even if every search missed text and paid for a
+  fresh query embed, Gemini `gemini-embedding-001` (~$0.15 / 1M tokens)
+  is well under a cent per year for this surface — see TECH §6.3 note.
 ### 5.2 Query path
 
 For a user query `q`:
@@ -494,10 +498,9 @@ representative `item` name** instead — merged and singleton rows
 interleave — because that surface is read-only and meant for scanning.
 On mobile (`/kitchen?lane=ingredients`) a tucked-away filter
 (icon → expands left over the heading on the same row) debounces the
-query and calls `/kitchen/combined/search` — FTS on
-`ingredients.search_vector` / recipe names, then `pg_trgm`
-word_similarity for typos, then embedding cosine for near-synonyms.
-The desktop sidebar modal has no filter (browser find is enough).
+query and calls `/kitchen/combined/search` — **text** match first
+(FTS + trigram), then **meaning** (embedding cosine) only if text is
+empty. The desktop sidebar modal has no filter (browser find is enough).
 Writes (`split`, `unsplit`, `regenerate`) are public and keyed on
 the flat UUID, consistent with the rest of the handoff page's
 trust model.

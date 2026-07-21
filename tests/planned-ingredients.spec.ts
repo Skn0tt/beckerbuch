@@ -304,7 +304,7 @@ test("ingredients tab: empty FTS falls back to embedding synonyms", async ({
 
   await page.getByRole("button", { name: "Filter ingredients" }).click();
   const filter = page.getByLabel("Filter planned ingredients");
-  // No shared prefix with "möhren" — FTS misses; embedding synonym fold hits.
+  // No shared letters with "möhren" — text stage misses; meaning/embedding hits.
   await filter.fill("carotten");
   await expect(page.getByTestId("combined-row")).toHaveCount(1);
   await expect(page.getByTestId("combined-row")).toContainText("möhren");
@@ -330,7 +330,7 @@ test("ingredients tab: trigram fallback catches typos", async ({
 
   await page.getByRole("button", { name: "Filter ingredients" }).click();
   const filter = page.getByLabel("Filter planned ingredients");
-  // Not a prefix of "avocado" — FTS misses; pg_trgm word_similarity hits.
+  // Not an FTS prefix of "avocado" — text stage still hits via trigram.
   await filter.fill("Avcad");
   await expect(page.getByTestId("combined-row")).toHaveCount(1);
   await expect(page.getByTestId("combined-row")).toContainText("avocado");

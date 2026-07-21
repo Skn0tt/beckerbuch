@@ -1,9 +1,10 @@
 /**
- * Full-text search over the kitchen "Planned ingredients" list (in-stock
- * recipes only). Cascade when earlier stages miss:
- *   1. FTS prefix match (shared tokens)
- *   2. pg_trgm word_similarity (typos like avcad → avocado)
- *   3. Embedding cosine (synonyms like carotten → möhren)
+ * Search over the kitchen "Planned ingredients" list (in-stock only).
+ *
+ * Two stages — letters first, meaning second:
+ *   1. Text — FTS prefix and/or pg_trgm word_similarity (one pass)
+ *   2. Meaning — only if text finds nothing: embed the query and rank
+ *      planned items by cosine similarity (synonyms like carotten → möhren)
  */
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "../db/client";
@@ -21,9 +22,8 @@ const DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001";
 /** Lower than dedup's 0.95 — synonyms sit below the merge cutoff on Gemini. */
 const DEFAULT_SEARCH_SIMILARITY_THRESHOLD = 0.85;
 /**
- * pg_trgm word_similarity cutoff for typo fallback. Below the extension's
- * default operator threshold (0.6) so short typos like "avcad"→"avocado"
- * (~0.33) still hit; uses the existing `ingredients_item_trgm` index.
+ * pg_trgm word_similarity cutoff. Below the extension's default operator
+ * threshold (0.6) so short typos like "avcad"→"avocado" (~0.33) still hit.
  */
 const DEFAULT_TRIGRAM_WORD_SIMILARITY = 0.3;
 
@@ -52,29 +52,19 @@ export async function searchPlannedIngredients(
     return { ...combined, combinedGroups: [] };
   }
 
-  const ftsHits = await findFtsIngredientIds(recipeIds, tsq);
-  if (ftsHits.size > 0) {
+  // Stage 1 — text (letters): FTS and trigram together.
+  const textHits = await findTextMatchIngredientIds(recipeIds, trimmed, tsq);
+  if (textHits.size > 0) {
     return {
       ...combined,
       combinedGroups: filterGroupsByIngredientIds(
         combined.combinedGroups,
-        ftsHits,
+        textHits,
       ),
     };
   }
 
-  const trgmHits = await findTrigramIngredientIds(recipeIds, trimmed);
-  if (trgmHits.size > 0) {
-    return {
-      ...combined,
-      combinedGroups: filterGroupsByIngredientIds(
-        combined.combinedGroups,
-        trgmHits,
-      ),
-    };
-  }
-
-  // FTS + trigram miss — try semantic near-neighbours (carotten ↔ möhren).
+  // Stage 2 — meaning: only when text found nothing.
   try {
     const semantic = await rankGroupsByEmbedding(
       combined.combinedGroups,
@@ -95,16 +85,20 @@ function filterGroupsByIngredientIds(
 }
 
 /**
- * Match in-stock ingredient rows by item FTS, and in-stock recipes by
- * name-only FTS (not recipes.search_vector — that also contains items).
- * `coalesce` covers rows whose search_vector was never backfilled;
- * `unaccent` on the query matches vectors built with unaccent.
+ * Text match over in-stock ingredient items (FTS prefix OR trigram typo)
+ * and in-stock recipe names (FTS only — name-only, not recipes.search_vector,
+ * so an item query does not pull every line from a matching recipe).
  */
-async function findFtsIngredientIds(
+async function findTextMatchIngredientIds(
   recipeIds: string[],
+  query: string,
   tsq: string,
 ): Promise<Set<string>> {
   const hitIngredientIds = new Set<string>();
+  const trgmThreshold = Number(
+    process.env.INGREDIENT_SEARCH_TRIGRAM_THRESHOLD ??
+      DEFAULT_TRIGRAM_WORD_SIMILARITY,
+  );
 
   const itemHits = await db()
     .select({ id: ingredients.id })
@@ -112,10 +106,16 @@ async function findFtsIngredientIds(
     .where(
       and(
         inArray(ingredients.recipeId, recipeIds),
-        sql`coalesce(
-          ${ingredients.searchVector},
-          to_tsvector('simple', unaccent(coalesce(${ingredients.item}, '')))
-        ) @@ to_tsquery('simple', unaccent(${tsq}))`,
+        sql`(
+          coalesce(
+            ${ingredients.searchVector},
+            to_tsvector('simple', unaccent(coalesce(${ingredients.item}, '')))
+          ) @@ to_tsquery('simple', unaccent(${tsq}))
+          OR word_similarity(
+            unaccent(lower(${query})),
+            unaccent(lower(${ingredients.item}))
+          ) >= ${trgmThreshold}
+        )`,
       ),
     );
   for (const row of itemHits) hitIngredientIds.add(row.id);
@@ -145,34 +145,6 @@ async function findFtsIngredientIds(
   return hitIngredientIds;
 }
 
-/**
- * Typo-tolerant fallback via pg_trgm. Uses word_similarity so a short
- * mistyped query can match one word inside a longer item string.
- */
-async function findTrigramIngredientIds(
-  recipeIds: string[],
-  query: string,
-): Promise<Set<string>> {
-  const threshold = Number(
-    process.env.INGREDIENT_SEARCH_TRIGRAM_THRESHOLD ??
-      DEFAULT_TRIGRAM_WORD_SIMILARITY,
-  );
-  // Normalize like FTS: lowercase + unaccent so "Avcad" matches "avocado".
-  const rows = await db()
-    .select({ id: ingredients.id })
-    .from(ingredients)
-    .where(
-      and(
-        inArray(ingredients.recipeId, recipeIds),
-        sql`word_similarity(
-          unaccent(lower(${query})),
-          unaccent(lower(${ingredients.item}))
-        ) >= ${threshold}`,
-      ),
-    );
-  return new Set(rows.map((r) => r.id));
-}
-
 async function rankGroupsByEmbedding(
   groups: DedupGroup[],
   query: string,
@@ -186,6 +158,8 @@ async function rankGroupsByEmbedding(
   const items = [...new Set(groups.map((g) => g.item))];
   if (items.length === 0) return [];
 
+  // Item vectors are usually already cached from dedup; the query string is
+  // typically the only possible API call (and a cache hit if searched before).
   const vectors = await embedTexts(model, [query, ...items]);
   const qVec = vectors.get(query);
   if (!qVec) return [];
@@ -197,6 +171,8 @@ async function rankGroupsByEmbedding(
     const score = cosineSimilarity(qVec, v);
     if (score >= threshold) scored.push({ group: g, score });
   }
-  scored.sort((a, b) => b.score - a.score || a.group.item.localeCompare(b.group.item));
+  scored.sort(
+    (a, b) => b.score - a.score || a.group.item.localeCompare(b.group.item),
+  );
   return scored.map((s) => s.group);
 }
