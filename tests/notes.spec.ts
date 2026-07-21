@@ -25,7 +25,7 @@ async function addPastaToDraftAndOpenKitchen(
     page.getByRole("button", { name: "✓ In draft" }),
   ).toBeVisible();
   await page.goto("/kitchen");
-  await expect(page).toHaveURL("/kitchen");
+  await expect(page).toHaveURL(/\/kitchen\/?$/);
 }
 
 test("note: add to draft item, persists across reload", async ({ page, flat }) => {
@@ -197,7 +197,7 @@ test("note: mobile keeps + Note with controls when empty, moves note below once 
   await page.getByTestId("note-input").press("Enter");
   await waitForSetNote;
   await page.reload();
-  await expect(page).toHaveURL("/kitchen");
+  await expect(page).toHaveURL(/\/kitchen\/?$/);
 
   const note = page.getByTestId("note-text");
   await expect(note).toHaveText(/cook first/);

@@ -9,7 +9,7 @@ test("home renders empty state when logged in", async ({ page, flat }) => {
 
 test("home redirects to /login when anonymous", async ({ page }) => {
   await page.goto("/");
-  await expect(page).toHaveURL(/\/login\?redirect=/);
+  await expect(page).toHaveURL(/\/login\/?\?redirect=/);
 });
 
 test("hovering + New recipe prefetches its route data", async ({ page, flat }) => {

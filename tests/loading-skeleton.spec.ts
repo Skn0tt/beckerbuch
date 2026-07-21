@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { test, expect } from "./fixtures";
 import { login } from "./login";
 
@@ -26,4 +28,13 @@ test("nav progress appears while a slow navigation is in flight", async ({
   await click;
   await expect(page.getByRole("heading", { name: "Members" })).toBeVisible();
   await expect(page.getByTestId("nav-progress")).toHaveCount(0);
+});
+
+test("prerendered index.html contains workspace skeletons", () => {
+  const html = readFileSync(
+    path.join(process.cwd(), "build/client/index.html"),
+    "utf8",
+  );
+  expect(html).toContain("Loading recipes");
+  expect(html).toContain("Loading kitchen");
 });

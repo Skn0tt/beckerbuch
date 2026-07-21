@@ -14,7 +14,11 @@ import { Suspense, use, useEffect, useState } from "react";
 import { Form, Link, useLoaderData, useSubmit } from "react-router";
 import type { Route } from "./+types/home";
 import { requireFlatMember } from "../auth/require";
-import { RecipeGridSkeleton } from "../components/app-skeleton";
+import { isPrerenderShellRequest } from "../auth/shell";
+import {
+  CollectionSkeleton,
+  RecipeGridSkeleton,
+} from "../components/app-skeleton";
 import {
   searchRecipes,
   type RecipeListItem,
@@ -28,6 +32,14 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
+  if (isPrerenderShellRequest(request)) {
+    return {
+      recipes: null as Promise<RecipeListItem[]> | null,
+      q: "",
+      shell: true as const,
+    };
+  }
+
   const ctx = await requireFlatMember(request);
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") ?? "").trim();
@@ -38,18 +50,25 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     recipes: searchRecipes({ flatId: ctx.flat.id, query: q }),
     q,
+    shell: false as const,
   };
 }
 
 export default function Home() {
-  const { recipes, q } = useLoaderData<typeof loader>();
+  const data = useLoaderData<typeof loader>();
   const submit = useSubmit();
 
   const debouncedSubmit = useDebouncedCallback((form: HTMLFormElement) => {
     // Replace history after the first search so each keystroke doesn't add a
     // back-button entry; the initial search stays a normal navigation.
-    submit(form, { replace: q !== "" });
+    submit(form, { replace: data.q !== "" });
   }, 250);
+
+  if (data.shell || !data.recipes) {
+    return <CollectionSkeleton />;
+  }
+
+  const { recipes, q } = data;
 
   return (
     <Stack

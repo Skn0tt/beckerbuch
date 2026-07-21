@@ -55,7 +55,7 @@ test("generate new link rotates the previous one", async ({ page, flat }) => {
 
 test("anonymous visit redirects to /login", async ({ page }) => {
   await page.goto("/flat/settings");
-  await expect(page).toHaveURL(/\/login\?redirect=/);
+  await expect(page).toHaveURL(/\/login\/?\?redirect=/);
 });
 
 test("settings shows the MCP URL with a copy button and a link to Claude docs", async ({

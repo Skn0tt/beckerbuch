@@ -9,6 +9,7 @@ import {
   UnstyledButton,
   VisuallyHidden,
 } from "@mantine/core";
+import { useEffect, useState } from "react";
 import {
   Link,
   Outlet,
@@ -16,12 +17,31 @@ import {
   useLocation,
   useNavigate,
   useNavigation,
+  useRevalidator,
+  type ShouldRevalidateFunctionArgs,
 } from "react-router";
 import type { Route } from "./+types/_app";
 import { tryGetAuthedContext } from "../auth/require";
+import { isPrerenderShellRequest } from "../auth/shell";
 import { UserAvatar } from "../components/user-avatar";
 
+type AppUser = {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarKey: string | null;
+};
+type AppFlat = { id: string; name: string };
+
 export async function loader({ request }: Route.LoaderArgs) {
+  if (isPrerenderShellRequest(request)) {
+    return {
+      shell: true as const,
+      user: null as AppUser | null,
+      flat: null as AppFlat | null,
+    };
+  }
+
   const ctx = await tryGetAuthedContext(request);
   if (!ctx) {
     const url = new URL(request.url);
@@ -29,19 +49,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     throw redirect(`/login?redirect=${encodeURIComponent(target)}`);
   }
   return {
+    shell: false as const,
     user: ctx.user,
     flat: ctx.flat,
   };
 }
 
 export function shouldRevalidate({
+  currentUrl,
   nextUrl,
   actionResult,
-}: {
-  nextUrl: URL;
-  defaultShouldRevalidate: boolean;
-  actionResult: unknown;
-}) {
+  defaultShouldRevalidate,
+}: ShouldRevalidateFunctionArgs) {
   // Settings mutations (rename flat, change display name, avatar) change the
   // { user, flat } shown in the always-mounted header. They post to
   // /flat/settings and redirect back to it, so the revalidating navigation is
@@ -49,12 +68,16 @@ export function shouldRevalidate({
   // on settings (a cold page, off the recipe-switching hot path).
   if (actionResult !== undefined) return true;
   if (nextUrl.pathname === "/flat/settings") return true;
+  // Same-URL revalidation (CDN shell boot) must refresh auth chrome.
+  if (
+    currentUrl.pathname === nextUrl.pathname &&
+    currentUrl.search === nextUrl.search
+  ) {
+    return defaultShouldRevalidate;
+  }
   // Otherwise skip: this auth layout stays mounted across every authenticated
   // navigation, and its { user, flat } data is independent of which leaf is in
-  // the Outlet. Re-running tryGetAuthedContext() on each nav is a redundant
-  // Neon round-trip — every authenticated leaf already calls requireFlatMember
-  // in its own loader, so a revoked session is still caught (redirected to
-  // /login) without _app re-authing here.
+  // the Outlet.
   return false;
 }
 
@@ -67,12 +90,53 @@ const MOBILE_NAV = [
 // nowhere to go "back" to, so the header back arrow is hidden.
 const TOP_LEVEL_ROUTES = new Set(["/", "/kitchen"]);
 
+type BootPayload = { user: AppUser; flat: AppFlat };
+
 export default function AppLayout({ loaderData }: Route.ComponentProps) {
-  const { user, flat } = loaderData;
+  const [shellBoot, setShellBoot] = useState<BootPayload | null>(null);
+  const revalidator = useRevalidator();
   const location = useLocation();
   const navigate = useNavigate();
   const navigation = useNavigation();
   const isNavigating = navigation.state !== "idle";
+
+  useEffect(() => {
+    if (!loaderData.shell || shellBoot) return;
+    let cancelled = false;
+    void (async () => {
+      const res = await fetch("/data/app", { credentials: "same-origin" });
+      if (cancelled) return;
+      if (res.status === 401) {
+        window.location.assign(
+          `/login?redirect=${encodeURIComponent(
+            `${location.pathname}${location.search}`,
+          )}`,
+        );
+        return;
+      }
+      if (!res.ok) throw new Error(`App bootstrap failed (${res.status})`);
+      const payload = (await res.json()) as BootPayload;
+      if (cancelled) return;
+      setShellBoot(payload);
+      await revalidator.revalidate();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    loaderData.shell,
+    shellBoot,
+    revalidator,
+    location.pathname,
+    location.search,
+  ]);
+
+  const user = loaderData.shell
+    ? (shellBoot?.user ?? null)
+    : loaderData.user;
+  const flat = loaderData.shell
+    ? (shellBoot?.flat ?? null)
+    : loaderData.flat;
 
   const showBack = !TOP_LEVEL_ROUTES.has(location.pathname);
 
@@ -129,22 +193,26 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
               c="inherit"
               data-testid="flat-name"
             >
-              <Title order={3}>{flat.name}</Title>
+              <Title order={3}>{flat?.name ?? "Cookbook"}</Title>
             </Anchor>
           </Group>
           <Group gap="sm">
-            <VisuallyHidden data-testid="current-user">
-              {user.displayName}
-            </VisuallyHidden>
-            <UnstyledButton
-              component={Link}
-              to="/flat/settings"
-              prefetch="intent"
-              aria-label="Settings"
-              style={{ display: "inline-flex", borderRadius: "50%" }}
-            >
-              <UserAvatar user={user} size="md" />
-            </UnstyledButton>
+            {user ? (
+              <>
+                <VisuallyHidden data-testid="current-user">
+                  {user.displayName}
+                </VisuallyHidden>
+                <UnstyledButton
+                  component={Link}
+                  to="/flat/settings"
+                  prefetch="intent"
+                  aria-label="Settings"
+                  style={{ display: "inline-flex", borderRadius: "50%" }}
+                >
+                  <UserAvatar user={user} size="md" />
+                </UnstyledButton>
+              </>
+            ) : null}
           </Group>
         </Group>
       </AppShell.Header>
@@ -181,6 +249,11 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
       </AppShell.Footer>
 
       <AppShell.Main>
+        {/*
+          Always render the outlet so prerendered child shells (recipe grid /
+          kitchen sidebar skeletons) paint immediately. Real user/flat arrive
+          after /data/app + revalidate.
+        */}
         <Outlet />
       </AppShell.Main>
     </AppShell>

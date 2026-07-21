@@ -6,6 +6,7 @@ import {
   Group,
   Loader,
   SegmentedControl,
+  Skeleton,
   Stack,
   Text,
   TextInput,
@@ -22,6 +23,7 @@ import type { loader as combinedSearchLoader } from "./kitchen.combined.search";
 import { db } from "../db/client";
 import { recipeInstances, flatMembers } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
+import { isPrerenderShellRequest } from "../auth/shell";
 import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { isSameOrigin } from "../auth/origin";
 import { loadKitchen } from "../lib/kitchen-data";
@@ -85,7 +87,6 @@ const ActionSchema = z.discriminatedUnion("intent", [
 ]);
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const ctx = await requireFlatMember(request);
   const url = new URL(request.url);
   const laneParam = url.searchParams.get("lane");
   const lane: "draft" | "stock" | "ingredients" =
@@ -95,9 +96,19 @@ export async function loader({ request }: Route.LoaderArgs) {
         ? "ingredients"
         : "draft";
 
-  // Await here (unlike the home sidebar): lane switches are search-param
-  // navigations that would otherwise remount a Suspense fallback and flash
-  // a skeleton on every Draft ↔ Stock tap.
+  if (isPrerenderShellRequest(request)) {
+    return {
+      lane,
+      flatId: "",
+      draft: [],
+      stock: [],
+      members: [],
+      csrfToken: "",
+      shell: true as const,
+    };
+  }
+
+  const ctx = await requireFlatMember(request);
   const data = await loadKitchen(ctx.flat.id);
   return {
     lane,
@@ -106,6 +117,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     stock: data.stock,
     members: data.members,
     csrfToken: csrfTokenForSession(ctx.session.id),
+    shell: false as const,
   };
 }
 
@@ -371,8 +383,21 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Kitchen({ loaderData }: Route.ComponentProps) {
-  const { lane, draft, stock, csrfToken, members } = loaderData;
+  const { lane, draft, stock, csrfToken, members, shell } = loaderData;
   const navigate = useNavigate();
+
+  if (shell) {
+    return (
+      <Container size="sm" py="md">
+        <Stack gap="md" aria-busy="true" aria-label="Loading kitchen">
+          <Skeleton height={36} radius="sm" />
+          <Skeleton height={120} radius="md" />
+          <Skeleton height={120} radius="md" />
+        </Stack>
+      </Container>
+    );
+  }
+
   return (
     <Container size="sm" py="md">
       <Stack gap="md">

@@ -27,7 +27,7 @@ test("unknown email shows the same generic error", async ({ page }) => {
 
 test("redirect-after-login preserves the original target", async ({ page, flat }) => {
   await page.goto("/?welcome=1");
-  await expect(page).toHaveURL(/\/login\?redirect=/);
+  await expect(page).toHaveURL(/\/login\/?\?redirect=/);
   await page.getByLabel("Email").fill(flat.user.email);
   await page.getByRole("textbox", { name: "Password" }).fill(flat.user.password);
   await page.getByRole("button", { name: "Sign in" }).click();
@@ -48,5 +48,5 @@ test("logout returns to /login and home is gated again", async ({ page, flat }) 
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login/);
   await page.goto("/");
-  await expect(page).toHaveURL(/\/login\?redirect=/);
+  await expect(page).toHaveURL(/\/login\/?\?redirect=/);
 });

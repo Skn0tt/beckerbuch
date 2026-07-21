@@ -16,6 +16,7 @@ export default [
     route("recipes/:id/edit", "routes/recipes.$id.edit.tsx"),
     route("recipes/:id/photo", "routes/recipes.$id.photo.tsx"),
   ]),
+  route("data/app", "routes/data.app.ts"),
   route("login", "routes/login.tsx"),
   route("invite/:token", "routes/invite.$token.tsx"),
   route("admin/tenants", "routes/admin.tenants.tsx"),

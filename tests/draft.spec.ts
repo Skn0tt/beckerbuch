@@ -35,7 +35,7 @@ test("add a recipe to draft → button flips to 'In draft' → kitchen shows one
   const recipeUrl = page.url();
 
   await page.goto("/kitchen");
-  await expect(page).toHaveURL("/kitchen");
+  await expect(page).toHaveURL(/\/kitchen\/?$/);
 
   // Only one instance even after a no-op re-click would happen.
   await expect(page.getByText("Draft 1", { exact: true })).toBeVisible();
@@ -64,7 +64,7 @@ test("add a recipe to draft → button flips to 'In draft' → kitchen shows one
 test("kitchen empty state links back to collection", async ({ page, flat }) => {
   await login(page, flat.user);
   await page.goto("/kitchen");
-  await expect(page).toHaveURL("/kitchen");
+  await expect(page).toHaveURL(/\/kitchen\/?$/);
   await expect(page.getByText(/Draft is empty/)).toBeVisible();
 });
 
