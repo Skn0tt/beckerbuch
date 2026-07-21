@@ -250,10 +250,89 @@ test("ingredients tab: filter icon narrows the list and clears back to full", as
   await expect(page.getByTestId("combined-row")).toContainText("apple");
   await expect(page.getByText("tomato")).toHaveCount(0);
 
+  // Prefix FTS (`:*`) — "spag" matches "spaghetti" once we add that recipe.
+  // Covered in the dedicated prefix case below; here "nope" stays empty.
   await filter.fill("nope");
   await expect(page.getByTestId("ingredients-filter-empty")).toBeVisible();
   await expect(page.getByTestId("combined-row")).toHaveCount(0);
 
   await filter.fill("");
   await expect(page.getByTestId("combined-row")).toHaveCount(2);
+});
+
+test("ingredients tab: filter uses FTS prefix match on item text", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+
+  await createRecipeWithIngredient(page, "Pasta al limone", "400", "g", "spaghetti");
+  await createRecipeWithIngredient(page, "Fruit salad", "2", "", "apple");
+
+  await page.goto("/kitchen");
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(`/h/${flat.id}`);
+
+  await page.goto("/kitchen?lane=ingredients");
+  await expect(page.getByTestId("combined-row")).toHaveCount(2);
+
+  await page.getByRole("button", { name: "Filter ingredients" }).click();
+  const filter = page.getByLabel("Filter planned ingredients");
+  await filter.fill("spag");
+  await expect(page.getByTestId("combined-row")).toHaveCount(1);
+  await expect(page.getByTestId("combined-row")).toContainText("spaghetti");
+  await expect(page.getByText("apple")).toHaveCount(0);
+});
+
+test("ingredients tab: empty FTS falls back to embedding synonyms", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+
+  await createRecipeWithIngredient(page, "Ofengemüse", "500", "g", "möhren");
+  await createRecipeWithIngredient(page, "Fruit salad", "2", "", "apple");
+
+  await page.goto("/kitchen");
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(`/h/${flat.id}`);
+
+  await page.goto("/kitchen?lane=ingredients");
+  await expect(page.getByTestId("combined-row")).toHaveCount(2);
+
+  await page.getByRole("button", { name: "Filter ingredients" }).click();
+  const filter = page.getByLabel("Filter planned ingredients");
+  // No shared letters with "möhren" — text stage misses; meaning/embedding hits.
+  await filter.fill("carotten");
+  await expect(page.getByTestId("combined-row")).toHaveCount(1);
+  await expect(page.getByTestId("combined-row")).toContainText("möhren");
+  await expect(page.getByText("apple")).toHaveCount(0);
+});
+
+test("ingredients tab: trigram fallback catches typos", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+
+  await createRecipeWithIngredient(page, "Guacamole", "2", "", "avocado");
+  await createRecipeWithIngredient(page, "Fruit salad", "2", "", "apple");
+
+  await page.goto("/kitchen");
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(`/h/${flat.id}`);
+
+  await page.goto("/kitchen?lane=ingredients");
+  await expect(page.getByTestId("combined-row")).toHaveCount(2);
+
+  await page.getByRole("button", { name: "Filter ingredients" }).click();
+  const filter = page.getByLabel("Filter planned ingredients");
+  // Not an FTS prefix of "avocado" — text stage still hits via trigram.
+  await filter.fill("Avcad");
+  await expect(page.getByTestId("combined-row")).toHaveCount(1);
+  await expect(page.getByTestId("combined-row")).toContainText("avocado");
+  await expect(page.getByText("apple")).toHaveCount(0);
 });

@@ -108,11 +108,25 @@ export type OpenAiEmbeddingOptions = { fail?: boolean };
  * enough proximity to reproduce the old LLM merge assertions. (The real
  * code normalizes case/whitespace before embedding; this mock's stronger
  * normalization is a test-only device.)
+ *
+ * A small synonym fold lets planned-ingredients semantic search specs
+ * assert carotten → möhren without calling real Gemini.
  */
 const EMBEDDING_DIM = 1536;
 
+/** Canonical keys for known synonym sets used in E2E. */
+const EMBEDDING_SYNONYMS: Record<string, string> = {
+  möhren: "carrot",
+  mohren: "carrot",
+  karotten: "carrot",
+  carotten: "carrot",
+  carrots: "carrot",
+  carrot: "carrot",
+};
+
 function fakeEmbedding(text: string): number[] {
-  const key = text.toLowerCase().trim().replace(/s$/, "");
+  let key = text.toLowerCase().trim().replace(/s$/, "");
+  key = EMBEDDING_SYNONYMS[key] ?? key;
   // FNV-1a hash → bucket index.
   let hash = 0x811c9dc5;
   for (let i = 0; i < key.length; i++) {

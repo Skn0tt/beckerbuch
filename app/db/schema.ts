@@ -196,10 +196,12 @@ export const ingredients = pgTable(
     amount: numeric("amount"),
     unit: text("unit"),
     item: text("item").notNull(),
+    searchVector: tsvector("search_vector"),
   },
   (t) => [
     uniqueIndex("ingredients_recipe_position").on(t.recipeId, t.position),
     index("ingredients_item_trgm").using("gin", sql`${t.item} gin_trgm_ops`),
+    index("ingredients_fts").using("gin", t.searchVector),
   ],
 );
 

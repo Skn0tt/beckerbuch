@@ -57,6 +57,20 @@
       "when": 1783064974755,
       "tag": "0007_funny_the_leader",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784633247961,
+      "tag": "0008_demonic_nico_minoru",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784638880854,
+      "tag": "0009_ingredient_search_vector_backfill",
+      "breakpoints": true
     }
   ]
 }

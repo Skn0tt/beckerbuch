@@ -114,6 +114,37 @@ everything currently in stock.
   1. Log in, finalise recipes that yield a merged tomato row and an `apple`
      singleton, open `/kitchen?lane=ingredients`.
   2. Tap the Filter ingredients icon to expand the filter field.
-    - expect: Filtering to `apple` shows only the apple row.
+    - expect: Filtering to `apple` shows only the apple row (server FTS,
+      debounced).
     - expect: Filtering to a non-match shows `No matches`.
     - expect: Clearing the filter restores both rows.
+
+#### 1.8. ingredients-tab-filter-fts-prefix-match
+
+**File:** `tests/planned-ingredients.spec.ts`
+
+**Steps:**
+  1. Log in, finalise recipes with `spaghetti` and `apple`, open
+     `/kitchen?lane=ingredients`.
+  2. Filter to `spag`.
+    - expect: Only the spaghetti row remains (prefix `:*` tsquery).
+
+#### 1.9. ingredients-tab-filter-embedding-synonym-fallback
+
+**File:** `tests/planned-ingredients.spec.ts`
+
+**Steps:**
+  1. Log in, finalise recipes with `möhren` and `apple`, open
+     `/kitchen?lane=ingredients`.
+  2. Filter to `carotten` (no text match with `möhren`).
+    - expect: Only the möhren row remains (meaning / embedding stage).
+
+#### 1.10. ingredients-tab-filter-trigram-typo-fallback
+
+**File:** `tests/planned-ingredients.spec.ts`
+
+**Steps:**
+  1. Log in, finalise recipes with `avocado` and `apple`, open
+     `/kitchen?lane=ingredients`.
+  2. Filter to `Avcad` (not an FTS prefix of `avocado`).
+    - expect: Only the avocado row remains (text stage via trigram).
