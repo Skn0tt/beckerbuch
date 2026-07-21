@@ -954,7 +954,6 @@ test.describe("MCP server", () => {
 
   type AnalysisExportBody = {
     exportedAt: string;
-    members: Array<{ id: string; displayName: string }>;
     recipes: Array<{
       id: string;
       name: string;
@@ -975,10 +974,11 @@ test.describe("MCP server", () => {
     cooked: Array<{
       id: string;
       recipeId: string;
+      recipeName: string;
       targetQuantity: number;
       cookedAt: string;
       cookedBy: string | null;
-      designatedCookId: string | null;
+      designatedCook: string | null;
       finalisedAt: string | null;
       note: string | null;
     }>;
@@ -1052,12 +1052,8 @@ test.describe("MCP server", () => {
       "cooked",
       "exportedAt",
       "ingredients",
-      "members",
       "recipes",
     ]);
-
-    expect(body.members).toHaveLength(1);
-    expect(body.members[0]?.displayName).toBe(flat.user.displayName);
 
     expect(body.recipes.map((r) => r.name).sort()).toEqual([
       "Export Curry",
@@ -1084,8 +1080,13 @@ test.describe("MCP server", () => {
     expect(body.cooked.map((c) => c.recipeId).sort()).toEqual(
       [curryId, pastaId].sort(),
     );
+    expect(body.cooked.map((c) => c.recipeName).sort()).toEqual([
+      "Export Curry",
+      "Export Pasta",
+    ]);
     for (const row of body.cooked) {
-      expect(row.cookedBy).toBe(body.members[0]?.id);
+      expect(row.cookedBy).toBe(flat.user.displayName);
+      expect(row.designatedCook).toBeNull();
       expect(row.cookedAt).toEqual(expect.any(String));
       expect(Date.parse(row.cookedAt)).not.toBeNaN();
       expect(row.targetQuantity).toBeGreaterThan(0);
@@ -1113,7 +1114,6 @@ test.describe("MCP server", () => {
     });
     expect(emptyResult.isError).toBeFalsy();
     const empty = jsonFromToolResult<AnalysisExportBody>(emptyResult);
-    expect(empty.members).toHaveLength(1);
     expect(empty.recipes).toEqual([]);
     expect(empty.ingredients).toEqual([]);
     expect(empty.cooked).toEqual([]);
@@ -1176,7 +1176,7 @@ test.describe("MCP server", () => {
     expect(body.recipes.map((r) => r.id)).not.toContain(secretId);
     expect(body.ingredients.map((i) => i.item)).toEqual(["other beans"]);
     expect(body.cooked).toEqual([]);
-    expect(body.members.map((m) => m.displayName)).not.toContain(flat.user.displayName);
+    expect(body.cooked.map((c) => c.cookedBy)).not.toContain(flat.user.displayName);
 
     await otherClient.close();
   });

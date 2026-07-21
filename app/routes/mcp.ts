@@ -293,7 +293,7 @@ async function handle(request: Request): Promise<Response> {
     {
       title: "Export analysis tables",
       description:
-        "Export the flat's cooking data as normalized JSON tables (members, recipes, ingredients, cooked) for local analysis. Save each array and load into DuckDB / pandas / SQLite — join cooked.recipeId → recipes.id → ingredients.recipeId and cooked.cookedBy → members.id. Does not include passwords, photos, steps, or draft/in-stock instances.",
+        "Export the flat's cooking data as normalized JSON tables (recipes, ingredients, cooked) for local analysis. Save each array and load into DuckDB / pandas / SQLite — join ingredients.recipeId → recipes.id (and cooked.recipeId). Cook and recipe names are already on each cooked row. Does not include passwords, photos, steps, or draft/in-stock instances.",
       inputSchema: {},
     },
     async () => {

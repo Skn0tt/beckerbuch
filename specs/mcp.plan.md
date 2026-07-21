@@ -276,11 +276,10 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
   2. Add both recipes to the draft in the app, finalise, and mark each cooked.
   3. Call `kochbuch_export_analysis`.
     - expect: The tool result is not an error.
-    - expect: The payload has `exportedAt`, `members`, `recipes`, `ingredients`, and `cooked`.
-    - expect: `members` includes the logged-in cook.
+    - expect: The payload has `exportedAt`, `recipes`, `ingredients`, and `cooked`.
     - expect: `recipes` includes both recipe ids/names.
     - expect: `ingredients` includes spaghetti, lemon, chickpeas, and cumin, each joined to a recipe id.
-    - expect: `cooked` has two rows ordered newest-first, with `cookedBy` matching the member id.
+    - expect: `cooked` has two rows ordered newest-first, with `recipeName` set and `cookedBy` equal to the cook's display name.
 
 #### 5.2. export-analysis-is-empty-for-a-fresh-flat-and-omits-uncooked-instances
 
@@ -288,7 +287,7 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
 
 **Steps:**
   1. Log in, approve OAuth, connect an MCP client, and call `kochbuch_export_analysis` with no recipes.
-    - expect: `members` has one row; `recipes`, `ingredients`, and `cooked` are empty arrays.
+    - expect: `recipes`, `ingredients`, and `cooked` are empty arrays.
   2. Add `Still In Draft`, add it to the draft (do not finalise/cook), and export again.
     - expect: `recipes` / `ingredients` include the draft recipe.
     - expect: `cooked` remains empty.
@@ -301,4 +300,4 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
   1. In flat A, add and cook `Secret Flat Recipe`.
   2. Create an isolated second flat, connect MCP, add `Other Flat Only` (uncooked), and export.
     - expect: The export contains only the second flat's recipe and ingredients.
-    - expect: Flat A's recipe id, ingredient, cooked rows, and display name are absent.
+    - expect: Flat A's recipe id, ingredient, and cooked rows are absent.

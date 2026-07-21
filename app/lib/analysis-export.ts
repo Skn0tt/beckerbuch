@@ -1,17 +1,7 @@
 import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "../db/client";
-import {
-  flatMembers,
-  ingredients,
-  recipeInstances,
-  recipes,
-  users,
-} from "../db/schema";
-
-export type AnalysisMemberRow = {
-  id: string;
-  displayName: string;
-};
+import { ingredients, recipeInstances, recipes, users } from "../db/schema";
 
 export type AnalysisRecipeRow = {
   id: string;
@@ -35,17 +25,17 @@ export type AnalysisIngredientRow = {
 export type AnalysisCookedRow = {
   id: string;
   recipeId: string;
+  recipeName: string;
   targetQuantity: number;
   cookedAt: string;
   cookedBy: string | null;
-  designatedCookId: string | null;
+  designatedCook: string | null;
   finalisedAt: string | null;
   note: string | null;
 };
 
 export type AnalysisExport = {
   exportedAt: string;
-  members: AnalysisMemberRow[];
   recipes: AnalysisRecipeRow[];
   ingredients: AnalysisIngredientRow[];
   cooked: AnalysisCookedRow[];
@@ -54,19 +44,13 @@ export type AnalysisExport = {
 /**
  * Flat-scoped dump of the tables an agent needs for local analysis
  * (favourite ingredients, who cooks what, etc.). Normalized row arrays —
- * load into DuckDB / pandas and join on ids. Omits secrets, search
- * vectors, photos, steps, and draft/in-stock instances.
+ * load into DuckDB / pandas and join on recipe ids. Cook/recipe names are
+ * denormalized onto `cooked` so "who cooked what" needs no extra join.
+ * Omits secrets, search vectors, photos, steps, and draft/in-stock instances.
  */
 export async function exportAnalysisTables(flatId: string): Promise<AnalysisExport> {
-  const memberRows = await db()
-    .select({
-      id: users.id,
-      displayName: users.displayName,
-    })
-    .from(flatMembers)
-    .innerJoin(users, eq(users.id, flatMembers.userId))
-    .where(eq(flatMembers.flatId, flatId))
-    .orderBy(asc(users.displayName), asc(users.id));
+  const cookedByUser = alias(users, "cooked_by_user");
+  const designatedCookUser = alias(users, "designated_cook_user");
 
   const recipeRows = await db()
     .select({
@@ -103,14 +87,21 @@ export async function exportAnalysisTables(flatId: string): Promise<AnalysisExpo
     .select({
       id: recipeInstances.id,
       recipeId: recipeInstances.recipeId,
+      recipeName: recipes.name,
       targetQuantity: recipeInstances.targetQuantity,
       cookedAt: recipeInstances.cookedAt,
-      cookedBy: recipeInstances.cookedBy,
-      designatedCookId: recipeInstances.designatedCookId,
+      cookedBy: cookedByUser.displayName,
+      designatedCook: designatedCookUser.displayName,
       finalisedAt: recipeInstances.finalisedAt,
       note: recipeInstances.note,
     })
     .from(recipeInstances)
+    .innerJoin(recipes, eq(recipes.id, recipeInstances.recipeId))
+    .leftJoin(cookedByUser, eq(cookedByUser.id, recipeInstances.cookedBy))
+    .leftJoin(
+      designatedCookUser,
+      eq(designatedCookUser.id, recipeInstances.designatedCookId),
+    )
     .where(
       and(eq(recipeInstances.flatId, flatId), isNotNull(recipeInstances.cookedAt)),
     )
@@ -118,10 +109,6 @@ export async function exportAnalysisTables(flatId: string): Promise<AnalysisExpo
 
   return {
     exportedAt: new Date().toISOString(),
-    members: memberRows.map((row) => ({
-      id: row.id,
-      displayName: row.displayName,
-    })),
     recipes: recipeRows.map((row) => ({
       id: row.id,
       name: row.name,
@@ -142,11 +129,12 @@ export async function exportAnalysisTables(flatId: string): Promise<AnalysisExpo
     cooked: cookedRows.map((row) => ({
       id: row.id,
       recipeId: row.recipeId,
+      recipeName: row.recipeName,
       targetQuantity: row.targetQuantity,
       // isNotNull in the query; drizzle still types it as Date | null.
       cookedAt: row.cookedAt!.toISOString(),
       cookedBy: row.cookedBy,
-      designatedCookId: row.designatedCookId,
+      designatedCook: row.designatedCook,
       finalisedAt: row.finalisedAt?.toISOString() ?? null,
       note: row.note,
     })),
