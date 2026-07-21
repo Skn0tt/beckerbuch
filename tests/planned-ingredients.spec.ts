@@ -284,3 +284,29 @@ test("ingredients tab: filter uses FTS prefix match on item text", async ({
   await expect(page.getByTestId("combined-row")).toContainText("spaghetti");
   await expect(page.getByText("apple")).toHaveCount(0);
 });
+
+test("ingredients tab: empty FTS falls back to embedding synonyms", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+
+  await createRecipeWithIngredient(page, "Ofengemüse", "500", "g", "möhren");
+  await createRecipeWithIngredient(page, "Fruit salad", "2", "", "apple");
+
+  await page.goto("/kitchen");
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(`/h/${flat.id}`);
+
+  await page.goto("/kitchen?lane=ingredients");
+  await expect(page.getByTestId("combined-row")).toHaveCount(2);
+
+  await page.getByRole("button", { name: "Filter ingredients" }).click();
+  const filter = page.getByLabel("Filter planned ingredients");
+  // No shared prefix with "möhren" — FTS misses; embedding synonym fold hits.
+  await filter.fill("carotten");
+  await expect(page.getByTestId("combined-row")).toHaveCount(1);
+  await expect(page.getByTestId("combined-row")).toContainText("möhren");
+  await expect(page.getByText("apple")).toHaveCount(0);
+});

@@ -128,3 +128,13 @@ everything currently in stock.
      `/kitchen?lane=ingredients`.
   2. Filter to `spag`.
     - expect: Only the spaghetti row remains (prefix `:*` tsquery).
+
+#### 1.9. ingredients-tab-filter-embedding-synonym-fallback
+
+**File:** `tests/planned-ingredients.spec.ts`
+
+**Steps:**
+  1. Log in, finalise recipes with `möhren` and `apple`, open
+     `/kitchen?lane=ingredients`.
+  2. Filter to `carotten` (no FTS token overlap with `möhren`).
+    - expect: Only the möhren row remains (embedding similarity fallback).

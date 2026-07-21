@@ -328,7 +328,12 @@ create index ingredients_item_trgm on ingredients using gin (item gin_trgm_ops);
   filter (`GET /kitchen/combined/search?q=…`): FTS over in-stock item
   texts, plus name-only FTS on in-stock recipe names, then filters the
   deduped combined list. Same `buildTsQuery` prefix/`:*` tokenizer as
-  recipe collection search.
+  recipe collection search. Query strings are passed through `unaccent`
+  so they match vectors built with `unaccent`. When FTS returns no hits,
+  the loader embeds the query (cache-aware via `embedTexts`) and returns
+  groups whose representative `item` is within
+  `INGREDIENT_SEARCH_SIMILARITY_THRESHOLD` (default `0.85`, below dedup's
+  `0.95` so near-synonyms like Möhren/Karotten can still surface).
 ### 5.2 Query path
 
 For a user query `q`:
@@ -490,7 +495,8 @@ On mobile (`/kitchen?lane=ingredients`) a tucked-away filter
 (icon → expands left over the heading on the same row) debounces the
 query and calls `/kitchen/combined/search` — Postgres FTS on
 `ingredients.search_vector` for in-stock items, plus name-only FTS on
-in-stock recipe names. The desktop sidebar modal has no filter
+in-stock recipe names; if FTS is empty, an embedding cosine fallback
+ranks near-synonym item texts. The desktop sidebar modal has no filter
 (browser find is enough).
 
 Writes (`split`, `unsplit`, `regenerate`) are public and keyed on

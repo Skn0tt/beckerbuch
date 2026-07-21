@@ -1,21 +1,31 @@
 /**
  * Full-text search over the kitchen "Planned ingredients" list (in-stock
- * recipes only). Matches ingredient item texts via `ingredients.search_vector`
- * and in-stock recipe names via `recipes.search_vector`, then filters the
- * already-deduped combined list to groups that hit.
+ * recipes only), with an embedding similarity fallback when FTS finds
+ * nothing — so synonym queries like "carotten" can still surface "möhren".
  */
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "../db/client";
-import { ingredients, recipeInstances, recipes } from "../db/schema";
+import {
+  ingredients,
+  recipeInstances,
+  recipes,
+  type DedupGroup,
+} from "../db/schema";
 import { buildTsQuery } from "../search";
+import { cosineSimilarity, embedTexts } from "./embeddings";
 import { loadCombinedList, type CombinedList } from "./combined-list";
+
+const DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001";
+/** Lower than dedup's 0.95 — synonyms sit below the merge cutoff on Gemini. */
+const DEFAULT_SEARCH_SIMILARITY_THRESHOLD = 0.85;
 
 export async function searchPlannedIngredients(
   flatId: string,
   query: string,
 ): Promise<CombinedList> {
   const combined = await loadCombinedList(flatId);
-  const tsq = buildTsQuery(query.trim());
+  const trimmed = query.trim();
+  const tsq = buildTsQuery(trimmed);
   if (!tsq) return combined;
   if (combined.combinedGroups.length === 0) return combined;
 
@@ -34,6 +44,39 @@ export async function searchPlannedIngredients(
     return { ...combined, combinedGroups: [] };
   }
 
+  const ftsHits = await findFtsIngredientIds(recipeIds, tsq);
+  if (ftsHits.size > 0) {
+    return {
+      ...combined,
+      combinedGroups: combined.combinedGroups.filter((g) =>
+        g.sources.some((s) => ftsHits.has(s.id)),
+      ),
+    };
+  }
+
+  // FTS miss — try semantic near-neighbours (carotten ↔ möhren).
+  try {
+    const semantic = await rankGroupsByEmbedding(
+      combined.combinedGroups,
+      trimmed,
+    );
+    return { ...combined, combinedGroups: semantic };
+  } catch (err) {
+    console.warn("[ingredient-search] embedding fallback failed:", err);
+    return { ...combined, combinedGroups: [] };
+  }
+}
+
+/**
+ * Match in-stock ingredient rows by item FTS, and in-stock recipes by
+ * name-only FTS (not recipes.search_vector — that also contains items).
+ * `coalesce` covers rows whose search_vector was never backfilled;
+ * `unaccent` on the query matches vectors built with unaccent.
+ */
+async function findFtsIngredientIds(
+  recipeIds: string[],
+  tsq: string,
+): Promise<Set<string>> {
   const hitIngredientIds = new Set<string>();
 
   const itemHits = await db()
@@ -42,21 +85,21 @@ export async function searchPlannedIngredients(
     .where(
       and(
         inArray(ingredients.recipeId, recipeIds),
-        sql`${ingredients.searchVector} @@ to_tsquery('simple', ${tsq})`,
+        sql`coalesce(
+          ${ingredients.searchVector},
+          to_tsvector('simple', unaccent(coalesce(${ingredients.item}, '')))
+        ) @@ to_tsquery('simple', unaccent(${tsq}))`,
       ),
     );
   for (const row of itemHits) hitIngredientIds.add(row.id);
 
-  // Name-only FTS — do NOT use recipes.search_vector here: that vector
-  // also contains ingredient items (weight B), so an item query would
-  // match the whole recipe and pull every line into the result set.
   const recipeHits = await db()
     .select({ id: recipes.id })
     .from(recipes)
     .where(
       and(
         inArray(recipes.id, recipeIds),
-        sql`to_tsvector('simple', unaccent(coalesce(${recipes.name}, ''))) @@ to_tsquery('simple', ${tsq})`,
+        sql`to_tsvector('simple', unaccent(coalesce(${recipes.name}, ''))) @@ to_tsquery('simple', unaccent(${tsq}))`,
       ),
     );
   if (recipeHits.length > 0) {
@@ -72,13 +115,33 @@ export async function searchPlannedIngredients(
     for (const row of fromRecipes) hitIngredientIds.add(row.id);
   }
 
-  if (hitIngredientIds.size === 0) {
-    return { ...combined, combinedGroups: [] };
-  }
+  return hitIngredientIds;
+}
 
-  const filtered = combined.combinedGroups.filter((g) =>
-    g.sources.some((s) => hitIngredientIds.has(s.id)),
+async function rankGroupsByEmbedding(
+  groups: DedupGroup[],
+  query: string,
+): Promise<DedupGroup[]> {
+  const model = process.env.DEDUP_EMBEDDING_MODEL ?? DEFAULT_EMBEDDING_MODEL;
+  const threshold = Number(
+    process.env.INGREDIENT_SEARCH_SIMILARITY_THRESHOLD ??
+      DEFAULT_SEARCH_SIMILARITY_THRESHOLD,
   );
 
-  return { ...combined, combinedGroups: filtered };
+  const items = [...new Set(groups.map((g) => g.item))];
+  if (items.length === 0) return [];
+
+  const vectors = await embedTexts(model, [query, ...items]);
+  const qVec = vectors.get(query);
+  if (!qVec) return [];
+
+  const scored: { group: DedupGroup; score: number }[] = [];
+  for (const g of groups) {
+    const v = vectors.get(g.item);
+    if (!v) continue;
+    const score = cosineSimilarity(qVec, v);
+    if (score >= threshold) scored.push({ group: g, score });
+  }
+  scored.sort((a, b) => b.score - a.score || a.group.item.localeCompare(b.group.item));
+  return scored.map((s) => s.group);
 }
