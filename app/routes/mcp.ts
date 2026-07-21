@@ -13,6 +13,7 @@ import {
   type RecipeListItem,
 } from "../lib/recipes";
 import { importRecipe } from "../lib/recipe-import";
+import { exportAnalysisTables } from "../lib/analysis-export";
 
 const UUID_SCHEMA = z.guid("Recipe id must be a UUID.");
 
@@ -284,6 +285,20 @@ async function handle(request: Request): Promise<Response> {
         note:
           "Pass these fields to kochbuch_add_recipe. The photo is returned as base64 for reference; kochbuch_add_recipe currently only accepts photoUrl, so the photo cannot be carried through automatically yet.",
       });
+    },
+  );
+
+  server.registerTool(
+    "kochbuch_export_analysis",
+    {
+      title: "Export analysis tables",
+      description:
+        "Export the flat's cooking data as normalized JSON tables (recipes, ingredients, cooked) for local analysis. Save each array and load into DuckDB / pandas / SQLite — join ingredients.recipeId → recipes.id (and cooked.recipeId). Cook and recipe names are already on each cooked row. Does not include passwords, photos, steps, or draft/in-stock instances.",
+      inputSchema: {},
+    },
+    async () => {
+      const payload = await exportAnalysisTables(ctx.flat.id);
+      return jsonResult(payload);
     },
   );
 

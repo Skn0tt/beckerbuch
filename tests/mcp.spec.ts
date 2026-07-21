@@ -951,4 +951,233 @@ test.describe("MCP server", () => {
       await catcher.close();
     }
   });
+
+  type AnalysisExportBody = {
+    exportedAt: string;
+    recipes: Array<{
+      id: string;
+      name: string;
+      baseQuantity: number;
+      sourceUrl: string | null;
+      sourceHost: string | null;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+    ingredients: Array<{
+      id: string;
+      recipeId: string;
+      position: number;
+      amount: string | null;
+      unit: string | null;
+      item: string;
+    }>;
+    cooked: Array<{
+      id: string;
+      recipeId: string;
+      recipeName: string;
+      targetQuantity: number;
+      cookedAt: string;
+      cookedBy: string | null;
+      designatedCook: string | null;
+      finalisedAt: string | null;
+      note: string | null;
+    }>;
+  };
+
+  async function finaliseAndMarkCooked(page: Page, recipeNames: string[]) {
+    await page.goto("/kitchen");
+    await page.getByRole("button", { name: "Finalise draft" }).click();
+    await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+    await expect(page).toHaveURL(/\/h\/[0-9a-f-]{36}$/);
+    await page.goto("/kitchen");
+    await page.getByText(`In stock ${recipeNames.length}`, { exact: true }).click();
+    for (const name of recipeNames) {
+      await page.getByRole("button", { name: `Mark ${name} as cooked` }).click();
+      await page
+        .getByRole("button", { name: `Confirm mark ${name} as cooked` })
+        .click();
+      await expect(
+        page.getByRole("button", { name: `Mark ${name} as cooked` }),
+      ).toHaveCount(0);
+    }
+    await expect(page.getByText("In stock 0", { exact: true })).toBeVisible();
+  }
+
+  test("export_analysis returns normalized tables for cooked recipes", async ({
+    page,
+    flat,
+  }) => {
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    const pastaId = await addRecipeViaMcp(client, {
+      name: "Export Pasta",
+      baseQuantity: 2,
+      ingredients: [
+        { amount: "200", unit: "g", item: "spaghetti" },
+        { amount: "1", item: "lemon" },
+      ],
+      steps: "Boil and zest.",
+    });
+    const curryId = await addRecipeViaMcp(client, {
+      name: "Export Curry",
+      baseQuantity: 4,
+      ingredients: [
+        { amount: "400", unit: "g", item: "chickpeas" },
+        { amount: "1", unit: "tsp", item: "cumin" },
+      ],
+      steps: "Simmer.",
+    });
+
+    await page.goto(`/recipes/${pastaId}`);
+    await page.getByRole("button", { name: "+ Add to draft" }).click();
+    await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
+    await page.goto(`/recipes/${curryId}`);
+    await page.getByRole("button", { name: "+ Add to draft" }).click();
+    await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
+    await finaliseAndMarkCooked(page, ["Export Pasta", "Export Curry"]);
+
+    const exportResult = await client.callTool({
+      name: "kochbuch_export_analysis",
+      arguments: {},
+    });
+    expect(exportResult.isError).toBeFalsy();
+    const body = jsonFromToolResult<AnalysisExportBody>(exportResult);
+
+    expect(body.exportedAt).toEqual(expect.any(String));
+    expect(Date.parse(body.exportedAt)).not.toBeNaN();
+    expect(Object.keys(body).sort()).toEqual([
+      "cooked",
+      "exportedAt",
+      "ingredients",
+      "recipes",
+    ]);
+
+    expect(body.recipes.map((r) => r.name).sort()).toEqual([
+      "Export Curry",
+      "Export Pasta",
+    ]);
+    const recipeIds = new Set(body.recipes.map((r) => r.id));
+    expect(recipeIds.has(pastaId)).toBe(true);
+    expect(recipeIds.has(curryId)).toBe(true);
+
+    const items = body.ingredients.map((i) => i.item).sort();
+    expect(items).toEqual(["chickpeas", "cumin", "lemon", "spaghetti"]);
+    for (const ingredient of body.ingredients) {
+      expect(recipeIds.has(ingredient.recipeId)).toBe(true);
+    }
+    const spaghetti = body.ingredients.find((i) => i.item === "spaghetti");
+    expect(spaghetti).toMatchObject({
+      recipeId: pastaId,
+      amount: "200",
+      unit: "g",
+      position: 0,
+    });
+
+    expect(body.cooked).toHaveLength(2);
+    expect(body.cooked.map((c) => c.recipeId).sort()).toEqual(
+      [curryId, pastaId].sort(),
+    );
+    expect(body.cooked.map((c) => c.recipeName).sort()).toEqual([
+      "Export Curry",
+      "Export Pasta",
+    ]);
+    for (const row of body.cooked) {
+      expect(row.cookedBy).toBe(flat.user.displayName);
+      expect(row.designatedCook).toBeNull();
+      expect(row.cookedAt).toEqual(expect.any(String));
+      expect(Date.parse(row.cookedAt)).not.toBeNaN();
+      expect(row.targetQuantity).toBeGreaterThan(0);
+      expect(row.finalisedAt).toEqual(expect.any(String));
+    }
+    // Newest cook first.
+    expect(Date.parse(body.cooked[0]!.cookedAt)).toBeGreaterThanOrEqual(
+      Date.parse(body.cooked[1]!.cookedAt),
+    );
+
+    await client.close();
+  });
+
+  test("export_analysis is empty for a fresh flat and omits uncooked instances", async ({
+    page,
+    flat,
+  }) => {
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    const emptyResult = await client.callTool({
+      name: "kochbuch_export_analysis",
+    });
+    expect(emptyResult.isError).toBeFalsy();
+    const empty = jsonFromToolResult<AnalysisExportBody>(emptyResult);
+    expect(empty.recipes).toEqual([]);
+    expect(empty.ingredients).toEqual([]);
+    expect(empty.cooked).toEqual([]);
+
+    const recipeId = await addRecipeViaMcp(client, {
+      name: "Still In Draft",
+      ingredients: [{ amount: "1", unit: "cup", item: "rice" }],
+    });
+    await page.goto(`/recipes/${recipeId}`);
+    await page.getByRole("button", { name: "+ Add to draft" }).click();
+    await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
+
+    const withDraft = await client.callTool({
+      name: "kochbuch_export_analysis",
+      arguments: {},
+    });
+    expect(withDraft.isError).toBeFalsy();
+    const draftBody = jsonFromToolResult<AnalysisExportBody>(withDraft);
+    expect(draftBody.recipes.map((r) => r.id)).toEqual([recipeId]);
+    expect(draftBody.ingredients.map((i) => i.item)).toEqual(["rice"]);
+    expect(draftBody.cooked).toEqual([]);
+
+    await client.close();
+  });
+
+  test("export_analysis never leaks another flat's tables", async ({
+    page,
+    flat,
+    request,
+  }) => {
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    const secretId = await addRecipeViaMcp(client, {
+      name: "Secret Flat Recipe",
+      ingredients: [{ item: "secret spice" }],
+    });
+    await page.goto(`/recipes/${secretId}`);
+    await page.getByRole("button", { name: "+ Add to draft" }).click();
+    await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
+    await finaliseAndMarkCooked(page, ["Secret Flat Recipe"]);
+    await client.close();
+
+    const otherAccessToken = await createIsolatedFlatAccessToken(page, request);
+    const otherClient = await mcpClient(otherAccessToken);
+    await addRecipeViaMcp(otherClient, {
+      name: "Other Flat Only",
+      ingredients: [{ item: "other beans" }],
+    });
+
+    const otherExport = await otherClient.callTool({
+      name: "kochbuch_export_analysis",
+      arguments: {},
+    });
+    expect(otherExport.isError).toBeFalsy();
+    const body = jsonFromToolResult<AnalysisExportBody>(otherExport);
+    expect(body.recipes.map((r) => r.name)).toEqual(["Other Flat Only"]);
+    expect(body.recipes.map((r) => r.id)).not.toContain(secretId);
+    expect(body.ingredients.map((i) => i.item)).toEqual(["other beans"]);
+    expect(body.cooked).toEqual([]);
+    expect(body.cooked.map((c) => c.cookedBy)).not.toContain(flat.user.displayName);
+
+    await otherClient.close();
+  });
 });
