@@ -63,17 +63,6 @@ export function KitchenSidebarSkeleton() {
   );
 }
 
-export function KitchenPageSkeleton() {
-  return (
-    <Stack gap="md" aria-busy="true" aria-label="Loading kitchen">
-      <Skeleton height={36} radius="sm" />
-      <Skeleton height={80} radius="md" />
-      <Skeleton height={80} radius="md" />
-      <Skeleton height={80} radius="md" />
-    </Stack>
-  );
-}
-
 export function WorkspaceSkeleton() {
   return (
     <Box px="md" py="md">
