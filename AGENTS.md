@@ -12,7 +12,9 @@ Read in this order before changing anything non-trivial:
 2. [`UI.md`](./UI.md) — ASCII wireframes per screen, desktop vs mobile.
 3. [`TECH.md`](./TECH.md) — stack, schema, auth, search, testing,
    deployment.
-4. [`PHASES.md`](./PHASES.md) — build order. Don't skip ahead.
+4. [`PHASES.md`](./PHASES.md) — historical build order (phases 1–5
+   done). Useful for *why* things are shaped as they are; not a
+   current todo list.
 
 If a doc contradicts the code: fix the doc. Docs are living.
 

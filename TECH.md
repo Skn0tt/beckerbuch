@@ -630,19 +630,17 @@ The test process owns the database lifecycle end-to-end:
   No `docker-compose.yml`, no orchestration script,
   no `.env.development`. The container's connection string is
   written into `process.env.DATABASE_URL` so worker fixtures
-  inherit it when spawning the Vite dev server.
+  inherit it when spawning the app server.
 - **Schema** is applied with `drizzle-kit push` immediately after
   the container is ready.
-- **App** runs through Vite's dev server (`npx vite`), spawned
-  **per Playwright worker** by the `server` fixture
-  (`tests/fixtures.ts`). Vite walks from port 5173 when busy, so
-  each worker gets its own free port automatically; the actual
-  `baseURL` is parsed out of the `Local: http://…` line on stdout.
-  The dev server includes `@netlify/vite-plugin`, which emulates
-  Netlify Blobs (used for recipe photos and avatars) and the rest
-  of the Netlify platform primitives — so we no longer need
-  `netlify dev` (or `netlify-cli`) at test time. Production deploy
-  still goes through `netlify.toml` + `@netlify/vite-plugin-react-router`.
+- **App** runs as a **production build** served by
+  `react-router-serve`, spawned **per Playwright worker** by the
+  `server` fixture (`tests/fixtures.ts`). Each worker also gets its
+  own Netlify Blobs emulator (`BlobsServer`) so photo/avatar uploads
+  work without `netlify dev`. The fixture parses the
+  `[react-router-serve] http://…` ready line for that worker's
+  `baseURL`. Production deploy still goes through `netlify.toml` +
+  `@netlify/vite-plugin-react-router`.
 - Locally, `TESTCONTAINERS_REUSE_ENABLE=true` is honoured for fast
   iteration; CI always cold-starts.
 
@@ -739,14 +737,13 @@ That's it. `npm test` is `playwright test`, which:
 1. Runs `tests/global-setup.ts` — boots a `pgvector/pgvector:pg16`
    container via Testcontainers, applies the schema with
    `drizzle-kit push`, exports `DATABASE_URL`.
-2. Starts a Vite dev server per Playwright worker via the `server`
-   worker fixture (`tests/fixtures.ts`) — same React Router app,
-   plus `@netlify/vite-plugin` for the Netlify primitives (Blobs,
-   etc.) the app uses at runtime, pointed at the container.
-   Each worker also gets its own HTTPS-MITM forward proxy (worker
-   fixture), which specs configure on-demand through the opt-in
-   `mocks` test fixture using `mocks.route(pattern, handler)` and the
-   factories in `tests/mock-handlers.ts`.
+2. Starts a `react-router-serve` of the production build per
+   Playwright worker via the `server` worker fixture
+   (`tests/fixtures.ts`), plus a per-worker Netlify Blobs emulator
+   and an HTTPS-MITM forward proxy. Specs configure mocks on-demand
+   through the opt-in `mocks` test fixture using
+   `mocks.route(pattern, handler)` and the factories in
+   `tests/mock-handlers.ts`.
 3. Runs the suite. Each test that asks for a tenant gets a fresh
    user/flat via the `tenant` fixture (§10.3) and logs in via the
    real form using the `login()` helper.
