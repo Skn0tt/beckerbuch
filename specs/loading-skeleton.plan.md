@@ -3,10 +3,11 @@
 ## Overview
 
 Cold starts paint CDN-served skeleton shells (prerendered at build time into
-`build/client/{index,kitchen,login}.html`). After hydrate, `_app` fetches
-`/data/app` and revalidates child loaders — so a sleeping Netlify Function is
-no longer on the critical path for first paint. A thin nav progress bar still
-covers slow client navigations.
+`build/client/{index,kitchen,login}.html`). Prerendered `.data` files are
+stripped after build so revalidation hits the Netlify Function with the
+session cookie. After hydrate, `_app` fetches `/data/app` and revalidates
+child loaders — so a sleeping function is no longer on the critical path for
+first paint. A thin nav progress bar still covers slow client navigations.
 
 ## Test Cases
 
