@@ -186,3 +186,71 @@ test("ingredients tab: shows recipes from every in-stock finalise batch, not jus
   await expect(page.getByText("200 g rice")).toBeVisible();
   await expect(page.getByText("Risotto")).toBeVisible();
 });
+
+test("ingredients tab: lists rows alphabetically by item name (merges not pinned to top)", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+
+  // apple (singleton) should sort before tomato (merged), even though the
+  // merged row used to be forced to the top.
+  await createRecipeWithIngredient(page, "Tomato pasta", "300", "g", "tomato");
+  await createRecipeWithIngredient(page, "Tomato soup", "300", "g", "tomatos");
+  await createRecipeWithIngredient(page, "Fruit salad", "2", "", "apple");
+  await createRecipeWithIngredient(page, "Side dish", "1", "", "zucchini");
+
+  await page.goto("/kitchen");
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(`/h/${flat.id}`);
+
+  await page.goto("/kitchen?lane=ingredients");
+  await expect(page.getByRole("heading", { name: "Planned ingredients" })).toBeVisible();
+
+  const rows = page.getByTestId("combined-row");
+  await expect(rows).toHaveCount(3);
+
+  // apple, tomato (merged), zucchini — A–Z; merged tomato is not first.
+  await expect(rows.nth(0)).toContainText("apple");
+  await expect(rows.nth(1)).toContainText("tomato");
+  await expect(rows.nth(1)).toHaveAttribute("data-merged", "true");
+  await expect(rows.nth(2)).toContainText("zucchini");
+});
+
+test("ingredients tab: filter icon narrows the list and clears back to full", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+
+  await createRecipeWithIngredient(page, "Tomato pasta", "300", "g", "tomato");
+  await createRecipeWithIngredient(page, "Tomato soup", "300", "g", "tomatos");
+  await createRecipeWithIngredient(page, "Fruit salad", "2", "", "apple");
+
+  await page.goto("/kitchen");
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(`/h/${flat.id}`);
+
+  await page.goto("/kitchen?lane=ingredients");
+  await expect(page.getByTestId("combined-row")).toHaveCount(2);
+
+  // Filter is tucked behind an icon until expanded.
+  await expect(page.getByLabel("Filter planned ingredients")).toHaveCount(0);
+  await page.getByRole("button", { name: "Filter ingredients" }).click();
+  const filter = page.getByLabel("Filter planned ingredients");
+  await expect(filter).toBeVisible();
+
+  await filter.fill("apple");
+  await expect(page.getByTestId("combined-row")).toHaveCount(1);
+  await expect(page.getByTestId("combined-row")).toContainText("apple");
+  await expect(page.getByText("tomato")).toHaveCount(0);
+
+  await filter.fill("nope");
+  await expect(page.getByTestId("ingredients-filter-empty")).toBeVisible();
+  await expect(page.getByTestId("combined-row")).toHaveCount(0);
+
+  await filter.fill("");
+  await expect(page.getByTestId("combined-row")).toHaveCount(2);
+});

@@ -93,3 +93,27 @@ everything currently in stock.
   3. Open `/kitchen?lane=ingredients`.
     - expect: `400 g spaghetti` and `Pasta al limone` (batch A) are listed.
     - expect: `200 g rice` and `Risotto` (batch B) are listed.
+
+#### 1.6. ingredients-tab-lists-rows-alphabetically-by-item-name
+
+**File:** `tests/planned-ingredients.spec.ts`
+
+**Steps:**
+  1. Log in and create recipes with `tomato`/`tomatos` (merge), `apple`, and
+     `zucchini`, finalise them all into stock.
+  2. Open `/kitchen?lane=ingredients`.
+    - expect: Combined rows appear in A–Z order by item name:
+      `apple`, then merged `tomato`, then `zucchini`.
+    - expect: The merged tomato row is **not** forced to the top.
+
+#### 1.7. ingredients-tab-filter-icon-narrows-the-list
+
+**File:** `tests/planned-ingredients.spec.ts`
+
+**Steps:**
+  1. Log in, finalise recipes that yield a merged tomato row and an `apple`
+     singleton, open `/kitchen?lane=ingredients`.
+  2. Tap the Filter ingredients icon to expand the filter field.
+    - expect: Filtering to `apple` shows only the apple row.
+    - expect: Filtering to a non-match shows `No matches`.
+    - expect: Clearing the filter restores both rows.
