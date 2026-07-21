@@ -996,7 +996,11 @@ test.describe("MCP server", () => {
       await page
         .getByRole("button", { name: `Confirm mark ${name} as cooked` })
         .click();
+      await expect(
+        page.getByRole("button", { name: `Mark ${name} as cooked` }),
+      ).toHaveCount(0);
     }
+    await expect(page.getByText("In stock 0", { exact: true })).toBeVisible();
   }
 
   test("export_analysis returns normalized tables for cooked recipes", async ({
@@ -1013,7 +1017,7 @@ test.describe("MCP server", () => {
       baseQuantity: 2,
       ingredients: [
         { amount: "200", unit: "g", item: "spaghetti" },
-        { amount: "1", unit: null, item: "lemon" },
+        { amount: "1", item: "lemon" },
       ],
       steps: "Boil and zest.",
     });
