@@ -488,8 +488,27 @@ function IngredientsLane() {
 
   return (
     <Stack gap="xs" data-testid="planned-ingredients-lane">
-      <Group justify="space-between" align="center" wrap="nowrap">
-        <Title order={2} size="h4">
+      <Group
+        justify="space-between"
+        align="center"
+        wrap="nowrap"
+        gap="xs"
+        style={{ position: "relative", minHeight: 28 }}
+      >
+        {/*
+          Closed: title + icon. Open: input expands left over the title
+          slot (same row — no extra vertical space).
+        */}
+        <Title
+          order={2}
+          size="h4"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            visibility: filterOpen ? "hidden" : "visible",
+            pointerEvents: filterOpen ? "none" : undefined,
+          }}
+        >
           Planned ingredients
         </Title>
         {!stockEmpty && (
@@ -498,6 +517,7 @@ function IngredientsLane() {
             size="compact-sm"
             aria-label="Filter ingredients"
             aria-expanded={filterOpen}
+            style={{ flexShrink: 0, zIndex: 1 }}
             onClick={() => {
               setFilterOpen((open) => {
                 if (open && query === "") return false;
@@ -508,21 +528,29 @@ function IngredientsLane() {
             <SearchIcon />
           </ActionIcon>
         )}
+        {filterOpen && !stockEmpty && (
+          <TextInput
+            ref={filterInputRef}
+            type="search"
+            placeholder="Filter…"
+            aria-label="Filter planned ingredients"
+            value={query}
+            size="xs"
+            onChange={(e) => setQuery(e.currentTarget.value)}
+            onBlur={() => {
+              if (query.trim() === "") setFilterOpen(false);
+            }}
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 36,
+              top: "50%",
+              transform: "translateY(-50%)",
+              zIndex: 1,
+            }}
+          />
+        )}
       </Group>
-
-      {filterOpen && !stockEmpty && (
-        <TextInput
-          ref={filterInputRef}
-          type="search"
-          placeholder="Filter…"
-          aria-label="Filter planned ingredients"
-          value={query}
-          onChange={(e) => setQuery(e.currentTarget.value)}
-          onBlur={() => {
-            if (query.trim() === "") setFilterOpen(false);
-          }}
-        />
-      )}
 
       {stockEmpty ? (
         <Text c="dimmed">

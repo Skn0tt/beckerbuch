@@ -477,9 +477,9 @@ top for Split/override. The kitchen **Planned ingredients** view
 representative `item` name** instead — merged and singleton rows
 interleave — because that surface is read-only and meant for scanning.
 On mobile (`/kitchen?lane=ingredients`) a tucked-away client filter
-(icon → expand `Filter…`) matches against item / display text / source
-recipe names; the desktop sidebar modal has no filter (browser find
-is enough).
+(icon → expands left over the heading on the same row) matches against
+item / display text / source recipe names; the desktop sidebar modal
+has no filter (browser find is enough).
 
 Writes (`split`, `unsplit`, `regenerate`) are public and keyed on
 the flat UUID, consistent with the rest of the handoff page's

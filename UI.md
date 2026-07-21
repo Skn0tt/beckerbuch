@@ -320,7 +320,6 @@ MOBILE — Ingredients (planned, all in-stock)
 │ [ Draft | In stock | Ingredients ]│
 ├──────────────────────────────────┤
 │ Planned ingredients          🔍  │
-│ [ Filter…                    ]   │  ← expands from 🔍; client-only
 │ ┌──────────────────────────────┐ │
 │ │ 400 g spaghetti              │ │  A–Z by item name
 │ │ Pasta al limone              │ │
@@ -330,6 +329,9 @@ MOBILE — Ingredients (planned, all in-stock)
 │ │ · 300 g tomato — Pasta …     │ │
 │ │ · 300 g tomatos — Tomato …   │ │
 │ └──────────────────────────────┘ │
+│                                  │
+│ 🔍 expands left over the title:  │
+│ [ Filter…                   ]🔍  │  ← same row, no extra vertical space
 ├──────────────────────────────────┤
 │  Recipes  │  Kitchen             │
 └──────────────────────────────────┘
@@ -341,7 +343,7 @@ MOBILE — Ingredients (planned, all in-stock)
 - "Finalise →" opens **Finalise confirmation** (§7) as a sheet.
 - In stock: `[ ✓ Cooked ]` is a deliberately big tap target (kitchen-with-greasy-hands ergonomics). Tap → "Marked cooked. **Undo**" toast for ~5s before writing to history.
 - Empty draft: shows a friendly empty state with `[ Browse recipes → ]` jumping to the Recipes tab.
-- **Ingredients** lane: read-only combined list over every in-stock recipe (not just the latest finalise batch). Rows are A–Z by representative item name. A subtle search icon expands a client-side filter (item / display text / recipe name). Desktop exposes the same list via the sidebar "Ingredients" modal without a filter (browser find). Handoff (§8) still pins merged groups to the top for Split/override.
+- **Ingredients** lane: read-only combined list over every in-stock recipe (not just the latest finalise batch). Rows are A–Z by representative item name. A subtle search icon expands a client-side filter **left over the “Planned ingredients” heading** (same row — no extra vertical space; matches item / display text / recipe name). Desktop exposes the same list via the sidebar "Ingredients" modal without a filter (browser find). Handoff (§8) still pins merged groups to the top for Split/override.
 
 ---
 
