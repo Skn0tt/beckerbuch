@@ -49,6 +49,26 @@ The handoff page combines finalised recipe ingredients for shopping, uses LLM-as
     - expect: The combined rows include one `2 cups flour` row.
     - expect: JSON-LD ingredients contain both `200 g flour` and `2 cups flour`.
 
+#### 1.4. cross-scale-mass-sum-500-g-sugar-1-kg-sugar-1-5-kg-sugar
+
+**File:** `tests/handoff-dedup.spec.ts`
+
+**Steps:**
+  1. Log in and create draft recipes `Cake` with `500 g sugar` and `Cookies` with `1 kg sugar`.
+  2. Finalise the draft.
+    - expect: The combined list contains exactly one merged row `1.5 kg sugar`.
+    - expect: JSON-LD contains exactly one sugar ingredient, `1.5 kg sugar`.
+
+#### 1.5. cross-scale-spoon-sum-1-tbsp-oil-2-tsp-oil-5-tsp-oil
+
+**File:** `tests/handoff-dedup.spec.ts`
+
+**Steps:**
+  1. Log in and create draft recipes `Dressing` with `1 tbsp oil` and `Marinade` with `2 tsp oil`.
+  2. Finalise the draft.
+    - expect: The combined list contains exactly one merged row `5 tsp oil`.
+    - expect: JSON-LD contains exactly one oil ingredient, `5 tsp oil`.
+
 ### 2. Public and Failure Behaviour
 
 **Seed:** `tests/fixtures.ts` (flat fixture: provisions a fresh tenant + first user, leaves browser logged out)
