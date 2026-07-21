@@ -496,8 +496,9 @@ function IngredientsLane() {
         style={{ position: "relative", minHeight: 28 }}
       >
         {/*
-          Closed: title + icon. Open: input expands left over the title
-          slot (same row — no extra vertical space).
+          Closed: title + icon. Open: input expands left from the icon over
+          the title (same row). Input stays mounted so width/opacity can
+          animate both ways; autofocus on open.
         */}
         <Title
           order={2}
@@ -505,7 +506,8 @@ function IngredientsLane() {
           style={{
             flex: 1,
             minWidth: 0,
-            visibility: filterOpen ? "hidden" : "visible",
+            opacity: filterOpen ? 0 : 1,
+            transition: "opacity 150ms ease",
             pointerEvents: filterOpen ? "none" : undefined,
           }}
         >
@@ -517,7 +519,7 @@ function IngredientsLane() {
             size="compact-sm"
             aria-label="Filter ingredients"
             aria-expanded={filterOpen}
-            style={{ flexShrink: 0, zIndex: 1 }}
+            style={{ flexShrink: 0, zIndex: 2 }}
             onClick={() => {
               setFilterOpen((open) => {
                 if (open && query === "") return false;
@@ -528,27 +530,39 @@ function IngredientsLane() {
             <SearchIcon />
           </ActionIcon>
         )}
-        {filterOpen && !stockEmpty && (
-          <TextInput
-            ref={filterInputRef}
-            type="search"
-            placeholder="Filter…"
-            aria-label="Filter planned ingredients"
-            value={query}
-            size="xs"
-            onChange={(e) => setQuery(e.currentTarget.value)}
-            onBlur={() => {
-              if (query.trim() === "") setFilterOpen(false);
-            }}
+        {!stockEmpty && (
+          <div
+            aria-hidden={!filterOpen}
             style={{
               position: "absolute",
               left: 0,
               right: 36,
               top: "50%",
-              transform: "translateY(-50%)",
               zIndex: 1,
+              transformOrigin: "right center",
+              transform: filterOpen
+                ? "translateY(-50%) scaleX(1)"
+                : "translateY(-50%) scaleX(0)",
+              opacity: filterOpen ? 1 : 0,
+              transition: "transform 200ms ease, opacity 150ms ease",
+              pointerEvents: filterOpen ? "auto" : "none",
             }}
-          />
+          >
+            <TextInput
+              ref={filterInputRef}
+              type="search"
+              placeholder="Filter…"
+              aria-label="Filter planned ingredients"
+              value={query}
+              size="xs"
+              tabIndex={filterOpen ? 0 : -1}
+              onChange={(e) => setQuery(e.currentTarget.value)}
+              onBlur={() => {
+                if (query.trim() === "") setFilterOpen(false);
+              }}
+              styles={{ root: { width: "100%" } }}
+            />
+          </div>
         )}
       </Group>
 

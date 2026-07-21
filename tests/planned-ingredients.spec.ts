@@ -236,11 +236,14 @@ test("ingredients tab: filter icon narrows the list and clears back to full", as
   await page.goto("/kitchen?lane=ingredients");
   await expect(page.getByTestId("combined-row")).toHaveCount(2);
 
-  // Filter is tucked behind an icon until expanded.
-  await expect(page.getByLabel("Filter planned ingredients")).toHaveCount(0);
-  await page.getByRole("button", { name: "Filter ingredients" }).click();
+  // Filter is tucked behind an icon; input stays mounted (for animation)
+  // and autofocuses when expanded.
+  const filterBtn = page.getByRole("button", { name: "Filter ingredients" });
+  await expect(filterBtn).toHaveAttribute("aria-expanded", "false");
+  await filterBtn.click();
+  await expect(filterBtn).toHaveAttribute("aria-expanded", "true");
   const filter = page.getByLabel("Filter planned ingredients");
-  await expect(filter).toBeVisible();
+  await expect(filter).toBeFocused();
 
   await filter.fill("apple");
   await expect(page.getByTestId("combined-row")).toHaveCount(1);
