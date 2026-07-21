@@ -16,9 +16,9 @@
  */
 import { randomUUID } from "node:crypto";
 import type { DedupGroup } from "../db/schema";
-import { parseAmount } from "./amount";
 import { formatIngredient } from "./scale";
 import { clusterBySimilarity, embedTexts } from "./embeddings";
+import { sumCompatibleAmounts, unitFamily } from "./units";
 
 export type DedupInputItem = {
   /** Stable id within this dedup call (we use ingredient row id). */
@@ -71,66 +71,6 @@ const DEFAULT_EMBEDDING_MODEL = "gemini-embedding-001";
  * DEDUP_SIMILARITY_THRESHOLD.
  */
 const DEFAULT_SIMILARITY_THRESHOLD = 0.95;
-
-// ---------------------------------------------------------------------------
-// Unit compatibility table.
-//
-// Keys are lowercased units (with common synonyms normalised). Each entry
-// declares the "family" (so units in the same family can be summed) and
-// the multiplier from the unit to a canonical *base* unit within that
-// family. We sum in the base unit, then choose a display unit that keeps
-// the number readable.
-// ---------------------------------------------------------------------------
-
-type UnitFamily = string;
-
-type UnitInfo = {
-  family: UnitFamily;
-  /** Multiplier from this unit to the family's base unit. */
-  toBase: number;
-  /** Display name for this unit, used when we pick a display unit. */
-  display: string;
-};
-
-const UNIT_TABLE: Record<string, UnitInfo> = {
-  // Mass — base = g
-  g: { family: "mass", toBase: 1, display: "g" },
-  gr: { family: "mass", toBase: 1, display: "g" },
-  gram: { family: "mass", toBase: 1, display: "g" },
-  grams: { family: "mass", toBase: 1, display: "g" },
-  kg: { family: "mass", toBase: 1000, display: "kg" },
-  // Volume — base = ml
-  ml: { family: "volume", toBase: 1, display: "ml" },
-  l: { family: "volume", toBase: 1000, display: "l" },
-  liter: { family: "volume", toBase: 1000, display: "l" },
-  liters: { family: "volume", toBase: 1000, display: "l" },
-  litre: { family: "volume", toBase: 1000, display: "l" },
-  litres: { family: "volume", toBase: 1000, display: "l" },
-  // Teaspoon family — base = tsp (3 tsp = 1 tbsp).
-  tsp: { family: "tsp_tbsp", toBase: 1, display: "tsp" },
-  teaspoon: { family: "tsp_tbsp", toBase: 1, display: "tsp" },
-  teaspoons: { family: "tsp_tbsp", toBase: 1, display: "tsp" },
-  tbsp: { family: "tsp_tbsp", toBase: 3, display: "tbsp" },
-  tablespoon: { family: "tsp_tbsp", toBase: 3, display: "tbsp" },
-  tablespoons: { family: "tsp_tbsp", toBase: 3, display: "tbsp" },
-};
-
-function unitInfo(unit: string | null): UnitInfo {
-  if (unit === null || unit.trim() === "") {
-    return { family: "count", toBase: 1, display: "" };
-  }
-  const key = unit.trim().toLowerCase();
-  const found = UNIT_TABLE[key];
-  if (found) return found;
-  // Unknown unit: treat as its own family so it never silently merges
-  // with another unknown unit, but still merges with itself.
-  return { family: "u:" + key, toBase: 1, display: unit };
-}
-
-function formatAmount(n: number): string {
-  if (Number.isInteger(n)) return String(n);
-  return Number(n.toFixed(2)).toString();
-}
 
 // ---------------------------------------------------------------------------
 // Display item name picking — deterministic across model versions.
@@ -191,48 +131,24 @@ function singletonGroup(item: DedupInputItem): DedupGroup {
 
 /**
  * Build a merged group from a unit-compatible set of input items.
- * Caller guarantees that {@link compatibleUnits} returns true for the
- * inputs' units.
+ * Caller guarantees all items share the same {@link unitFamily}.
  */
 function mergedGroup(items: DedupInputItem[]): DedupGroup {
-  // Pick a canonical display unit — the smallest one in the family,
-  // i.e. the unit with toBase = 1. Falls back to first unit if none
-  // qualifies (unknown units always have toBase = 1 anyway).
-  let displayUnit: string | null = items[0].unit;
-  let displayUnitInfo = unitInfo(displayUnit);
-  for (const it of items) {
-    const info = unitInfo(it.unit);
-    if (info.toBase < displayUnitInfo.toBase) {
-      displayUnit = it.unit;
-      displayUnitInfo = info;
-    }
-  }
-
-  // Sum amounts in the base unit. If any amount is null, the merged
-  // amount is null too — we still dedupe the name.
-  let totalBase: number | null = 0;
-  for (const it of items) {
-    const parsed = parseAmount(it.amount);
-    if (parsed === null) {
-      totalBase = null;
-      break;
-    }
-    totalBase += parsed * unitInfo(it.unit).toBase;
-  }
-  const summedDisplay =
-    totalBase === null ? null : formatAmount(totalBase / displayUnitInfo.toBase);
+  const summed = sumCompatibleAmounts(
+    items.map((it) => ({ amount: it.amount, unit: it.unit })),
+  );
 
   const itemName = pickItemName(items);
   const displayText = formatIngredient(
-    { amount: summedDisplay, unit: displayUnit, item: itemName },
+    { amount: summed.amount, unit: summed.unit, item: itemName },
     1,
   );
 
   return {
     id: randomUUID(),
     item: itemName,
-    unit: displayUnit,
-    amount: summedDisplay,
+    unit: summed.unit,
+    amount: summed.amount,
     displayText,
     sources: items.map((it) => ({
       id: it.id,
@@ -286,12 +202,11 @@ export function postProcess(
       continue;
     }
 
-    // Split by unit family. Items whose unit family matches the first
-    // claimed item stay merged; the rest get retried as their own
-    // sub-merge (recursive style, but bounded by family count).
+    // Split by unit family. Compatible units stay merged; incompatible
+    // ones become their own groups (bounded by family count).
     const buckets = new Map<string, DedupInputItem[]>();
     for (const it of claimedItems) {
-      const family = unitInfo(it.unit).family;
+      const family = unitFamily(it.unit);
       const list = buckets.get(family) ?? [];
       list.push(it);
       buckets.set(family, list);

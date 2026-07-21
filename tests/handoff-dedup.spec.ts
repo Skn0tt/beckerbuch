@@ -136,6 +136,48 @@ test("incompatible units stay as separate rows ('200 g flour' + '2 cups flour')"
   expect(ld.recipeIngredient).toContain("2 cups flour");
 });
 
+test("cross-scale mass sum ('500 g sugar' + '1 kg sugar' → '1.5 kg sugar')", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+  await createRecipeWithIngredient(page, "Cake", "500", "g", "sugar");
+  await createRecipeWithIngredient(page, "Cookies", "1", "kg", "sugar");
+  await finalise(page, flat.id);
+
+  const merged = page
+    .getByTestId("combined-row")
+    .filter({ has: page.getByText("1.5 kg sugar", { exact: true }) });
+  await expect(merged).toHaveCount(1);
+  await expect(merged).toHaveAttribute("data-merged", "true");
+
+  const ld = await jsonLd(page);
+  expect(ld.recipeIngredient.filter((s) => s.includes("sugar"))).toEqual([
+    "1.5 kg sugar",
+  ]);
+});
+
+test("cross-scale spoon sum ('1 tbsp oil' + '2 tsp oil' → '5 tsp oil')", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+  await createRecipeWithIngredient(page, "Dressing", "1", "tbsp", "oil");
+  await createRecipeWithIngredient(page, "Marinade", "2", "tsp", "oil");
+  await finalise(page, flat.id);
+
+  const merged = page
+    .getByTestId("combined-row")
+    .filter({ has: page.getByText("5 tsp oil", { exact: true }) });
+  await expect(merged).toHaveCount(1);
+  await expect(merged).toHaveAttribute("data-merged", "true");
+
+  const ld = await jsonLd(page);
+  expect(ld.recipeIngredient.filter((s) => s.includes("oil"))).toEqual([
+    "5 tsp oil",
+  ]);
+});
+
 test("public — anonymous visitor sees combined list and can split", async ({
   page,
   flat,

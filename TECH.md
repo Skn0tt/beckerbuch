@@ -418,16 +418,34 @@ Snapshot lifecycle:
    `{ merges: [{ ids: ["i1", "i2"] }, …] }` — no amounts, no units,
    no display text. Anything not clustered with anything else stays a
    singleton.
-3. The server post-processes: drops unit-incompatible suggestions
-   (mass / volume / tsp_tbsp / unknown-unit families never cross),
-   sums amounts in a canonical base unit, picks the display item
-   name deterministically (most-frequent → shortest), and composes
-   `displayText` via the existing `formatIngredient` helper. The
-   resulting `DedupGroup[]` is persisted on the `flats` row along
-   with the input hash, generation time, and model name
-   (`embedding:<model>`).
+3. The server post-processes via `app/lib/units.ts`: drops
+   unit-incompatible suggestions (families never cross — see below),
+   sums amounts in a canonical base unit, picks a readable display
+   unit, picks the display item name deterministically
+   (most-frequent → shortest), and composes `displayText` via the
+   existing `formatIngredient` helper. The resulting `DedupGroup[]`
+   is persisted on the `flats` row along with the input hash,
+   generation time, and model name (`embedding:<model>`).
 4. If the embeddings call or validation fails, we write a no-merge
    snapshot — Finalise never fails because the model is down.
+
+**Unit families** (compatibility buckets for summing):
+
+| Family | Base | Convertible units |
+|--------|------|-------------------|
+| `mass` | g | g/gram(s), kg, mg, oz, lb/pound(s) |
+| `volume` | ml | ml, cl, dl, l/liter(s)/litre(s), cup(s) (US **240 ml**), pint/quart/gallon; DE tasse |
+| `tsp_tbsp` | tsp | tsp/teaspoon(s), tbsp/tablespoon(s); DE tl/el |
+| `q:<key>` | 1 | qualitative exact-match after synonym fold (pinch, dash, clove, …) |
+| `count` | 1 | empty / null unit |
+| `u:<key>` | 1 | any unrecognized unit string |
+
+Mass and volume never cross (so `200 g flour` + `2 cups flour` stay
+separate). Synonyms and plurals are normalized before lookup
+(`cups`→`cup`, `grams`→`g`). After summing, display prefers a
+readable unit (e.g. `1500 g` → `1.5 kg`, `48 tsp` → `16 tbsp`;
+cup+ml mixtures display in ml). Logic is covered by
+`tests/units.spec.ts` plus E2E in `tests/handoff-dedup.spec.ts`.
 
 Embeddings are cached in the `ingredient_embeddings` table, keyed by
 `(model, text)` where `text` is a normalized form of the item string
