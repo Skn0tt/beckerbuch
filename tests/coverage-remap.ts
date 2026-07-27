@@ -1,11 +1,18 @@
 // Remap Playwright JSCoverage + Node V8 coverage through source maps
-// into Istanbul-style maps keyed by original `app/` paths.
+// into a single Istanbul coverage map keyed by original `app/` paths.
 
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import libCoverage from "istanbul-lib-coverage";
+import type {
+  CoverageMap,
+  CoverageMapData,
+} from "istanbul-lib-coverage";
 import v8toIstanbul from "v8-to-istanbul";
 import type { TestInfo } from "@playwright/test";
+
+const { createCoverageMap } = libCoverage;
 
 const PROJECT_ROOT = process.cwd();
 const APP_ROOT = path.resolve(PROJECT_ROOT, "app");
@@ -20,8 +27,6 @@ export type PlaywrightJSCoverageEntry = {
     ranges: Array<{ startOffset: number; endOffset: number; count: number }>;
   }>;
 };
-
-type IstanbulMap = Record<string, unknown>;
 
 function toAppRelativeKey(filePath: string): string | null {
   let resolved = filePath;
@@ -41,33 +46,27 @@ function toAppRelativeKey(filePath: string): string | null {
   return path.relative(PROJECT_ROOT, resolved).split(path.sep).join("/");
 }
 
-function filterToApp(istanbul: IstanbulMap): IstanbulMap {
-  const out: IstanbulMap = {};
+function filterToApp(istanbul: CoverageMapData): CoverageMapData {
+  const out: CoverageMapData = {};
   for (const [key, value] of Object.entries(istanbul)) {
     const appKey = toAppRelativeKey(key);
     if (!appKey) continue;
-    out[appKey] = value && typeof value === "object"
-      ? { ...(value as object), path: appKey }
-      : value;
+    out[appKey] = {
+      ...(typeof value === "object" && value !== null ? value : {}),
+      path: appKey,
+    } as CoverageMapData[string];
   }
   return out;
 }
 
-function mergeIstanbul(into: IstanbulMap, from: IstanbulMap): void {
-  for (const [key, value] of Object.entries(from)) {
-    if (!(key in into)) {
-      into[key] = value;
-      continue;
-    }
-    // Prefer first write; per-test artifacts don't need a full merge of
-    // statement maps across scripts that alias the same source.
-  }
+function mergeFiltered(into: CoverageMap, istanbul: CoverageMapData): void {
+  into.merge(filterToApp(istanbul));
 }
 
 export async function remapFrontendCoverage(
   entries: PlaywrightJSCoverageEntry[],
-): Promise<IstanbulMap> {
-  const merged: IstanbulMap = {};
+): Promise<CoverageMap> {
+  const merged = createCoverageMap({});
   for (const entry of entries) {
     if (!entry.source) continue;
     try {
@@ -76,7 +75,7 @@ export async function remapFrontendCoverage(
       });
       await converter.load();
       converter.applyCoverage(entry.functions);
-      mergeIstanbul(merged, filterToApp(converter.toIstanbul() as IstanbulMap));
+      mergeFiltered(merged, converter.toIstanbul());
     } catch (err) {
       console.error(
         `[coverage] frontend remap failed for ${entry.url}:`,
@@ -97,8 +96,8 @@ type V8CoverageFile = {
 
 export async function remapBackendCoverage(
   coverageFiles: string[],
-): Promise<IstanbulMap> {
-  const merged: IstanbulMap = {};
+): Promise<CoverageMap> {
+  const merged = createCoverageMap({});
   for (const file of coverageFiles) {
     let parsed: V8CoverageFile;
     try {
@@ -126,10 +125,7 @@ export async function remapBackendCoverage(
         const converter = v8toIstanbul(scriptPath);
         await converter.load();
         converter.applyCoverage(script.functions);
-        mergeIstanbul(
-          merged,
-          filterToApp(converter.toIstanbul() as IstanbulMap),
-        );
+        mergeFiltered(merged, converter.toIstanbul());
       } catch (err) {
         console.error(
           `[coverage] backend remap failed for ${script.url}:`,
@@ -159,20 +155,17 @@ export async function writeCoverageArtifacts(opts: {
 }): Promise<void> {
   const dir = coverageArtifactDir(opts.testInfo);
   await mkdir(dir, { recursive: true });
-  const frontend = await remapFrontendCoverage(opts.frontendEntries);
-  const backend = await remapBackendCoverage(opts.backendFiles);
-  const frontendPath = path.join(dir, "frontend.json");
-  const backendPath = path.join(dir, "backend.json");
-  await writeFile(frontendPath, JSON.stringify(frontend, null, 2));
-  await writeFile(backendPath, JSON.stringify(backend, null, 2));
 
-  // Attach so the HTML report / trace viewer surface them next to the test.
-  await opts.testInfo.attach("coverage-frontend", {
-    path: frontendPath,
-    contentType: "application/json",
-  });
-  await opts.testInfo.attach("coverage-backend", {
-    path: backendPath,
+  const merged = createCoverageMap({});
+  merged.merge(await remapFrontendCoverage(opts.frontendEntries));
+  merged.merge(await remapBackendCoverage(opts.backendFiles));
+
+  const coveragePath = path.join(dir, "coverage.json");
+  await writeFile(coveragePath, JSON.stringify(merged.toJSON(), null, 2));
+
+  // Attach so the HTML report / trace viewer surface it next to the test.
+  await opts.testInfo.attach("coverage", {
+    path: coveragePath,
     contentType: "application/json",
   });
 }
