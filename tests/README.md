@@ -16,6 +16,7 @@ cookies. See [TECH.md §10](../TECH.md) for the full testing model.
 | `mockttp-fixture/`      | Sibling library: the bare-minimum mockttp + Playwright integration (`workerProxy` + raw `Mockttp` as `mocks`). Reference artifact for comparison — not consumed by this repo's tests. See [`mockttp-fixture/README.md`](./mockttp-fixture/README.md). |
 | `mock-handlers.ts`      | Closure-factory helpers that build reusable `route` handlers (kptncook share/search/images, OpenAI dedup) without registering them — specs hand the returned handler to `mocks.route(...)` themselves. |
 | `mock-data.ts`          | Shared test payloads (cinnamon-buns recipe, tiny 1×1 JPEG, kptncook API key). |
+| `sort-reporter.ts`      | Placeholder custom reporter: `preprocess()` sorts suite entries by `test.id` ascending. |
 | `*.spec.ts`             | Specs. Import `test`/`expect` from `./fixtures`.              |
 
 The app's HTTP boundary is the only seam tests use — there's no direct
@@ -55,11 +56,16 @@ is kept. No env flag, no extra npm script.
 ## Running
 
 ```bash
-npm test                          # the whole suite
-npx playwright test smoke.spec    # a single file
+npm test                          # the whole suite (sets PLAYWRIGHT_FORCE_ASYNC_LOADER=1)
+npx playwright test smoke.spec    # a single file — prefer `npm test -- …` so the env is set
 npx playwright test --debug       # step through with the inspector
 npx playwright test --ui          # time-travel UI
 ```
+
+`PLAYWRIGHT_FORCE_ASYNC_LOADER=1` is required on Playwright ≥1.61: the
+default sync `registerHooks` loader breaks loading `mockttp` from our
+fixtures (`ERR_VM_MODULE_LINK_FAILURE` on `node:net`). Prefer `npm test -- …`
+over bare `npx playwright test` so the env is set.
 
 Drop `await page.pause()` anywhere in a spec to freeze the run, open
 the inspector, and click around the live app + DB state.

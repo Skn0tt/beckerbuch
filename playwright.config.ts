@@ -10,7 +10,11 @@ export default defineConfig({
     // server pauses don't fail assertions.
     timeout: 10_000,
   },
-  reporter: process.env.CI ? "github" : "list",
+  reporter: [
+    [process.env.CI ? "github" : "list"],
+    // Placeholder: reporter.preprocess() sorts tests by id ascending.
+    ["./tests/sort-reporter.ts"],
+  ],
   use: {
     // baseURL is set per worker by the `server` fixture, which spawns
     // its own Vite dev server. There is no global webServer; see

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "playwright test",
+    "test": "PLAYWRIGHT_FORCE_ASYNC_LOADER=1 playwright test",
     "db:generate": "drizzle-kit generate",
     "lint": "eslint . && react-router typegen && tsc --noEmit",
     "build": "react-router build"
@@ -41,7 +41,7 @@
     "@eslint/js": "^9.39.4",
     "@netlify/vite-plugin": "^2.12.6",
     "@netlify/vite-plugin-react-router": "^3.1.1",
-    "@playwright/test": "^1.60.0",
+    "@playwright/test": "1.63.0-alpha-2026-07-27",
     "@react-router/dev": "7.15.1",
     "@testcontainers/postgresql": "^12.0.1",
     "@types/node": "^22",
