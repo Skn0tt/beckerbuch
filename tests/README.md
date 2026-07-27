@@ -7,8 +7,10 @@ cookies. See [TECH.md §10](../TECH.md) for the full testing model.
 
 | File                    | What it does                                                  |
 | ----------------------- | ------------------------------------------------------------- |
-| `global-setup.ts`       | Boots a `postgres:16` Testcontainer, enables extensions, runs `drizzle-kit push`, and writes `DATABASE_URL` into `process.env` so worker fixtures inherit it. |
-| `fixtures.ts`           | Playwright `test` extended with worker fixtures (`workerProxy`, `server`, `baseURL` override) and test fixtures (`flat`, opt-in `mocks`). Also exports `generateInvite(page, user)` for tests that need an invite URL — it logs the user in, drives the `/flat/settings` UI, and returns the freshly minted link. The `flat` fixture provisions a flat via the admin endpoint, then redeems the bootstrap invite via the public form to mint a real first user. |
+| `global-setup.ts`       | Boots a `postgres:16` Testcontainer, enables extensions, runs `drizzle-kit push`, builds the app with test-only sourcemaps (`--sourcemapClient inline --sourcemapServer true`), and writes `DATABASE_URL` into `process.env` so worker fixtures inherit it. |
+| `fixtures.ts`           | Playwright `test` extended with worker fixtures (`workerProxy`, `server`, `baseURL` override) and test fixtures (`flat`, opt-in `mocks`, always-on `_coverage`). Also exports `generateInvite(page, user)` for tests that need an invite URL — it logs the user in, drives the `/flat/settings` UI, and returns the freshly minted link. The `flat` fixture provisions a flat via the admin endpoint, then redeems the bootstrap invite via the public form to mint a real first user. |
+| `server-coverage-preload.mjs` | Test-only Node preload: on `SIGUSR2`, `v8.takeCoverage()` + ack line for per-test backend coverage dumps. |
+| `coverage-remap.ts`     | Remaps Playwright JSCoverage + Node V8 coverage through source maps into Istanbul-style maps keyed by original `app/` paths; writes per-test JSON under `test-results/coverage/`. |
 | `login.ts`              | Thin `login(page, user)` helper that fills the real form.     |
 | `playwright-mocks/`     | Vendored library: Playwright-shaped `Route`/`ProxyRequest`/`ProxyResponse` facade on top of [`mockttp`](https://github.com/httptoolkit/mockttp), plus the `workerProxy` + `mocks` fixtures consumed via `mergeTests`. See [`playwright-mocks/README.md`](./playwright-mocks/README.md) for the full API. |
 | `mockttp-fixture/`      | Sibling library: the bare-minimum mockttp + Playwright integration (`workerProxy` + raw `Mockttp` as `mocks`). Reference artifact for comparison — not consumed by this repo's tests. See [`mockttp-fixture/README.md`](./mockttp-fixture/README.md). |
@@ -21,6 +23,15 @@ DB access from the test process. `globalSetup` owns the Postgres
 testcontainer and the schema; each Playwright worker owns its own
 Vite dev server (with `@netlify/vite-plugin` providing the Blobs/etc.
 emulation that we'd otherwise need `netlify dev` for).
+
+## Per-test code coverage
+
+Every test automatically collects frontend (Playwright JSCoverage) and
+backend (Node `NODE_V8_COVERAGE` + `SIGUSR2` dump) coverage against the
+sourcemapped production build from `globalSetup`. Artifacts land in
+gitignored `test-results/coverage/<worker>-<testId>/{frontend,backend}.json`
+as Istanbul-style maps keyed by original `app/` paths — no env flag, no
+extra npm script.
 
 ## Conventions
 

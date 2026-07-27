@@ -48,8 +48,18 @@ export default async function globalSetup() {
   // process per worker), not the Vite dev server. This eliminates the
   // typegen-on-boot race that bites when multiple workers boot Vite
   // in parallel, and matches what gets deployed to Netlify.
-  console.log("[global-setup] Building app (react-router build)…");
-  execSync("npm run build", { stdio: "inherit" });
+  //
+  // Source maps are test-only: inline client maps travel with Playwright
+  // JSCoverage entries; external server `.map` files sit beside the
+  // server bundle for Node V8 remapping. Netlify's plain `npm run build`
+  // stays map-free.
+  console.log(
+    "[global-setup] Building app (react-router build with sourcemaps)…",
+  );
+  execSync(
+    "npx react-router build --sourcemapClient inline --sourcemapServer true",
+    { stdio: "inherit" },
+  );
 
   process.env.DATABASE_URL = databaseUrl;
 }
