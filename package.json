@@ -57,7 +57,7 @@
     "istanbul-lib-coverage": "^3.2.2",
     "mockttp": "^4.4.2",
     "node-forge": "^1.4.0",
-    "postcss": "^8.5.14",
+    "postcss": "^8.5.23",
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",
     "prettier": "^3.8.3",
