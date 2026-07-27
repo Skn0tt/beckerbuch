@@ -30,8 +30,9 @@ Every test automatically collects frontend (Playwright JSCoverage) and
 backend (Node `NODE_V8_COVERAGE` + `SIGUSR2` dump) coverage against the
 sourcemapped production build from `globalSetup`. Artifacts land in
 gitignored `test-results/coverage/<worker>-<testId>/{frontend,backend}.json`
-as Istanbul-style maps keyed by original `app/` paths — no env flag, no
-extra npm script.
+as Istanbul-style maps keyed by original `app/` paths, and are also
+attached on the test as `coverage-frontend` / `coverage-backend` (visible
+in the HTML report). No env flag, no extra npm script.
 
 ## Conventions
 

@@ -161,14 +161,20 @@ export async function writeCoverageArtifacts(opts: {
   await mkdir(dir, { recursive: true });
   const frontend = await remapFrontendCoverage(opts.frontendEntries);
   const backend = await remapBackendCoverage(opts.backendFiles);
-  await writeFile(
-    path.join(dir, "frontend.json"),
-    JSON.stringify(frontend, null, 2),
-  );
-  await writeFile(
-    path.join(dir, "backend.json"),
-    JSON.stringify(backend, null, 2),
-  );
+  const frontendPath = path.join(dir, "frontend.json");
+  const backendPath = path.join(dir, "backend.json");
+  await writeFile(frontendPath, JSON.stringify(frontend, null, 2));
+  await writeFile(backendPath, JSON.stringify(backend, null, 2));
+
+  // Attach so the HTML report / trace viewer surface them next to the test.
+  await opts.testInfo.attach("coverage-frontend", {
+    path: frontendPath,
+    contentType: "application/json",
+  });
+  await opts.testInfo.attach("coverage-backend", {
+    path: backendPath,
+    contentType: "application/json",
+  });
 }
 
 /** List JSON files currently in a NODE_V8_COVERAGE directory. */
