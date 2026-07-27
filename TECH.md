@@ -661,6 +661,14 @@ The test process owns the database lifecycle end-to-end:
   `[react-router-serve] http://…` ready line for that worker's
   `baseURL`. Production deploy still goes through `netlify.toml` +
   `@netlify/vite-plugin-react-router`.
+- **Test-only source maps + per-test code coverage.** `globalSetup`
+  builds with `--sourcemapClient inline --sourcemapServer`
+  (Netlify's plain `npm run build` stays map-free). An always-on
+  fixture resets/dumps Node V8 coverage via `SIGUSR2` and collects
+  Playwright JSCoverage for every test, remaps both through source
+  maps, merges them with `istanbul-lib-coverage`, and attaches a
+  single `coverage` JSON (also under `test-results/coverage/`). See
+  [`tests/README.md`](./tests/README.md).
 - Locally, `TESTCONTAINERS_REUSE_ENABLE=true` is honoured for fast
   iteration; CI always cold-starts.
 
