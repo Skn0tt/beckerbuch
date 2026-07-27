@@ -63,7 +63,50 @@ function filterToApp(istanbul: CoverageMapData): CoverageMapData {
 }
 
 function mergeFiltered(into: CoverageMap, istanbul: CoverageMapData): void {
-  into.merge(filterToApp(istanbul));
+  into.merge(dropUntouchedFiles(filterToApp(istanbul)));
+}
+
+/**
+ * v8-to-istanbul initializes every line at count=1 and relies on V8's
+ * count=0 ranges to punch holes for unexecuted code (see CovLine in
+ * v8-to-istanbul). That works for a full isolate dump, but NODE_V8_COVERAGE
+ * after `v8.takeCoverage()` is incremental and *omits* functions that
+ * never ran — so the holes never arrive and a sourcemapped bundle paints
+ * every `app/` file as covered just from loading the script.
+ *
+ * Start from 0 instead; only ranges with real hits (and explicit 0-holes
+ * nested inside executed blocks) move the needle. Loading a module then
+ * no longer counts as executing its function bodies.
+ */
+type V8ToIstanbulConverter = {
+  covSources: Array<{
+    source: { lines: Array<{ count: number; ignore: boolean }> };
+  }>;
+  load(): Promise<void>;
+  applyCoverage(
+    blocks: PlaywrightJSCoverageEntry["functions"],
+  ): void;
+  toIstanbul(): CoverageMapData;
+};
+
+export function resetCoverageLineCounts(converter: V8ToIstanbulConverter): void {
+  for (const { source } of converter.covSources) {
+    for (const line of source.lines) {
+      if (!line.ignore) line.count = 0;
+    }
+  }
+}
+
+/** Drop files where no statement was hit — keeps per-test artifacts small. */
+export function dropUntouchedFiles(istanbul: CoverageMapData): CoverageMapData {
+  const out: CoverageMapData = {};
+  for (const [key, value] of Object.entries(istanbul)) {
+    const hits = (value as { s?: Record<string, number> }).s;
+    if (!hits) continue;
+    if (!Object.values(hits).some((n) => n > 0)) continue;
+    out[key] = value;
+  }
+  return out;
 }
 
 export async function remapFrontendCoverage(
@@ -75,8 +118,9 @@ export async function remapFrontendCoverage(
     try {
       const converter = v8toIstanbul(entry.url || "", 0, {
         source: entry.source,
-      });
+      }) as unknown as V8ToIstanbulConverter;
       await converter.load();
+      resetCoverageLineCounts(converter);
       converter.applyCoverage(entry.functions);
       mergeFiltered(merged, converter.toIstanbul());
     } catch (err) {
@@ -125,8 +169,9 @@ export async function remapBackendCoverage(
         continue;
       }
       try {
-        const converter = v8toIstanbul(scriptPath);
+        const converter = v8toIstanbul(scriptPath) as unknown as V8ToIstanbulConverter;
         await converter.load();
+        resetCoverageLineCounts(converter);
         converter.applyCoverage(script.functions);
         mergeFiltered(merged, converter.toIstanbul());
       } catch (err) {
