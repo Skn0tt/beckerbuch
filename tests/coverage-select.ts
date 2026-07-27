@@ -122,49 +122,61 @@ export async function buildIndex(coverageDir: string): Promise<CoverageIndex> {
 }
 
 /**
- * Parse a unified diff into `app/...:line` keys for **added** new-side
- * lines only. Deleted-only hunks contribute nothing.
+ * Parse a unified diff into `app/...:line` keys.
+ *
+ * - **Added** lines use **new-side** line numbers (match prior coverage when
+ *   the edit is roughly in-place).
+ * - **Deleted** lines use **old-side** line numbers (exact match against the
+ *   coverage index from the previous tree — important for delete-only hunks).
+ * - Non-`app/` paths and `/dev/null` on the relevant side are ignored.
  */
 export function parseDiffLines(diff: string): Set<LineKey> {
   const lines = new Set<LineKey>();
-  let currentFile: string | null = null;
+  let oldFile: string | null = null;
+  let newFile: string | null = null;
+  let oldLine = 0;
   let newLine = 0;
 
   for (const raw of diff.split(/\r?\n/)) {
+    if (raw.startsWith("--- ")) {
+      oldFile = appPathFromDiffHeader(raw.slice(4).trim());
+      continue;
+    }
     if (raw.startsWith("+++ ")) {
-      const pathPart = raw.slice(4).trim();
-      // `+++ b/app/foo.ts` or `+++ app/foo.ts`
-      const file = pathPart.replace(/^[ab]\//, "");
-      if (file === "/dev/null") {
-        currentFile = null;
-        continue;
-      }
-      currentFile = file.startsWith("app/") ? file : null;
+      newFile = appPathFromDiffHeader(raw.slice(4).trim());
       continue;
     }
 
-    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
+    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
     if (hunk) {
-      newLine = Number(hunk[1]);
+      oldLine = Number(hunk[1]);
+      newLine = Number(hunk[2]);
       continue;
     }
-
-    if (!currentFile) continue;
 
     if (raw.startsWith("+") && !raw.startsWith("+++")) {
-      lines.add(lineKey(currentFile, newLine));
+      if (newFile) lines.add(lineKey(newFile, newLine));
       newLine += 1;
     } else if (raw.startsWith("-") && !raw.startsWith("---")) {
-      // deleted line: new-side counter does not advance
+      if (oldFile) lines.add(lineKey(oldFile, oldLine));
+      oldLine += 1;
     } else if (raw.startsWith("\\")) {
       // "\ No newline at end of file"
-    } else {
-      // context line (including empty) advances both sides; we only track new
+    } else if (oldFile || newFile) {
+      // context line (including empty) advances both sides
+      oldLine += 1;
       newLine += 1;
     }
   }
 
   return lines;
+}
+
+/** `a/app/foo.ts` / `b/app/foo.ts` / `app/foo.ts` → `app/foo.ts`; else null. */
+function appPathFromDiffHeader(pathPart: string): string | null {
+  const file = pathPart.replace(/^[ab]\//, "");
+  if (file === "/dev/null") return null;
+  return file.startsWith("app/") ? file : null;
 }
 
 function durationMs(

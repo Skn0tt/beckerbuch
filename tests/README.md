@@ -10,7 +10,8 @@ cookies. See [TECH.md §10](../TECH.md) for the full testing model.
 | `global-setup.ts`       | Boots a `postgres:16` Testcontainer, enables extensions, runs `drizzle-kit push`, builds the app with test-only sourcemaps (`--sourcemapClient inline --sourcemapServer`), and writes `DATABASE_URL` into `process.env` so worker fixtures inherit it. |
 | `fixtures.ts`           | Playwright `test` extended with worker fixtures (`workerProxy`, `server`, `baseURL` override) and test fixtures (`flat`, opt-in `mocks`, always-on `_coverage`). Also exports `generateInvite(page, user)` for tests that need an invite URL — it logs the user in, drives the `/flat/settings` UI, and returns the freshly minted link. The `flat` fixture provisions a flat via the admin endpoint, then redeems the bootstrap invite via the public form to mint a real first user. |
 | `server-coverage-preload.mjs` | Test-only Node preload: on `SIGUSR2`, `v8.takeCoverage()` + ack line for per-test backend coverage dumps. |
-| `coverage-remap.ts`     | Remaps Playwright JSCoverage + Node V8 coverage through source maps into Istanbul-style maps keyed by original `app/` paths; writes per-test JSON under `.playwright-data/coverage/` (durable; outside wiped `test-results/`). |
+| `coverage-remap.ts`     | Remaps Playwright JSCoverage + Node V8 coverage through source maps into Istanbul-style maps keyed by original `app/` paths; zeroes v8-to-istanbul's default-covered lines before apply so load ≠ hit; writes per-test JSON under `.playwright-data/coverage/` (durable; outside wiped `test-results/`). |
+| `coverage-remap.unit.spec.ts` | Pure unit tests for remap helpers (default-count reset, import/404 dumps must not paint unrelated bodies). |
 | `coverage-select.ts`    | Library: `buildIndex` over per-test Istanbul maps + `selectTests` (diminishing-returns greedy under a duration budget). Used by `sort-reporter`. |
 | `coverage-select.unit.spec.ts` | Pure unit tests for the coverage-select helpers (imports `@playwright/test` directly — no app server). |
 | `login.ts`              | Thin `login(page, user)` helper that fills the real form.     |
@@ -37,10 +38,13 @@ sourcemapped production build from `globalSetup`. Both sides are merged
 `.playwright-data/coverage/<worker>-<testId>/coverage.json`, and attached on
 the test as `coverage` (visible in the HTML report). Remapped hits in
 `node_modules` / framework virtual modules are dropped — only `app/**`
-is kept. No env flag, no extra npm script. Artifacts live under
-`.playwright-data/` (not `test-results/`) so they survive Playwright's
-outputDir wipe at the start of the next run — required for diff-aware
-selection in `preprocess`.
+is kept. Files with no statement hits are omitted. Before applying V8
+ranges, remapping zeroes `v8-to-istanbul`'s default count=1 line state so
+incremental `takeCoverage()` dumps (which omit never-run functions) cannot
+paint whole sourcemapped modules as covered on load. No env flag, no extra
+npm script. Artifacts live under `.playwright-data/` (not `test-results/`)
+so they survive Playwright's outputDir wipe at the start of the next run —
+required for diff-aware selection in `preprocess`.
 
 The `sort-reporter` also writes `.playwright-data/duration.json` mapping each
 `test.id` to its last-run duration in ms.
@@ -50,8 +54,9 @@ The `sort-reporter` also writes `.playwright-data/duration.json` mapping each
 `coverage-select.ts` builds an in-memory line→test index from those
 Istanbul files and picks an ordered test list under a duration budget
 (diminishing returns weighted by line IDF: prefer rare diff lines, then
-reinforce). `sort-reporter` calls it from `preprocess` when both env vars
-are set:
+reinforce). Diff parsing unions **new-side added** lines with **old-side
+deleted** lines (so delete-only hunks still resolve against prior coverage).
+`sort-reporter` calls it from `preprocess` when both env vars are set:
 
 ```bash
 # 1) Full run → coverage artifacts + duration.json
