@@ -662,7 +662,7 @@ The test process owns the database lifecycle end-to-end:
   `baseURL`. Production deploy still goes through `netlify.toml` +
   `@netlify/vite-plugin-react-router`.
 - **Test-only source maps + per-test code coverage.** `globalSetup`
-  builds with `--sourcemapClient inline --sourcemapServer true`
+  builds with `--sourcemapClient inline --sourcemapServer`
   (Netlify's plain `npm run build` stays map-free). An always-on
   fixture resets/dumps Node V8 coverage via `SIGUSR2` and collects
   Playwright JSCoverage for every test, remapping both to original

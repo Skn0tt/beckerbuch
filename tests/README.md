@@ -7,7 +7,7 @@ cookies. See [TECH.md §10](../TECH.md) for the full testing model.
 
 | File                    | What it does                                                  |
 | ----------------------- | ------------------------------------------------------------- |
-| `global-setup.ts`       | Boots a `postgres:16` Testcontainer, enables extensions, runs `drizzle-kit push`, builds the app with test-only sourcemaps (`--sourcemapClient inline --sourcemapServer true`), and writes `DATABASE_URL` into `process.env` so worker fixtures inherit it. |
+| `global-setup.ts`       | Boots a `postgres:16` Testcontainer, enables extensions, runs `drizzle-kit push`, builds the app with test-only sourcemaps (`--sourcemapClient inline --sourcemapServer`), and writes `DATABASE_URL` into `process.env` so worker fixtures inherit it. |
 | `fixtures.ts`           | Playwright `test` extended with worker fixtures (`workerProxy`, `server`, `baseURL` override) and test fixtures (`flat`, opt-in `mocks`, always-on `_coverage`). Also exports `generateInvite(page, user)` for tests that need an invite URL — it logs the user in, drives the `/flat/settings` UI, and returns the freshly minted link. The `flat` fixture provisions a flat via the admin endpoint, then redeems the bootstrap invite via the public form to mint a real first user. |
 | `server-coverage-preload.mjs` | Test-only Node preload: on `SIGUSR2`, `v8.takeCoverage()` + ack line for per-test backend coverage dumps. |
 | `coverage-remap.ts`     | Remaps Playwright JSCoverage + Node V8 coverage through source maps into Istanbul-style maps keyed by original `app/` paths; writes per-test JSON under `test-results/coverage/`. |

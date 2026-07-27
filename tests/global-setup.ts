@@ -56,8 +56,11 @@ export default async function globalSetup() {
   console.log(
     "[global-setup] Building app (react-router build with sourcemaps)…",
   );
+  // Pass `--sourcemapServer` with no value so the CLI parses a real
+  // boolean `true`. `--sourcemapServer true` becomes the string
+  // `"true"`, which Vite 8 / Rolldown rejects.
   execSync(
-    "npx react-router build --sourcemapClient inline --sourcemapServer true",
+    "npx react-router build --sourcemapClient inline --sourcemapServer",
     { stdio: "inherit" },
   );
 
