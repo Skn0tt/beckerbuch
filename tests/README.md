@@ -54,8 +54,9 @@ The `sort-reporter` also writes `.playwright-data/duration.json` mapping each
 `coverage-select.ts` builds an in-memory line→test index from those
 Istanbul files and picks an ordered test list under a duration budget
 (diminishing returns weighted by line IDF: prefer rare diff lines, then
-reinforce). `sort-reporter` calls it from `preprocess` when both env vars
-are set:
+reinforce). Diff parsing unions **new-side added** lines with **old-side
+deleted** lines (so delete-only hunks still resolve against prior coverage).
+`sort-reporter` calls it from `preprocess` when both env vars are set:
 
 ```bash
 # 1) Full run → coverage artifacts + duration.json

@@ -57,7 +57,7 @@ test.describe("coverage-select", () => {
     ]);
   });
 
-  test("parseDiffLines collects app/ added lines only", () => {
+  test("parseDiffLines collects app/ added and deleted lines", () => {
     const diff = `
 diff --git a/app/routes/login.tsx b/app/routes/login.tsx
 --- a/app/routes/login.tsx
@@ -79,6 +79,62 @@ diff --git a/README.md b/README.md
     expect(lines.has("app/routes/login.tsx:11")).toBe(true);
     expect(lines.has("app/routes/login.tsx:12")).toBe(true);
     expect(lines.has("README.md:2")).toBe(false);
+  });
+
+  test("parseDiffLines maps delete-only hunks to old-side lines", () => {
+    const diff = `
+diff --git a/app/auth/safe-redirect.ts b/app/auth/safe-redirect.ts
+--- a/app/auth/safe-redirect.ts
++++ b/app/auth/safe-redirect.ts
+@@ -13,3 +13,2 @@
+   if (!to) return fallback;
+-  if (to[0] !== "/") return fallback;
+   // Reject protocol-relative
+`.trim();
+
+    const lines = parseDiffLines(diff);
+    // context L13, delete L14, context L15 → only the deleted guard.
+    expect([...lines]).toEqual(["app/auth/safe-redirect.ts:14"]);
+  });
+
+  test("parseDiffLines unions replace hunks (old delete + new add)", () => {
+    const diff = `
+diff --git a/app/lib/scale.ts b/app/lib/scale.ts
+--- a/app/lib/scale.ts
++++ b/app/lib/scale.ts
+@@ -14,4 +14,4 @@
+   const n = parseAmount(amount);
+   if (n === null) return amount;
+-  const scaled = n * factor;
++  const scaled = n / factor;
+   if (Number.isInteger(scaled)) return String(scaled);
+`.trim();
+
+    const lines = parseDiffLines(diff);
+    // In-place replace: both old and new land on line 16.
+    expect([...lines]).toEqual(["app/lib/scale.ts:16"]);
+  });
+
+  test("parseDiffLines keeps deleted file lines via --- path", () => {
+    const diff = `
+diff --git a/app/auth/safe-redirect.ts b/app/auth/safe-redirect.ts
+deleted file mode 100644
+--- a/app/auth/safe-redirect.ts
++++ /dev/null
+@@ -1,4 +0,0 @@
+-export function safeRedirectTarget() {
+-  return "/";
+-}
+-
+`.trim();
+
+    const lines = parseDiffLines(diff);
+    expect([...lines].sort()).toEqual([
+      "app/auth/safe-redirect.ts:1",
+      "app/auth/safe-redirect.ts:2",
+      "app/auth/safe-redirect.ts:3",
+      "app/auth/safe-redirect.ts:4",
+    ]);
   });
 
   test("buildIndex indexes lines per test from coverage dirs", async () => {
