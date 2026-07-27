@@ -32,8 +32,9 @@ sourcemapped production build from `globalSetup`. Both sides are merged
 (via `istanbul-lib-coverage`) into one Istanbul map keyed by original
 `app/` paths, written to
 `test-results/coverage/<worker>-<testId>/coverage.json`, and attached on
-the test as `coverage` (visible in the HTML report). No env flag, no
-extra npm script.
+the test as `coverage` (visible in the HTML report). Remapped hits in
+`node_modules` / framework virtual modules are dropped — only `app/**`
+is kept. No env flag, no extra npm script.
 
 ## Conventions
 

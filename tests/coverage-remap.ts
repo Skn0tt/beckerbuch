@@ -46,6 +46,9 @@ function toAppRelativeKey(filePath: string): string | null {
   return path.relative(PROJECT_ROOT, resolved).split(path.sep).join("/");
 }
 
+// Source maps point at every original file the bundle pulled in
+// (node_modules, Vite/RR virtual modules, etc.). We only keep project
+// `app/` paths so the artifact stays small and about our code.
 function filterToApp(istanbul: CoverageMapData): CoverageMapData {
   const out: CoverageMapData = {};
   for (const [key, value] of Object.entries(istanbul)) {
