@@ -36,6 +36,7 @@ const REACT_ROUTER_SERVE_BIN = path.join(
 );
 const COVERAGE_PRELOAD = path.resolve("tests/server-coverage-preload.mjs");
 const COVERAGE_ACK = "__COVERAGE_DUMPED__";
+const COVERAGE_FAIL = "__COVERAGE_DUMP_FAILED__";
 
 export type TestUser = {
   email: string;
@@ -211,6 +212,9 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
 
       const signalCoverageDump = async (): Promise<string[]> => {
         const before = new Set(await listV8CoverageFiles(v8CoverageDir));
+        // Drop any leftover ACK/FAIL tokens before arming the waiter so
+        // a previous timed-out dump can't satisfy this wait.
+        stdout.discardPendingCoverageSignals();
         const ack = stdout.waitCoverageAck(10_000);
         try {
           process.kill(pid, "SIGUSR2");
@@ -273,33 +277,36 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
    */
   _coverage: [
     async ({ page, server }, use, testInfo) => {
-      try {
-        await server.resetCoverage();
-      } catch (err) {
-        console.error("[coverage] resetCoverage failed:", err);
-      }
-
-      try {
-        await page.coverage.startJSCoverage({ resetOnNavigation: false });
-      } catch (err) {
-        console.error("[coverage] startJSCoverage failed:", err);
-      }
+      // Setup must succeed — a failed reset would attribute the previous
+      // test's server work to this one.
+      await server.resetCoverage();
+      await page.coverage.startJSCoverage({ resetOnNavigation: false });
 
       await use();
 
+      // Teardown: collect best-effort so a remap glitch doesn't fail the
+      // test after assertions already passed. Annotate when we drop data.
       let frontendEntries: PlaywrightJSCoverageEntry[] = [];
+      let backendFiles: string[] = [];
       try {
         frontendEntries =
           (await page.coverage.stopJSCoverage()) as PlaywrightJSCoverageEntry[];
       } catch (err) {
         console.error("[coverage] stopJSCoverage failed:", err);
+        testInfo.annotations.push({
+          type: "coverage",
+          description: `stopJSCoverage failed: ${String(err)}`,
+        });
       }
 
-      let backendFiles: string[] = [];
       try {
         backendFiles = await server.dumpCoverage();
       } catch (err) {
         console.error("[coverage] dumpCoverage failed:", err);
+        testInfo.annotations.push({
+          type: "coverage",
+          description: `dumpCoverage failed: ${String(err)}`,
+        });
       }
 
       try {
@@ -310,6 +317,10 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
         });
       } catch (err) {
         console.error("[coverage] remap/write failed:", err);
+        testInfo.annotations.push({
+          type: "coverage",
+          description: `remap/write failed: ${String(err)}`,
+        });
       }
 
       for (const file of backendFiles) {
@@ -414,6 +425,8 @@ function killTree(child: ChildProcess) {
 type ChildStdout = {
   waitReadyURL: (timeoutMs: number) => Promise<string>;
   waitCoverageAck: (timeoutMs: number) => Promise<void>;
+  /** Strip buffered ACK/FAIL tokens so a later wait can't consume them. */
+  discardPendingCoverageSignals: () => void;
 };
 
 /**
@@ -447,13 +460,26 @@ function attachChildStdout(child: ChildProcess): ChildStdout {
   // eslint-disable-next-line no-control-regex
   const ansi = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 
+  const stripToken = (token: string): boolean => {
+    const rawIdx = buffer.indexOf(token);
+    if (rawIdx === -1) return false;
+    buffer = buffer.slice(0, rawIdx) + buffer.slice(rawIdx + token.length);
+    return true;
+  };
+
+  const discardPendingCoverageSignals = () => {
+    while (stripToken(COVERAGE_ACK) || stripToken(COVERAGE_FAIL)) {
+      // keep stripping
+    }
+  };
+
   const onChunk = (chunk: Buffer | string) => {
     const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
     process.stdout.write(text);
     buffer += text;
-    const clean = buffer.replace(ansi, "");
 
     if (!readyURL) {
+      const clean = buffer.replace(ansi, "");
       const m = clean.match(readyRe);
       if (m) {
         readyURL = m[1].replace(/[\s.,;]+$/, "");
@@ -464,24 +490,29 @@ function attachChildStdout(child: ChildProcess): ChildStdout {
       }
     }
 
-    // Drain one ack waiter per ACK line (dumps are serialized by the fixture).
-    while (ackWaiters.length > 0 && clean.includes(COVERAGE_ACK)) {
-      const idx = buffer.replace(ansi, "").indexOf(COVERAGE_ACK);
-      if (idx === -1) break;
-      // Drop the ack from the raw buffer so the next wait needs a new one.
-      // Approximate: strip first occurrence from buffer (ansi-tolerant enough).
-      const rawIdx = buffer.indexOf(COVERAGE_ACK);
-      if (rawIdx !== -1) {
-        buffer =
-          buffer.slice(0, rawIdx) + buffer.slice(rawIdx + COVERAGE_ACK.length);
-      } else {
-        buffer = buffer.replace(COVERAGE_ACK, "");
-      }
+    // Deliver at most one signal per waiter. Always strip unmatched
+    // tokens so they can't satisfy a future wait (stale ACK after timeout).
+    while (ackWaiters.length > 0) {
+      const hasAck = buffer.includes(COVERAGE_ACK);
+      const hasFail = buffer.includes(COVERAGE_FAIL);
+      if (!hasAck && !hasFail) break;
+      // Prefer whichever token appears first in the buffer.
+      const ackAt = hasAck ? buffer.indexOf(COVERAGE_ACK) : Infinity;
+      const failAt = hasFail ? buffer.indexOf(COVERAGE_FAIL) : Infinity;
       const w = ackWaiters.shift();
-      if (w) {
-        clearTimeout(w.timer);
+      if (!w) break;
+      clearTimeout(w.timer);
+      if (failAt < ackAt) {
+        stripToken(COVERAGE_FAIL);
+        w.reject(new Error("server reported coverage dump failure"));
+      } else {
+        stripToken(COVERAGE_ACK);
         w.resolve();
       }
+    }
+    // No waiter yet — drop signals so they can't race the next wait.
+    if (ackWaiters.length === 0) {
+      discardPendingCoverageSignals();
     }
 
     if (buffer.length > 64 * 1024) buffer = buffer.slice(-32 * 1024);
@@ -507,6 +538,9 @@ function attachChildStdout(child: ChildProcess): ChildStdout {
       });
     },
     waitCoverageAck(timeoutMs) {
+      // Intentionally does NOT resolve on already-buffered tokens —
+      // callers must discardPendingCoverageSignals() then signal, so
+      // only the ACK from *this* SIGUSR2 counts.
       return new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => {
           const i = ackWaiters.findIndex((w) => w.timer === timer);
@@ -518,13 +552,9 @@ function attachChildStdout(child: ChildProcess): ChildStdout {
           );
         }, timeoutMs);
         ackWaiters.push({ resolve, reject, timer });
-        // Ack may already be in the buffer (unlikely if we signal after
-        // arming the waiter, but cheap to check).
-        if (buffer.replace(ansi, "").includes(COVERAGE_ACK)) {
-          onChunk("");
-        }
       });
     },
+    discardPendingCoverageSignals,
   };
 }
 
