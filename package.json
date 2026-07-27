@@ -17,7 +17,7 @@
     "@mantine/form": "^9.2.1",
     "@mantine/hooks": "^9.2.1",
     "@mantine/notifications": "^9.2.1",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@netlify/blobs": "^10.7.7",
     "@netlify/database": "^1.0.0",
     "@react-router/node": "7.15.1",
