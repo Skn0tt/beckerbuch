@@ -143,9 +143,11 @@ export async function remapBackendCoverage(
 export function coverageArtifactDir(testInfo: TestInfo): string {
   const worker = testInfo.parallelIndex;
   const safeId = testInfo.testId.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  // Durable path outside Playwright's `test-results/` outputDir, which
+  // is wiped at the start of every run (before reporter.preprocess).
   return path.join(
     PROJECT_ROOT,
-    "test-results",
+    ".playwright-data",
     "coverage",
     `${worker}-${safeId}`,
   );

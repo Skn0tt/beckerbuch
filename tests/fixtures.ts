@@ -273,7 +273,7 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
   /**
    * Always-on coverage: reset Node V8, start Playwright JSCoverage,
    * run the test (including `flat` setup), then dump/remap/merge FE+BE
-   * into test-results/coverage/<worker>-<testId>/coverage.json.
+   * into .playwright-data/coverage/<worker>-<testId>/coverage.json.
    */
   _coverage: [
     async ({ page, server }, use, testInfo) => {

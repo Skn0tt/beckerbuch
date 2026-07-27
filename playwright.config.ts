@@ -12,7 +12,7 @@ export default defineConfig({
   },
   reporter: [
     [process.env.CI ? "github" : "list"],
-    // Placeholder: reporter.preprocess() sorts tests by id ascending.
+    // Records durations; optionally budget-selects via coverage-select.
     ["./tests/sort-reporter.ts"],
   ],
   use: {

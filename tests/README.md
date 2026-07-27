@@ -10,13 +10,15 @@ cookies. See [TECH.md §10](../TECH.md) for the full testing model.
 | `global-setup.ts`       | Boots a `postgres:16` Testcontainer, enables extensions, runs `drizzle-kit push`, builds the app with test-only sourcemaps (`--sourcemapClient inline --sourcemapServer`), and writes `DATABASE_URL` into `process.env` so worker fixtures inherit it. |
 | `fixtures.ts`           | Playwright `test` extended with worker fixtures (`workerProxy`, `server`, `baseURL` override) and test fixtures (`flat`, opt-in `mocks`, always-on `_coverage`). Also exports `generateInvite(page, user)` for tests that need an invite URL — it logs the user in, drives the `/flat/settings` UI, and returns the freshly minted link. The `flat` fixture provisions a flat via the admin endpoint, then redeems the bootstrap invite via the public form to mint a real first user. |
 | `server-coverage-preload.mjs` | Test-only Node preload: on `SIGUSR2`, `v8.takeCoverage()` + ack line for per-test backend coverage dumps. |
-| `coverage-remap.ts`     | Remaps Playwright JSCoverage + Node V8 coverage through source maps into Istanbul-style maps keyed by original `app/` paths; writes per-test JSON under `test-results/coverage/`. |
+| `coverage-remap.ts`     | Remaps Playwright JSCoverage + Node V8 coverage through source maps into Istanbul-style maps keyed by original `app/` paths; writes per-test JSON under `.playwright-data/coverage/` (durable; outside wiped `test-results/`). |
+| `coverage-select.ts`    | Library: `buildIndex` over per-test Istanbul maps + `selectTests` (diminishing-returns greedy under a duration budget). Used by `sort-reporter`. |
+| `coverage-select.unit.spec.ts` | Pure unit tests for the coverage-select helpers (imports `@playwright/test` directly — no app server). |
 | `login.ts`              | Thin `login(page, user)` helper that fills the real form.     |
 | `playwright-mocks/`     | Vendored library: Playwright-shaped `Route`/`ProxyRequest`/`ProxyResponse` facade on top of [`mockttp`](https://github.com/httptoolkit/mockttp), plus the `workerProxy` + `mocks` fixtures consumed via `mergeTests`. See [`playwright-mocks/README.md`](./playwright-mocks/README.md) for the full API. |
 | `mockttp-fixture/`      | Sibling library: the bare-minimum mockttp + Playwright integration (`workerProxy` + raw `Mockttp` as `mocks`). Reference artifact for comparison — not consumed by this repo's tests. See [`mockttp-fixture/README.md`](./mockttp-fixture/README.md). |
 | `mock-handlers.ts`      | Closure-factory helpers that build reusable `route` handlers (kptncook share/search/images, OpenAI dedup) without registering them — specs hand the returned handler to `mocks.route(...)` themselves. |
 | `mock-data.ts`          | Shared test payloads (cinnamon-buns recipe, tiny 1×1 JPEG, kptncook API key). |
-| `sort-reporter.ts`      | Placeholder custom reporter: `preprocess()` sorts suite entries by `test.id` ascending. |
+| `sort-reporter.ts`      | Custom reporter: always writes `.playwright-data/duration.json` (`testId → ms`). Default `preprocess()` sorts by `test.id`. With `PLAYWRIGHT_DIFF_FILE` + `PLAYWRIGHT_DURATION_BUDGET_MS`, builds a coverage index and excludes/reorders to a budgeted subset. |
 | `*.spec.ts`             | Specs. Import `test`/`expect` from `./fixtures`.              |
 
 The app's HTTP boundary is the only seam tests use — there's no direct
@@ -32,10 +34,40 @@ backend (Node `NODE_V8_COVERAGE` + `SIGUSR2` dump) coverage against the
 sourcemapped production build from `globalSetup`. Both sides are merged
 (via `istanbul-lib-coverage`) into one Istanbul map keyed by original
 `app/` paths, written to
-`test-results/coverage/<worker>-<testId>/coverage.json`, and attached on
+`.playwright-data/coverage/<worker>-<testId>/coverage.json`, and attached on
 the test as `coverage` (visible in the HTML report). Remapped hits in
 `node_modules` / framework virtual modules are dropped — only `app/**`
-is kept. No env flag, no extra npm script.
+is kept. No env flag, no extra npm script. Artifacts live under
+`.playwright-data/` (not `test-results/`) so they survive Playwright's
+outputDir wipe at the start of the next run — required for diff-aware
+selection in `preprocess`.
+
+The `sort-reporter` also writes `.playwright-data/duration.json` mapping each
+`test.id` to its last-run duration in ms.
+
+### Diff-aware selection
+
+`coverage-select.ts` builds an in-memory line→test index from those
+Istanbul files and picks an ordered test list under a duration budget
+(diminishing returns weighted by line IDF: prefer rare diff lines, then
+reinforce). `sort-reporter` calls it from `preprocess` when both env vars
+are set:
+
+```bash
+# 1) Full run → coverage artifacts + duration.json
+npm test
+
+# 2) Budgeted run against a diff (uses prior coverage + durations)
+git diff main...HEAD > /tmp/d.diff
+PLAYWRIGHT_DIFF_FILE=/tmp/d.diff \
+PLAYWRIGHT_DURATION_BUDGET_MS=60000 \
+npm test
+```
+
+Optional overrides: `PLAYWRIGHT_COVERAGE_DIR` (default
+`.playwright-data/coverage`), `PLAYWRIGHT_DURATION_FILE` (default
+`.playwright-data/duration.json`). If the duration file or coverage dir is
+missing, the reporter warns and falls back to id-sort.
 
 ## Conventions
 
