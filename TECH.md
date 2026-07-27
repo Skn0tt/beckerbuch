@@ -665,8 +665,9 @@ The test process owns the database lifecycle end-to-end:
   builds with `--sourcemapClient inline --sourcemapServer`
   (Netlify's plain `npm run build` stays map-free). An always-on
   fixture resets/dumps Node V8 coverage via `SIGUSR2` and collects
-  Playwright JSCoverage for every test, remapping both to original
-  `app/` paths under `test-results/coverage/`. See
+  Playwright JSCoverage for every test, remaps both through source
+  maps, merges them with `istanbul-lib-coverage`, and attaches a
+  single `coverage` JSON (also under `test-results/coverage/`). See
   [`tests/README.md`](./tests/README.md).
 - Locally, `TESTCONTAINERS_REUSE_ENABLE=true` is honoured for fast
   iteration; CI always cold-starts.
