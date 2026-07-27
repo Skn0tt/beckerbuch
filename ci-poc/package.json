@@ -1,0 +1,22 @@
+{
+  "name": "ci-poc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "scheduler": "tsx src/scheduler.ts",
+    "worker": "tsx src/worker.ts",
+    "cli": "tsx src/cli.ts",
+    "demo": "tsx scripts/demo.ts",
+    "claim-race": "tsx scripts/claim-race.ts"
+  },
+  "dependencies": {
+    "@testcontainers/postgresql": "^12.0.1",
+    "pg": "^8.20.0",
+    "tsx": "^4.20.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/pg": "^8.20.0",
+    "typescript": "^5.9.3"
+  }
+}
