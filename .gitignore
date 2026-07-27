@@ -15,8 +15,8 @@
 /.playwright-cli/
 /.playwright-data/
 
-# ci-poc local install
-/ci-poc/node_modules/
+# sieve local install
+/sieve/node_modules/
 
 # Local Netlify folder
 .netlify

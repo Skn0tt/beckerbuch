@@ -29,7 +29,7 @@ export class SchedulerClient {
     return { status: res.status, json };
   }
 
-  async createRun(label: string, specFiles: string[]): Promise<{
+  async createRun(label: string, commands: string[]): Promise<{
     runId: string;
     jobCount: number;
   }> {
@@ -37,7 +37,7 @@ export class SchedulerClient {
       runId: string;
       jobCount: number;
       error?: string;
-    }>("POST", "/runs", { label, specFiles });
+    }>("POST", "/runs", { label, commands });
     if (status >= 400) {
       throw new Error(json.error ?? `createRun failed (${status})`);
     }

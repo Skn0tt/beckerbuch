@@ -1,6 +1,6 @@
 /**
- * Worker: claims jobs from the scheduler, runs Playwright on one spec
- * file, forwards reporter IPC events (with lease token), heartbeats.
+ * Worker: claims jobs, runs each job's bash command, tails the standard
+ * NDJSON result stream, forwards events to the scheduler with the lease.
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
@@ -9,42 +9,32 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { LostLeaseError, SchedulerClient } from "./client.ts";
-import type { ClaimedJob, TestResultEvent } from "./types.ts";
+import {
+  parseResultLine,
+  RESULTS_FILE_ENV,
+  type TestResultEvent,
+} from "./protocol.ts";
+import type { ClaimedJob } from "./types.ts";
 
-const HEARTBEAT_MS = Number(process.env.CI_POC_HEARTBEAT_MS ?? 10_000);
-const IDLE_POLL_MS = Number(process.env.CI_POC_IDLE_POLL_MS ?? 2_000);
+const HEARTBEAT_MS = Number(process.env.SIEVE_HEARTBEAT_MS ?? 10_000);
+const IDLE_POLL_MS = Number(process.env.SIEVE_IDLE_POLL_MS ?? 2_000);
 const IPC_DRAIN_TIMEOUT_MS = Number(
-  process.env.CI_POC_IPC_DRAIN_TIMEOUT_MS ?? 30_000,
+  process.env.SIEVE_IPC_DRAIN_TIMEOUT_MS ?? 30_000,
 );
-const REPO_ROOT = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../..",
-);
-const REPORTER_PATH = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "reporter.ts",
-);
+const WORKDIR =
+  process.env.SIEVE_WORKDIR ??
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 type TailHandle = {
-  /** Resolves when the tail loop has exited. */
   done: Promise<void>;
-  /** Stop polling after the current read/handler finishes. */
   stop: () => void;
-  /**
-   * Wait until the file cursor is at EOF, the partial-line buffer is
-   * empty, and every onEvent handler has settled (or timeout).
-   */
   drain: (timeoutMs: number) => Promise<void>;
 };
 
-/**
- * Polling NDJSON tail. `onEvent` is awaited serially so drain() can
- * wait for in-flight forwards to finish.
- */
 function startNdjsonTail(
   filePath: string,
   onEvent: (ev: TestResultEvent) => Promise<void>,
@@ -84,21 +74,21 @@ function startNdjsonTail(
             for (;;) {
               const nl = pending.indexOf("\n");
               if (nl < 0) break;
-              const line = pending.slice(0, nl).trim();
+              const line = pending.slice(0, nl);
               pending = pending.slice(nl + 1);
-              if (!line) continue;
-              try {
-                const parsed = JSON.parse(line) as TestResultEvent;
-                if (parsed.type !== "test_result") continue;
-                inFlight += 1;
-                try {
-                  await onEvent(parsed);
-                } finally {
-                  inFlight -= 1;
-                  poke();
+              const parsed = parseResultLine(line);
+              if (!parsed) {
+                if (line.trim()) {
+                  console.error("[worker] bad or unknown IPC line:", line.trim());
                 }
-              } catch (err) {
-                console.error("[worker] bad IPC line", err);
+                continue;
+              }
+              inFlight += 1;
+              try {
+                await onEvent(parsed);
+              } finally {
+                inFlight -= 1;
+                poke();
               }
             }
             poke();
@@ -127,10 +117,10 @@ function startNdjsonTail(
         try {
           size = (await stat(filePath)).size;
         } catch {
-          // file gone — nothing left to read
           if (inFlight === 0 && pending.length === 0) return;
         }
-        const caughtUp = position >= size && pending.length === 0 && inFlight === 0;
+        const caughtUp =
+          position >= size && pending.length === 0 && inFlight === 0;
         if (caughtUp) return;
         if (Date.now() >= deadline) {
           throw new Error(
@@ -156,21 +146,26 @@ function killTree(child: ChildProcess): void {
   }
 }
 
-async function runPlaywrightJob(
+function commandPreview(command: string, max = 80): string {
+  const oneLine = command.replace(/\s+/g, " ").trim();
+  return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max - 1)}…`;
+}
+
+async function runBashJob(
   client: SchedulerClient,
   workerId: string,
   job: ClaimedJob,
 ): Promise<boolean> {
-  const ipcDir = path.join(os.tmpdir(), "ci-poc-ipc");
+  const ipcDir = path.join(os.tmpdir(), "sieve-ipc");
   await mkdir(ipcDir, { recursive: true });
   const resultsFile = path.join(ipcDir, `${job.jobId}.ndjson`);
   await rm(resultsFile, { force: true });
   await (await open(resultsFile, "w")).close();
 
   let lostLease = false;
-  /** True if a result could not be persisted (non-fencing error). */
   let forwardFailed = false;
   let child: ChildProcess | undefined;
+  const preview = commandPreview(job.command);
 
   const markLostLease = (why: string) => {
     if (lostLease) return;
@@ -179,8 +174,6 @@ async function runPlaywrightJob(
     if (child) killTree(child);
   };
 
-  // Keep heartbeats running until after complete (or abandon) so the
-  // lease cannot expire during IPC drain / final RPCs.
   const heartbeat = setInterval(() => {
     void client
       .heartbeat({
@@ -189,8 +182,6 @@ async function runPlaywrightJob(
         workerId,
       })
       .catch((err) => {
-        // Any heartbeat failure means we are no longer extending the
-        // lease — treat as lost so we don't race a reaper reclaim.
         if (err instanceof LostLeaseError) {
           markLostLease("lost lease on heartbeat (409)");
         } else {
@@ -207,13 +198,13 @@ async function runPlaywrightJob(
         leaseToken: job.leaseToken,
         attemptId: job.attemptId,
         testId: ev.testId,
-        specFile: ev.specFile,
+        source: ev.source ?? "",
         status: ev.status,
         durationMs: ev.durationMs,
-        hitLines: ev.hitLines,
+        hitLines: ev.hitLines ?? [],
       });
       console.log(
-        `[worker ${workerId}] forwarded ${ev.testId} (${ev.status}, ${ev.durationMs}ms, ${ev.hitLines.length} lines)`,
+        `[worker ${workerId}] forwarded ${ev.testId} (${ev.status}, ${ev.durationMs}ms, ${(ev.hitLines ?? []).length} lines)`,
       );
     } catch (err) {
       if (err instanceof LostLeaseError) {
@@ -225,32 +216,21 @@ async function runPlaywrightJob(
     }
   });
 
-  child = spawn(
-    "npx",
-    [
-      "playwright",
-      "test",
-      job.specFile,
-      "--workers=1",
-      `--reporter=${REPORTER_PATH}`,
-    ],
-    {
-      cwd: REPO_ROOT,
-      env: {
-        ...process.env,
-        CI_POC_RESULTS_FILE: resultsFile,
-        PLAYWRIGHT_FORCE_ASYNC_LOADER: "1",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: true,
+  child = spawn("bash", ["-c", job.command], {
+    cwd: WORKDIR,
+    env: {
+      ...process.env,
+      [RESULTS_FILE_ENV]: resultsFile,
     },
-  );
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
+  });
 
   child.stdout?.on("data", (chunk: Buffer) => {
-    process.stdout.write(`[pw ${workerId}] ${chunk.toString("utf8")}`);
+    process.stdout.write(`[job ${workerId}] ${chunk.toString("utf8")}`);
   });
   child.stderr?.on("data", (chunk: Buffer) => {
-    process.stderr.write(`[pw ${workerId}] ${chunk.toString("utf8")}`);
+    process.stderr.write(`[job ${workerId}] ${chunk.toString("utf8")}`);
   });
 
   const exitCode: number = await new Promise((resolve) => {
@@ -259,7 +239,6 @@ async function runPlaywrightJob(
     });
   });
 
-  // Drain IPC while heartbeats are still alive, then stop the tail.
   try {
     await tail.drain(IPC_DRAIN_TIMEOUT_MS);
   } catch (err) {
@@ -272,7 +251,7 @@ async function runPlaywrightJob(
   const abandonWithoutComplete = async (reason: string) => {
     clearInterval(heartbeat);
     console.warn(
-      `[worker ${workerId}] abandoning job ${job.specFile} (${reason}); lease will expire for requeue`,
+      `[worker ${workerId}] abandoning job (${reason}): ${preview}; lease will expire for requeue`,
     );
     await rm(resultsFile, { force: true }).catch(() => undefined);
     return false;
@@ -282,8 +261,6 @@ async function runPlaywrightJob(
     return abandonWithoutComplete("lost lease");
   }
 
-  // Results were dropped — do not mark the job done; stop heartbeats so
-  // the reaper requeues and another attempt can persist the full set.
   if (forwardFailed) {
     return abandonWithoutComplete("incomplete result forward");
   }
@@ -296,7 +273,7 @@ async function runPlaywrightJob(
       ok: exitCode === 0,
     });
     console.log(
-      `[worker ${workerId}] completed ${job.specFile} exit=${exitCode}`,
+      `[worker ${workerId}] completed exit=${exitCode}: ${preview}`,
     );
   } catch (err) {
     clearInterval(heartbeat);
@@ -337,20 +314,20 @@ export async function workerLoop(opts: {
     }
 
     console.log(
-      `[worker ${opts.workerId}] claimed ${job.specFile} attempt=${job.attempt}`,
+      `[worker ${opts.workerId}] claimed attempt=${job.attempt}: ${commandPreview(job.command)}`,
     );
-    await runPlaywrightJob(client, opts.workerId, job);
+    await runBashJob(client, opts.workerId, job);
     if (opts.once) return;
   }
 }
 
 async function main() {
   const schedulerUrl =
-    process.env.CI_POC_SCHEDULER_URL ?? "http://127.0.0.1:9101";
+    process.env.SIEVE_SCHEDULER_URL ?? "http://127.0.0.1:9101";
   const workerId =
-    process.env.CI_POC_WORKER_ID ?? `worker-${process.pid}@${os.hostname()}`;
-  const runId = process.env.CI_POC_RUN_ID;
-  const once = process.env.CI_POC_ONCE === "1";
+    process.env.SIEVE_WORKER_ID ?? `worker-${process.pid}@${os.hostname()}`;
+  const runId = process.env.SIEVE_RUN_ID;
+  const once = process.env.SIEVE_ONCE === "1";
   await workerLoop({ schedulerUrl, workerId, runId, once });
 }
 

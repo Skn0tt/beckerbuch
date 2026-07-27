@@ -1,5 +1,5 @@
 {
-  "name": "ci-poc",
+  "name": "sieve",
   "private": true,
   "type": "module",
   "scripts": {

@@ -6,19 +6,12 @@ export type ClaimedJob = {
   jobId: string;
   attemptId: string;
   runId: string;
-  specFile: string;
+  command: string;
   leaseToken: string;
   attempt: number;
 };
 
-export type TestResultEvent = {
-  type: "test_result";
-  testId: string;
-  specFile: string;
-  status: string;
-  durationMs: number;
-  hitLines: string[];
-};
+export type { TestResultEvent } from "./protocol.ts";
 
 export type ClaimBody = {
   workerId: string;
@@ -36,7 +29,7 @@ export type ResultBody = {
   leaseToken: string;
   attemptId: string;
   testId: string;
-  specFile: string;
+  source: string;
   status: string;
   durationMs: number;
   hitLines: string[];

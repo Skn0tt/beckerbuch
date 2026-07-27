@@ -1,5 +1,6 @@
 /**
- * CLI: create-run, status, list-specs helpers.
+ * CLI helpers. Jobs are arbitrary bash commands; Playwright is only one
+ * way to produce the NDJSON result stream.
  */
 
 import { spawn } from "node:child_process";
@@ -7,20 +8,32 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SchedulerClient } from "./client.ts";
 
-const REPO_ROOT = path.resolve(
+const SIEVE_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../..",
+  "..",
 );
+const REPO_ROOT = path.resolve(SIEVE_ROOT, "..");
+const REPORTER_PATH = path.join(SIEVE_ROOT, "src/reporter.ts");
+
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/** Bash command that runs one Playwright file and emits protocol NDJSON. */
+export function playwrightCommand(specFile: string): string {
+  return [
+    "npx playwright test",
+    shellQuote(specFile),
+    "--workers=1",
+    `--reporter=${shellQuote(REPORTER_PATH)}`,
+  ].join(" ");
+}
 
 export async function listSpecFiles(filter?: string[]): Promise<string[]> {
-  // Prefer an explicit filter (demo subset) so we don't need a full --list
-  // parse when the caller already knows the files.
   if (filter && filter.length > 0) {
     return [...new Set(filter.map((f) => f.replace(/^\.\//, "")))];
   }
-
-  const files = await listViaPlaywright();
-  return files;
+  return listViaPlaywright();
 }
 
 async function listViaPlaywright(): Promise<string[]> {
@@ -55,13 +68,14 @@ async function listViaPlaywright(): Promise<string[]> {
     });
   });
 
-  // JSON reporter with --list prints a suite tree; fall back to line parse.
   const files = new Set<string>();
   try {
     const parsed = JSON.parse(raw) as {
       suites?: Array<{ file?: string; suites?: unknown[] }>;
     };
-    const walk = (suites: Array<{ file?: string; suites?: unknown[] }> | undefined) => {
+    const walk = (
+      suites: Array<{ file?: string; suites?: unknown[] }> | undefined,
+    ) => {
       for (const s of suites ?? []) {
         if (s.file) {
           files.add(
@@ -84,7 +98,7 @@ async function listViaPlaywright(): Promise<string[]> {
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
   const schedulerUrl =
-    process.env.CI_POC_SCHEDULER_URL ?? "http://127.0.0.1:9101";
+    process.env.SIEVE_SCHEDULER_URL ?? "http://127.0.0.1:9101";
   const client = new SchedulerClient(schedulerUrl);
 
   if (cmd === "list-specs") {
@@ -94,14 +108,35 @@ async function main() {
   }
 
   if (cmd === "create-run") {
+    // create-run <label> -- <command> [<command>...]
+    // create-run-playwright <label> [spec...]  (see below)
+    const dash = args.indexOf("--");
+    if (dash < 0) {
+      console.error(
+        "usage: cli create-run <label> -- <bash-command> [<bash-command>...]",
+      );
+      process.exit(1);
+    }
+    const label = args.slice(0, dash)[0] ?? `run-${new Date().toISOString()}`;
+    const commands = args.slice(dash + 1).filter(Boolean);
+    if (commands.length === 0) {
+      console.error("no commands after --");
+      process.exit(1);
+    }
+    const created = await client.createRun(label, commands);
+    console.log(JSON.stringify(created, null, 2));
+    return;
+  }
+
+  if (cmd === "create-run-playwright") {
     const label = args[0] ?? `run-${new Date().toISOString()}`;
-    const specs = args.slice(1);
-    const files = await listSpecFiles(specs.length ? specs : undefined);
-    if (files.length === 0) {
+    const specs = await listSpecFiles(args.slice(1));
+    if (specs.length === 0) {
       console.error("no spec files");
       process.exit(1);
     }
-    const created = await client.createRun(label, files);
+    const commands = specs.map(playwrightCommand);
+    const created = await client.createRun(label, commands);
     console.log(JSON.stringify(created, null, 2));
     return;
   }
@@ -117,7 +152,9 @@ async function main() {
     return;
   }
 
-  console.error("usage: cli <list-specs|create-run|status> ...");
+  console.error(
+    "usage: cli <list-specs|create-run|create-run-playwright|status> ...",
+  );
   process.exit(1);
 }
 

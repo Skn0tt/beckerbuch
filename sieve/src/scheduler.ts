@@ -15,9 +15,9 @@ import type {
   ResultBody,
 } from "./types.ts";
 
-const LEASE_SECONDS = Number(process.env.CI_POC_LEASE_SECONDS ?? 30);
-const REAPER_MS = Number(process.env.CI_POC_REAPER_MS ?? 5000);
-const MAX_ATTEMPTS = Number(process.env.CI_POC_MAX_ATTEMPTS ?? 5);
+const LEASE_SECONDS = Number(process.env.SIEVE_LEASE_SECONDS ?? 30);
+const REAPER_MS = Number(process.env.SIEVE_REAPER_MS ?? 5000);
+const MAX_ATTEMPTS = Number(process.env.SIEVE_MAX_ATTEMPTS ?? 5);
 
 type Json = Record<string, unknown> | unknown[] | string | number | boolean | null;
 
@@ -46,7 +46,7 @@ function notFound(res: ServerResponse): void {
 
 export async function createRun(
   pool: pg.Pool,
-  opts: { label: string; specFiles: string[] },
+  opts: { label: string; commands: string[] },
 ): Promise<{ runId: string; jobCount: number }> {
   return withClient(pool, async (client) => {
     await client.query("BEGIN");
@@ -56,14 +56,14 @@ export async function createRun(
         [opts.label],
       );
       const runId = run.rows[0].id;
-      for (const specFile of opts.specFiles) {
+      for (const command of opts.commands) {
         await client.query(
-          `INSERT INTO jobs (run_id, spec_file, status) VALUES ($1, $2, 'queued')`,
-          [runId, specFile],
+          `INSERT INTO jobs (run_id, command, status) VALUES ($1, $2, 'queued')`,
+          [runId, command],
         );
       }
       await client.query("COMMIT");
-      return { runId, jobCount: opts.specFiles.length };
+      return { runId, jobCount: opts.commands.length };
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
@@ -89,7 +89,7 @@ export async function claimJob(
       const updated = await client.query<{
         id: string;
         run_id: string;
-        spec_file: string;
+        command: string;
         attempt: number;
         lease_token: string;
       }>(
@@ -109,7 +109,7 @@ export async function claimJob(
           FOR UPDATE SKIP LOCKED
           LIMIT 1
         )
-        RETURNING id, run_id, spec_file, attempt, lease_token
+        RETURNING id, run_id, command, attempt, lease_token
         `,
         params,
       );
@@ -153,7 +153,7 @@ export async function claimJob(
         jobId: job.id,
         attemptId: attempt.rows[0].id,
         runId: job.run_id,
-        specFile: job.spec_file,
+        command: job.command,
         leaseToken: job.lease_token,
         attempt: job.attempt,
       };
@@ -220,9 +220,10 @@ export async function ingestResult(
 
       await client.query(
         `INSERT INTO test_results
-           (attempt_id, run_id, test_id, spec_file, status, duration_ms, hit_lines)
+           (attempt_id, run_id, test_id, source, status, duration_ms, hit_lines)
          VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7::text[])
          ON CONFLICT (attempt_id, test_id) DO UPDATE SET
+           source = EXCLUDED.source,
            status = EXCLUDED.status,
            duration_ms = EXCLUDED.duration_ms,
            hit_lines = EXCLUDED.hit_lines,
@@ -231,7 +232,7 @@ export async function ingestResult(
           body.attemptId,
           job.rows[0].run_id,
           body.testId,
-          body.specFile,
+          body.source,
           body.status,
           body.durationMs,
           body.hitLines,
@@ -371,20 +372,20 @@ export async function getRunSummary(pool: pg.Pool, runId: string) {
   if (run.rowCount === 0) return null;
 
   const jobs = await pool.query(
-    `SELECT id, spec_file, status, attempt, worker_id, finished_at
-     FROM jobs WHERE run_id = $1::uuid ORDER BY spec_file`,
+    `SELECT id, command, status, attempt, worker_id, finished_at
+     FROM jobs WHERE run_id = $1::uuid ORDER BY id`,
     [runId],
   );
 
   const results = await pool.query(
-    `SELECT tr.test_id, tr.spec_file, tr.status, tr.duration_ms,
+    `SELECT tr.test_id, tr.source, tr.status, tr.duration_ms,
             cardinality(tr.hit_lines) AS hit_line_count,
             ja.attempt_no, ja.status AS attempt_status
      FROM test_results tr
      JOIN job_attempts ja ON ja.id = tr.attempt_id
      WHERE tr.run_id = $1::uuid
        AND ja.status = 'done'
-     ORDER BY tr.spec_file, tr.test_id`,
+     ORDER BY tr.source, tr.test_id`,
     [runId],
   );
 
@@ -415,14 +416,14 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
       }
 
       if (method === "POST" && url === "/runs") {
-        const body = await readJson<{ label?: string; specFiles?: string[] }>(req);
-        if (!body.label || !Array.isArray(body.specFiles) || body.specFiles.length === 0) {
-          send(res, 400, { error: "label and non-empty specFiles required" });
+        const body = await readJson<{ label?: string; commands?: string[] }>(req);
+        if (!body.label || !Array.isArray(body.commands) || body.commands.length === 0) {
+          send(res, 400, { error: "label and non-empty commands required" });
           return;
         }
         const created = await createRun(pool, {
           label: body.label,
-          specFiles: body.specFiles,
+          commands: body.commands,
         });
         send(res, 201, created);
         return;
@@ -484,7 +485,7 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
           hitLines: body.hitLines ?? [],
           durationMs: body.durationMs ?? 0,
           status: body.status ?? "unknown",
-          specFile: body.specFile ?? "",
+          source: body.source ?? "",
         });
         if (result === "lost_lease") {
           send(res, 409, { error: "lost_lease" });
@@ -544,12 +545,12 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
 }
 
 async function main() {
-  const databaseUrl = process.env.CI_POC_DATABASE_URL;
+  const databaseUrl = process.env.SIEVE_DATABASE_URL;
   if (!databaseUrl) {
-    console.error("CI_POC_DATABASE_URL is required");
+    console.error("SIEVE_DATABASE_URL is required");
     process.exit(1);
   }
-  const port = Number(process.env.CI_POC_PORT ?? 9101);
+  const port = Number(process.env.SIEVE_PORT ?? 9101);
   const pool = createPool(databaseUrl);
   await migrate(pool);
   startSchedulerServer(pool, port);

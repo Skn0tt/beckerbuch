@@ -1,8 +1,8 @@
 /**
- * Playwright reporter for ci-poc.
+ * Playwright reporter that speaks the sieve result-stream protocol.
  *
- * Never talks to the scheduler. Emits one NDJSON line per finished test
- * to the IPC file the worker created (CI_POC_RESULTS_FILE).
+ * Never talks to the scheduler. Appends one NDJSON `test_result` line
+ * per finished test to `$SIEVE_RESULTS_FILE` (see protocol.ts).
  */
 
 import { appendFile, readFile } from "node:fs/promises";
@@ -17,8 +17,13 @@ import {
   hitLinesFromIstanbul,
   sanitizeTestId,
 } from "../../tests/coverage-select.ts";
+import {
+  formatResultLine,
+  RESULTS_FILE_ENV,
+  TEST_RESULT_TYPE,
+} from "./protocol.ts";
 
-export default class CiPocReporter implements Reporter {
+export default class SieveReporter implements Reporter {
   private resultsFile: string | undefined;
   private repoRoot = process.cwd();
 
@@ -27,10 +32,10 @@ export default class CiPocReporter implements Reporter {
   }
 
   onBegin(_config: FullConfig) {
-    this.resultsFile = process.env.CI_POC_RESULTS_FILE;
+    this.resultsFile = process.env[RESULTS_FILE_ENV];
     if (!this.resultsFile) {
       console.warn(
-        "[ci-poc-reporter] CI_POC_RESULTS_FILE unset; results will not be forwarded",
+        `[sieve-reporter] ${RESULTS_FILE_ENV} unset; results will not be forwarded`,
       );
     }
   }
@@ -39,21 +44,23 @@ export default class CiPocReporter implements Reporter {
     if (!this.resultsFile) return;
 
     const hitLines = await this.loadHitLines(test);
-    const specFile = path.relative(
-      this.repoRoot,
-      test.location.file,
-    ).split(path.sep).join("/");
+    const source = path
+      .relative(this.repoRoot, test.location.file)
+      .split(path.sep)
+      .join("/");
 
-    const event = {
-      type: "test_result",
-      testId: test.id,
-      specFile,
-      status: result.status,
-      durationMs: result.duration,
-      hitLines: [...hitLines],
-    };
-
-    await appendFile(this.resultsFile, JSON.stringify(event) + "\n", "utf8");
+    await appendFile(
+      this.resultsFile,
+      formatResultLine({
+        type: TEST_RESULT_TYPE,
+        testId: test.id,
+        source,
+        status: result.status,
+        durationMs: result.duration,
+        hitLines,
+      }) + "\n",
+      "utf8",
+    );
   }
 
   private async loadHitLines(test: TestCase): Promise<string[]> {

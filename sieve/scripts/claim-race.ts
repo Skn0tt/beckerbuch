@@ -20,20 +20,22 @@ function sleep(ms: number): Promise<void> {
 
 async function main() {
   const container = await new PostgreSqlContainer("pgvector/pgvector:pg16")
-    .withDatabase("cipoc")
-    .withUsername("cipoc")
-    .withPassword("cipoc")
+    .withDatabase("sieve")
+    .withUsername("sieve")
+    .withPassword("sieve")
     .withReuse()
     .start();
   const databaseUrl = container.getConnectionUri();
   const pool = createPool(databaseUrl);
   await migrate(pool);
 
-  // Direct DB race (no HTTP) — strongest proof of SKIP LOCKED.
-  const files = Array.from({ length: 20 }, (_, i) => `tests/fake-${i}.spec.ts`);
+  const commands = Array.from(
+    { length: 20 },
+    (_, i) => `echo race-job-${i}`,
+  );
   const { runId } = await createRun(pool, {
     label: "claim-race",
-    specFiles: files,
+    commands,
   });
 
   const workers = Array.from({ length: 8 }, (_, i) => `race-worker-${i}`);
@@ -55,13 +57,12 @@ async function main() {
     throw new Error("SKIP LOCKED violated: duplicate job ids in direct claims");
   }
 
-  // Also race through the HTTP scheduler frontend.
   const port = 9102;
   const { close } = startSchedulerServer(pool, port);
   const client = new SchedulerClient(`http://127.0.0.1:${port}`);
   const { runId: runId2 } = await client.createRun(
     "claim-race-http",
-    files.map((f) => f.replace("fake-", "http-fake-")),
+    commands.map((c) => `${c}-http`),
   );
 
   await sleep(100);
@@ -82,10 +83,9 @@ async function main() {
     throw new Error("SKIP LOCKED violated: duplicate job ids via HTTP");
   }
 
-  // Fencing: complete with a stale lease_token must fail after reclaim.
   const { runId: fenceRun } = await createRun(pool, {
     label: "fence",
-    specFiles: ["tests/fence.spec.ts"],
+    commands: ["echo fence"],
   });
   const first = await claimJob(pool, { workerId: "fence-a", runId: fenceRun });
   if (!first) throw new Error("expected first claim");

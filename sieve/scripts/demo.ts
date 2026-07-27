@@ -1,6 +1,7 @@
 /**
  * End-to-end local demo:
- *   Postgres (Testcontainers) → 1 scheduler → N workers → real Playwright specs
+ *   Postgres → 1 scheduler → N workers running bash jobs.
+ * Default jobs wrap Playwright specs that emit the result-stream protocol.
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
@@ -8,14 +9,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { SchedulerClient } from "../src/client.ts";
-import { listSpecFiles } from "../src/cli.ts";
+import { listSpecFiles, playwrightCommand } from "../src/cli.ts";
 
-const CI_POC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const REPO_ROOT = path.resolve(CI_POC_ROOT, "..");
-const SCHEDULER_PORT = Number(process.env.CI_POC_PORT ?? 9101);
+const SIEVE_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
+const REPO_ROOT = path.resolve(SIEVE_ROOT, "..");
+const SCHEDULER_PORT = Number(process.env.SIEVE_PORT ?? 9101);
 const SCHEDULER_URL = `http://127.0.0.1:${SCHEDULER_PORT}`;
 
-/** Default: unit spec only (still hits real Playwright + globalSetup). */
 const DEFAULT_SPECS = ["tests/coverage-select.unit.spec.ts"];
 
 function sleep(ms: number): Promise<void> {
@@ -27,8 +30,8 @@ function spawnTsx(
   env: Record<string, string | undefined>,
   name: string,
 ): ChildProcess {
-  const tsxBin = path.join(CI_POC_ROOT, "node_modules/.bin/tsx");
-  const child = spawn(tsxBin, [path.join(CI_POC_ROOT, scriptRel)], {
+  const tsxBin = path.join(SIEVE_ROOT, "node_modules/.bin/tsx");
+  const child = spawn(tsxBin, [path.join(SIEVE_ROOT, scriptRel)], {
     cwd: REPO_ROOT,
     env: { ...process.env, ...env },
     stdio: ["ignore", "pipe", "pipe"],
@@ -61,8 +64,8 @@ async function waitForHealth(client: SchedulerClient, timeoutMs: number) {
 }
 
 async function main() {
-  const workerCount = Number(process.env.CI_POC_WORKERS ?? 2);
-  const specArg = process.env.CI_POC_SPECS;
+  const workerCount = Number(process.env.SIEVE_WORKERS ?? 2);
+  const specArg = process.env.SIEVE_SPECS;
   const specs = await listSpecFiles(
     specArg
       ? specArg
@@ -71,15 +74,17 @@ async function main() {
           .filter(Boolean)
       : DEFAULT_SPECS,
   );
+  const commands = specs.map(playwrightCommand);
 
-  console.log(`[demo] specs: ${specs.join(", ")}`);
+  console.log(`[demo] jobs (bash):`);
+  for (const c of commands) console.log(`  - ${c}`);
   console.log(`[demo] workers: ${workerCount}`);
 
   console.log("[demo] starting Postgres (testcontainers)...");
   const container = await new PostgreSqlContainer("pgvector/pgvector:pg16")
-    .withDatabase("cipoc")
-    .withUsername("cipoc")
-    .withPassword("cipoc")
+    .withDatabase("sieve")
+    .withUsername("sieve")
+    .withPassword("sieve")
     .withReuse()
     .start();
   const databaseUrl = container.getConnectionUri();
@@ -89,10 +94,10 @@ async function main() {
   const scheduler = spawnTsx(
     "src/scheduler.ts",
     {
-      CI_POC_DATABASE_URL: databaseUrl,
-      CI_POC_PORT: String(SCHEDULER_PORT),
-      CI_POC_LEASE_SECONDS: process.env.CI_POC_LEASE_SECONDS ?? "30",
-      CI_POC_REAPER_MS: process.env.CI_POC_REAPER_MS ?? "5000",
+      SIEVE_DATABASE_URL: databaseUrl,
+      SIEVE_PORT: String(SCHEDULER_PORT),
+      SIEVE_LEASE_SECONDS: process.env.SIEVE_LEASE_SECONDS ?? "30",
+      SIEVE_REAPER_MS: process.env.SIEVE_REAPER_MS ?? "5000",
     },
     "scheduler",
   );
@@ -104,7 +109,7 @@ async function main() {
 
     const created = await client.createRun(
       `demo-${new Date().toISOString()}`,
-      specs,
+      commands,
     );
     console.log(
       `[demo] created run ${created.runId} with ${created.jobCount} job(s)`,
@@ -115,11 +120,13 @@ async function main() {
         spawnTsx(
           "src/worker.ts",
           {
-            CI_POC_SCHEDULER_URL: SCHEDULER_URL,
-            CI_POC_WORKER_ID: `demo-worker-${i}`,
-            CI_POC_RUN_ID: created.runId,
-            CI_POC_ONCE: "0",
-            CI_POC_IDLE_POLL_MS: "500",
+            SIEVE_SCHEDULER_URL: SCHEDULER_URL,
+            SIEVE_WORKER_ID: `demo-worker-${i}`,
+            SIEVE_RUN_ID: created.runId,
+            SIEVE_ONCE: "0",
+            SIEVE_IDLE_POLL_MS: "500",
+            SIEVE_WORKDIR: REPO_ROOT,
+            PLAYWRIGHT_FORCE_ASYNC_LOADER: "1",
           },
           `worker-${i}`,
         ),
@@ -127,7 +134,7 @@ async function main() {
     }
 
     const deadline =
-      Date.now() + Number(process.env.CI_POC_DEMO_TIMEOUT_MS ?? 1_800_000);
+      Date.now() + Number(process.env.SIEVE_DEMO_TIMEOUT_MS ?? 1_800_000);
     let summary: Awaited<ReturnType<SchedulerClient["getRun"]>> | undefined;
     for (;;) {
       if (Date.now() > deadline) {
@@ -137,8 +144,11 @@ async function main() {
       const status = summary.run.status;
       console.log(
         `[demo] run status=${status} jobs=${summary.jobs
-          .map((j) => `${String(j.spec_file)}:${String(j.status)}`)
-          .join(" ")}`,
+          .map(
+            (j) =>
+              `${String(j.status)}:${String(j.command).slice(0, 40).replace(/\s+/g, " ")}`,
+          )
+          .join(" | ")}`,
       );
       if (status === "done" || status === "failed") break;
       await sleep(5_000);
@@ -148,13 +158,14 @@ async function main() {
     console.log(`run: ${summary!.run.id} (${summary!.run.status})`);
     for (const job of summary!.jobs) {
       console.log(
-        `  job ${String(job.spec_file)} status=${String(job.status)} attempt=${String(job.attempt)} worker=${String(job.worker_id ?? "-")}`,
+        `  job status=${String(job.status)} attempt=${String(job.attempt)} worker=${String(job.worker_id ?? "-")}`,
       );
+      console.log(`       cmd: ${String(job.command)}`);
     }
     console.log(`test results (${summary!.results.length}):`);
     for (const r of summary!.results) {
       console.log(
-        `  ${String(r.spec_file)} ${String(r.test_id)} status=${String(r.status)} duration_ms=${String(r.duration_ms)} hit_lines=${String(r.hit_line_count)}`,
+        `  ${String(r.source)} ${String(r.test_id)} status=${String(r.status)} duration_ms=${String(r.duration_ms)} hit_lines=${String(r.hit_line_count)}`,
       );
     }
     console.log("==================================\n");
