@@ -61,10 +61,14 @@ export async function resolveBaselineRunId(
     return baselineRunId;
   }
 
+  // Corpus runs only: diff-aware UI/shard runs set baseline_run_id and are
+  // a selected subset — using them as the roster shrinks planning to that
+  // subset on the next plan.
   const latest = await client.query<{ id: string }>(
     `SELECT r.id
      FROM runs r
      WHERE r.status IN ('done', 'failed')
+       AND r.baseline_run_id IS NULL
        AND EXISTS (SELECT 1 FROM test_results tr WHERE tr.run_id = r.id)
      ORDER BY r.finished_at DESC NULLS LAST, r.created_at DESC
      LIMIT 1`,

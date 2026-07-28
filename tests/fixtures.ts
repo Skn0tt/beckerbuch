@@ -38,6 +38,25 @@ const COVERAGE_PRELOAD = path.resolve("tests/server-coverage-preload.mjs");
 const COVERAGE_ACK = "__COVERAGE_DUMPED__";
 const COVERAGE_FAIL = "__COVERAGE_DUMP_FAILED__";
 
+/**
+ * Ephemeral per-worker dirs must NOT live under Playwright's `outputDir`
+ * (`test-results/`): every new `playwright test` process wipes that tree at
+ * start. Sieve runs concurrent Playwright jobs against the same checkout, so
+ * one shard's wipe would delete another's live NODE_V8_COVERAGE dumps mid-test.
+ * Key by worker pid + parallelIndex so concurrent processes never share a dir.
+ */
+function workerEphemeralDir(
+  kind: "blobs" | "v8-coverage",
+  parallelIndex: number,
+): string {
+  return path.join(
+    process.cwd(),
+    ".playwright-data",
+    kind,
+    `${process.pid}-w${parallelIndex}`,
+  );
+}
+
 export type TestUser = {
   email: string;
   password: string;
@@ -100,14 +119,7 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
       // standalone so we don't need `netlify dev` (which clobbers
       // OPENAI_API_KEY and injects an AI-Gateway base URL behind
       // our backs).
-      //
-      // Lives under the project's Playwright output dir so it's
-      // inspectable after a failure and gets cleaned up on the next
-      // run alongside the rest of test-results/.
-      const blobsDir = path.join(
-        workerInfo.project.outputDir,
-        `.netlify-blobs-worker-${workerInfo.parallelIndex}`,
-      );
+      const blobsDir = workerEphemeralDir("blobs", workerInfo.parallelIndex);
       await mkdir(blobsDir, { recursive: true });
       const blobsToken = randomUUID();
       const blobs = new BlobsServer({ directory: blobsDir, token: blobsToken });
@@ -125,12 +137,12 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
         "utf8",
       ).toString("base64");
 
-      const v8CoverageDir = path.join(
-        workerInfo.project.outputDir,
-        `.v8-coverage-worker-${workerInfo.parallelIndex}`,
+      const v8CoverageDir = workerEphemeralDir(
+        "v8-coverage",
+        workerInfo.parallelIndex,
       );
       await mkdir(v8CoverageDir, { recursive: true });
-      // Clear leftover dumps from a previous crashed run.
+      // Clear leftover dumps if this pid reused a crashed worker's slot.
       for (const file of await listV8CoverageFiles(v8CoverageDir)) {
         await rm(file, { force: true }).catch(() => undefined);
       }
@@ -184,6 +196,10 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
 
       if (child.pid === undefined) {
         await blobs.stop().catch(() => undefined);
+        await rm(blobsDir, { recursive: true, force: true }).catch(() => undefined);
+        await rm(v8CoverageDir, { recursive: true, force: true }).catch(
+          () => undefined,
+        );
         throw new Error("failed to spawn react-router-serve (no pid)");
       }
 
@@ -205,6 +221,10 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
       } catch (err) {
         killTree(child);
         await blobs.stop().catch(() => undefined);
+        await rm(blobsDir, { recursive: true, force: true }).catch(() => undefined);
+        await rm(v8CoverageDir, { recursive: true, force: true }).catch(
+          () => undefined,
+        );
         throw err;
       }
 
@@ -254,9 +274,11 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
         child.once("exit", () => resolve());
       });
       await blobs.stop().catch(() => undefined);
-      // Don't `rm` blobsDir — it sits under workerInfo.outputDir, so
-      // Playwright handles cleanup on the next run and the contents
-      // stay around for post-mortem inspection.
+      // Outside outputDir, so we own cleanup (Playwright won't wipe these).
+      await rm(blobsDir, { recursive: true, force: true }).catch(() => undefined);
+      await rm(v8CoverageDir, { recursive: true, force: true }).catch(
+        () => undefined,
+      );
     },
     { scope: "worker", timeout: 180_000 },
   ],

@@ -227,6 +227,8 @@ export function coverageArtifactDir(testInfo: TestInfo): string {
   const safeId = testInfo.testId.replace(/[^a-zA-Z0-9._-]+/g, "_");
   // Durable path outside Playwright's `test-results/` outputDir, which
   // is wiped at the start of every run (before reporter.preprocess).
+  // Intermediate NODE_V8_COVERAGE dumps use `.playwright-data/v8-coverage/`
+  // for the same reason (see workerEphemeralDir in fixtures.ts).
   return path.join(
     PROJECT_ROOT,
     ".playwright-data",

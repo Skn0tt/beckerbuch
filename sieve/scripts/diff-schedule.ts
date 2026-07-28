@@ -235,7 +235,7 @@ async function main() {
     console.log("[diff-schedule] missing baseline ok");
   }
 
-  // Default baseline = most recent finished run with results.
+  // Default baseline = most recent finished *corpus* run (baseline_run_id IS NULL).
   const defaulted = await createDiffAwareRun(pool, {
     label: "diff-default-baseline",
     diff,

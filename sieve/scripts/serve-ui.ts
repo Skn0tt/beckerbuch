@@ -71,6 +71,7 @@ async function main() {
        FROM runs r
        JOIN test_results tr ON tr.run_id = r.id
        WHERE r.status IN ('done', 'failed')
+         AND r.baseline_run_id IS NULL
        GROUP BY r.id
        ORDER BY r.finished_at DESC NULLS LAST
        LIMIT 1`,

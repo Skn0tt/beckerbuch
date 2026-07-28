@@ -52,8 +52,9 @@ cd sieve && npm run run-full   # dumps fixtures/baseline.sql (gitignored)
 
 Uses `sieve/.database-url` written by `serve-ui` (or `SIEVE_DATABASE_URL`).
 Restart `serve-ui` after the dump to reload the corpus (or refresh —
-bootstrap picks the latest finished run with results, including
-`failed` runs that still produced a corpus).
+bootstrap picks the latest finished **corpus** run with results —
+`baseline_run_id IS NULL`, including `failed` full runs — not a prior
+diff-aware UI subset).
 
 ### Dashboard knobs
 
@@ -93,7 +94,7 @@ Uses the same uncommitted diff as the UI (`git diff HEAD` = staged + unstaged).
 | `--cpu-time <ms>` | CPU-time budget for `selectTests` (API: `budgetMs`) |
 | `--wall-time <ms>` | Target wall time per shard → derives shard count (API: `latencyMs`) |
 | `--shards N` | Explicit shard count (overrides `--wall-time`) |
-| `--baseline` | Corpus run; if omitted, most recent finished run with results (`done` or `failed`) |
+| `--baseline` | Corpus run; if omitted, most recent finished corpus run (`baseline_run_id IS NULL`, `done` or `failed`) |
 | `SIEVE_PW_WORKERS` | Optional Playwright `--workers` per shard |
 
 Packing drill (synthetic DB, no UI):
@@ -121,9 +122,11 @@ append one JSON object per line:
 
 See [`src/protocol.ts`](src/protocol.ts). Coverage hits are written into
 `coverage_hits (run_id, test_id, file_path, line)`. Diff-aware planning
-uses the latest finished run for the test roster, then for each test id
+uses the latest finished **corpus** run for the test roster, then for each test id
 loads hit lines from that test’s last `passed` result (so a flaky red
-latest run still has green coverage to select against).
+latest full run still has green coverage to select against). Diff-aware
+UI runs are not used as the roster (they point at a corpus via
+`baseline_run_id`).
 
 ## Layout
 
