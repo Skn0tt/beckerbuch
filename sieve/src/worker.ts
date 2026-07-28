@@ -219,10 +219,11 @@ async function runBashJob(
 
   child = spawn("bash", ["-c", job.command], {
     cwd: WORKDIR,
-    env: {
-      ...process.env,
-      [RESULTS_FILE_ENV]: resultsFile,
-    },
+    env: (() => {
+      // Cursor (and some CI) sets this to a sandbox cache without browsers.
+      const { PLAYWRIGHT_BROWSERS_PATH: _drop, ...rest } = process.env;
+      return { ...rest, [RESULTS_FILE_ENV]: resultsFile };
+    })(),
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
   });
@@ -329,6 +330,7 @@ export async function workerLoop(opts: {
 }
 
 async function main() {
+  delete process.env.PLAYWRIGHT_BROWSERS_PATH;
   const schedulerUrl =
     process.env.SIEVE_SCHEDULER_URL ?? "http://127.0.0.1:9101";
   const workerId =

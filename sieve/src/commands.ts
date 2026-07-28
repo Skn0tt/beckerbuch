@@ -16,20 +16,27 @@ export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-/** Bash command that runs one Playwright file and emits protocol NDJSON. */
-export function playwrightCommand(specFile: string): string {
-  return [
-    "npx playwright test",
-    shellQuote(specFile),
-    "--workers=1",
-    `--reporter=${shellQuote(REPORTER_PATH)}`,
-  ].join(" ");
+/**
+ * `npx playwright test` [files…] with the sieve reporter.
+ * Omit `files` for the full suite; Playwright discovers specs itself.
+ */
+export function playwrightFullCommand(
+  opts?: { pwWorkers?: number; files?: string[] },
+): string {
+  const parts = ["npx playwright test"];
+  for (const file of opts?.files ?? []) {
+    parts.push(shellQuote(file));
+  }
+  if (typeof opts?.pwWorkers === "number" && opts.pwWorkers > 0) {
+    parts.push(`--workers=${opts.pwWorkers}`);
+  }
+  parts.push(`--reporter=${shellQuote(REPORTER_PATH)}`);
+  return parts.join(" ");
 }
 
 /**
- * Bash command for a diff-aware shard: full suite discovery, filtered to
- * `testIds` via SIEVE_TEST_IDS + the sieve reporter preprocess.
- * Only passes `--workers` when `pwWorkers` is a positive number.
+ * Diff-aware shard: full suite discovery, filtered to `testIds` via
+ * SIEVE_TEST_IDS + the sieve reporter preprocess.
  */
 export function playwrightShardCommand(
   testIds: string[],

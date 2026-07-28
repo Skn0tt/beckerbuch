@@ -48,6 +48,8 @@ export class SchedulerClient {
     label: string;
     diff: string;
     budgetMs: number;
+    /** Target wall-clock per shard; used when shardCount is omitted. */
+    latencyMs?: number;
     shardCount?: number;
     baselineRunId?: string;
     pwWorkers?: number;

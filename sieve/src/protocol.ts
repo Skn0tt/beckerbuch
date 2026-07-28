@@ -12,8 +12,8 @@
  *   {
  *     "type": "test_result",
  *     "testId": "string",
- *     "status": "passed" | "failed" | "timedOut" | "skipped" | ...,
- *     "durationMs": 12.5,
+ *     "status": "running" | "passed" | "failed" | "timedOut" | "skipped" | ...,
+ *     "durationMs": 12.5,   // 0 while status is "running" (onTestBegin)
  *     "source": "optional/path/or/label",
  *     "titlePath": "optional › playwright › title path",
  *     "hitLines": ["app/foo.ts:10", "..."]   // optional

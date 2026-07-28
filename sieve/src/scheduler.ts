@@ -15,6 +15,7 @@ import { createPool, migrate, withClient } from "./db.ts";
 import { SchedulerRequestError } from "./errors.ts";
 import { loadGitDiff, repoLabel, repoRootFromEnv } from "./git.ts";
 import { attachHub, type EventHub } from "./hub.ts";
+import { watchRepo } from "./watch-repo.ts";
 import { planDiffRun, resolveBaselineRunId } from "./plan.ts";
 import type {
   ClaimBody,
@@ -514,7 +515,8 @@ export async function getRunSummary(pool: pg.Pool, runId: string) {
     [runId],
   );
 
-  // Include running attempts so the UI can update icons mid-job.
+  // Include running (live UI) and failed attempts — Playwright exit≠0 still
+  // produced per-test rows we want for status / corpus dumps.
   const results = await pool.query(
     `SELECT tr.test_id, tr.source, tr.title_path, tr.status, tr.duration_ms,
             cardinality(tr.hit_lines) AS hit_line_count,
@@ -522,7 +524,7 @@ export async function getRunSummary(pool: pg.Pool, runId: string) {
      FROM test_results tr
      JOIN job_attempts ja ON ja.id = tr.attempt_id
      WHERE tr.run_id = $1::uuid
-       AND ja.status IN ('done', 'running')
+       AND ja.status IN ('done', 'running', 'failed')
      ORDER BY tr.source, tr.test_id`,
     [runId],
   );
@@ -905,6 +907,10 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
     },
   });
 
+  const stopWatch = watchRepo(repoRootFromEnv(), () => {
+    hub?.emit({ type: "diff" });
+  });
+
   const reaper = setInterval(() => {
     void reapExpiredLeases(pool)
       .then((n) => {
@@ -925,6 +931,7 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
     server,
     hub,
     close: async () => {
+      stopWatch();
       clearInterval(reaper);
       hub?.close();
       await new Promise<void>((resolve, reject) => {

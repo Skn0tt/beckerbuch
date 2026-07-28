@@ -14,27 +14,25 @@ const budget = document.getElementById("budget");
 const latency = document.getElementById("latency");
 const budgetVal = document.getElementById("budgetVal");
 const latencyVal = document.getElementById("latencyVal");
-const selCount = document.getElementById("selCount");
-const corpusCount = document.getElementById("corpusCount");
-const selDur = document.getElementById("selDur");
-const shardsEl = document.getElementById("shards");
 const testList = document.getElementById("testList");
 const workerGrid = document.getElementById("workerGrid");
 const runBtn = document.getElementById("runBtn");
 const repoLabel = document.getElementById("repoLabel");
-const diffLines = document.getElementById("diffLines");
 
 /** @type {null | {
  *   diffText: string,
  *   baselineRunId: string | null,
  *   hasBaseline: boolean,
  *   refLabel: string,
+ *   staleAfterMs?: number,
+ *   pruneAfterMs?: number,
+ *   diffStat?: { lineCount?: number },
  * }} */
 let boot = null;
 
 /** @type {null | {
- *   selected: Array<{testId:string,source:string,durationMs:number,shardIndex:number|null,selected?:boolean}>,
- *   tests?: Array<{testId:string,source:string,durationMs:number,shardIndex:number|null,selected:boolean}>,
+ *   selected: Array<{testId:string,source:string,durationMs:number,shardIndex:number|null,selected?:boolean,titlePath?:string}>,
+ *   tests?: Array<{testId:string,source:string,durationMs:number,shardIndex:number|null,selected:boolean,titlePath?:string}>,
  *   shards: Array<{shardIndex:number,testIds:string[],durationMs:number}>,
  *   shardCount: number,
  *   baselineRunId: string,
@@ -82,10 +80,10 @@ function syncTestRow(li, t) {
   if (!inBudget) {
     li.className = "beyond";
     li.removeAttribute("style");
-    li.innerHTML = `
-      <span class="icon beyond" title="beyond budget"></span>
-      <span></span>
-      <span class="dur"></span>`;
+    ensureRowDom(li);
+    const icon = li.children[0];
+    icon.className = "icon beyond";
+    icon.removeAttribute("title");
     li.children[1].textContent = label;
     li.children[2].textContent = dur;
     return;
@@ -96,12 +94,30 @@ function syncTestRow(li, t) {
   li.className = "";
   li.style.background = c.bg;
   li.style.borderLeftColor = c.edge;
-  li.innerHTML = `
-    <span class="${iconClass(st)}" title="${st}"></span>
-    <span></span>
-    <span class="dur"></span>`;
+  ensureRowDom(li);
+  const icon = li.children[0];
+  const nextClass = iconClass(st);
+  // Only touch className when status changes — keeps the spin animation continuous.
+  if (icon.className !== nextClass) {
+    icon.className = nextClass;
+  }
+  icon.title = st;
   li.children[1].textContent = label;
   li.children[2].textContent = dur;
+}
+
+function ensureRowDom(li) {
+  if (
+    li.children.length === 3 &&
+    li.children[0].classList.contains("icon") &&
+    li.children[2].classList.contains("dur")
+  ) {
+    return;
+  }
+  li.innerHTML = `
+    <span class="icon"></span>
+    <span></span>
+    <span class="dur"></span>`;
 }
 
 function renderList() {
@@ -112,8 +128,11 @@ function renderList() {
   }
   const rows = planRows();
   if (rows.length === 0) {
-    testList.innerHTML =
-      '<li style="opacity:.5;padding:.75rem"><span></span><span>No tests in corpus</span><span></span></li>';
+    const msg =
+      (boot?.diffStat?.lineCount ?? 0) === 0
+        ? "No uncommitted app/ changes"
+        : "No tests cover this diff";
+    testList.innerHTML = `<li style="opacity:.5;padding:.75rem"><span></span><span>${msg}</span><span></span></li>`;
     return;
   }
 
@@ -137,19 +156,6 @@ function renderList() {
     testList.appendChild(li);
   }
   testList.scrollTop = scroll;
-}
-
-function renderShards() {
-  if (!plan) {
-    shardsEl.innerHTML = "";
-    return;
-  }
-  shardsEl.innerHTML = plan.shards
-    .map((s) => {
-      const c = color(s.shardIndex);
-      return `<span class="shard" style="background:${c.bg};border-color:${c.edge}"><strong>#${s.shardIndex}</strong> ${s.testIds.length} · ${(s.durationMs / 1000).toFixed(0)}s</span>`;
-    })
-    .join("");
 }
 
 /** @type {Map<string, string>} lastSeenAt we already pulsed for */
@@ -236,6 +242,7 @@ function renderWorkers() {
     const runningShard =
       w.state === "running" && sh !== null && sh !== undefined;
     const fresh = heartbeatFresh(w.lastSeenAt);
+
     const displayState = fresh ? w.state : "stale";
 
     el.className = `worker ${displayState}`;
@@ -273,11 +280,8 @@ function escapeHtml(s) {
     .replace(/>/g, "&gt;");
 }
 
-function escapeAttr(s) {
-  return escapeHtml(s).replace(/"/g, "&quot;");
-}
-
 function statusFromResult(status) {
+  if (status === "running") return "running";
   if (status === "passed") return "ok";
   if (status === "failed" || status === "timedOut") return "fail";
   if (status === "skipped") return "skipped";
@@ -299,10 +303,6 @@ async function refreshPlan() {
 
   if (!boot?.hasBaseline) {
     plan = null;
-    selCount.textContent = "0";
-    corpusCount.textContent = "0";
-    selDur.textContent = "0s";
-    renderShards();
     renderList();
     runBtn.disabled = true;
     return;
@@ -320,16 +320,11 @@ async function refreshPlan() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-    const selectedDur = plan.selected.reduce((s, t) => s + t.durationMs, 0);
-    selCount.textContent = String(plan.selected.length);
-    corpusCount.textContent = String(plan.tests?.length ?? plan.selected.length);
-    selDur.textContent = (selectedDur / 1000).toFixed(0) + "s";
     if (!running) {
       statuses = Object.fromEntries(
         plan.selected.map((t) => [t.testId, "queued"]),
       );
     }
-    renderShards();
     renderList();
     runBtn.disabled = running || plan.selected.length === 0;
   } catch (err) {
@@ -364,17 +359,11 @@ function connectWs() {
     if (msg.type === "worker") {
       workers.set(msg.worker.id, msg.worker);
       renderWorkers();
-      // Mark tests on this worker's shard as running when claimed
-      if (
-        activeRunId &&
-        msg.worker.state === "running" &&
-        Array.isArray(msg.worker.testIds)
-      ) {
-        for (const id of msg.worker.testIds) {
-          if (statuses[id] === "queued") statuses[id] = "running";
-        }
-        renderList();
-      }
+      // Per-test "running" comes from reporter onTestBegin via result events.
+      return;
+    }
+    if (msg.type === "diff") {
+      if (!running) void reloadDiff();
       return;
     }
     if (msg.type === "result" && msg.runId === activeRunId) {
@@ -394,6 +383,18 @@ function connectWs() {
   ws.addEventListener("close", () => {
     setTimeout(connectWs, 1500);
   });
+}
+
+async function reloadDiff() {
+  if (running) return;
+  try {
+    boot = await fetchJson("/api/bootstrap");
+    repoLabel.textContent = `${boot.repoLabel} · ${boot.refLabel}`;
+    await refreshPlan();
+  } catch (err) {
+    console.error(err);
+    repoLabel.textContent = String(err.message || err);
+  }
 }
 
 async function onRun() {
@@ -444,7 +445,6 @@ async function main() {
 
   boot = await fetchJson("/api/bootstrap");
   repoLabel.textContent = `${boot.repoLabel} · ${boot.refLabel}`;
-  diffLines.textContent = String(boot.diffStat?.lineCount ?? 0);
 
   connectWs();
   await refreshPlan();

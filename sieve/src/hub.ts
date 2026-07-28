@@ -10,7 +10,9 @@ export type HubEvent =
   | { type: "worker"; worker: unknown }
   | { type: "job"; job: unknown }
   | { type: "result"; runId: string; testId: string; status: string; durationMs: number; source?: string; titlePath?: string }
-  | { type: "run"; run: { id: string; status: string } };
+  | { type: "run"; run: { id: string; status: string } }
+  /** Repo files changed — UI should reload `git diff HEAD` + plan. */
+  | { type: "diff" };
 
 type Client = {
   ws: WebSocket;

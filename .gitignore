@@ -18,6 +18,8 @@
 # sieve local install
 /sieve/node_modules/
 /sieve/.bootstrap-diff.patch
+/sieve/.database-url
+/sieve/fixtures/baseline.sql
 
 # Local Netlify folder
 .netlify

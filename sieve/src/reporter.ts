@@ -89,15 +89,39 @@ export default class SieveReporter implements Reporter {
     }
   }
 
+  async onTestBegin(test: TestCase) {
+    if (!this.resultsFile) return;
+    await this.appendResult(test, {
+      status: "running",
+      durationMs: 0,
+      hitLines: [],
+    });
+  }
+
   async onTestEnd(test: TestCase, result: TestResult) {
     if (!this.resultsFile) return;
-
     const hitLines = await this.loadHitLines(test);
+    await this.appendResult(test, {
+      status: result.status,
+      durationMs: result.duration,
+      hitLines,
+    });
+  }
+
+  private async appendResult(
+    test: TestCase,
+    opts: { status: string; durationMs: number; hitLines: string[] },
+  ) {
+    if (!this.resultsFile) return;
     const source = path
       .relative(this.repoRoot, test.location.file)
       .split(path.sep)
       .join("/");
-    const titlePath = test.titlePath().join(" › ");
+    const titlePath = test
+      .titlePath()
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .join(" › ");
 
     await appendFile(
       this.resultsFile,
@@ -106,9 +130,9 @@ export default class SieveReporter implements Reporter {
         testId: test.id,
         source,
         titlePath,
-        status: result.status,
-        durationMs: result.duration,
-        hitLines,
+        status: opts.status,
+        durationMs: opts.durationMs,
+        hitLines: opts.hitLines,
       }) + "\n",
       "utf8",
     );

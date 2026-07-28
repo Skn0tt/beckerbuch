@@ -9,8 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { SchedulerClient } from "../src/client.ts";
-import { listSpecFiles } from "../src/cli.ts";
-import { playwrightCommand } from "../src/commands.ts";
+import { playwrightFullCommand } from "../src/commands.ts";
 
 const SIEVE_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -20,7 +19,16 @@ const REPO_ROOT = path.resolve(SIEVE_ROOT, "..");
 const SCHEDULER_PORT = Number(process.env.SIEVE_PORT ?? 9101);
 const SCHEDULER_URL = `http://127.0.0.1:${SCHEDULER_PORT}`;
 
-const DEFAULT_SPECS = ["tests/coverage-select.unit.spec.ts"];
+/** Optional comma-separated paths; omit for full suite discovery. */
+function resolveFiles(): string[] | undefined {
+  const specArg = process.env.SIEVE_SPECS;
+  if (!specArg) return ["tests/coverage-select.unit.spec.ts"];
+  if (specArg.trim() === "*" || specArg.trim() === "all") return undefined;
+  return specArg
+    .split(",")
+    .map((s) => s.trim().replace(/^\.\//, ""))
+    .filter(Boolean);
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -32,9 +40,10 @@ function spawnTsx(
   name: string,
 ): ChildProcess {
   const tsxBin = path.join(SIEVE_ROOT, "node_modules/.bin/tsx");
+  const { PLAYWRIGHT_BROWSERS_PATH: _drop, ...baseEnv } = process.env;
   const child = spawn(tsxBin, [path.join(SIEVE_ROOT, scriptRel)], {
     cwd: REPO_ROOT,
-    env: { ...process.env, ...env },
+    env: { ...baseEnv, ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout?.on("data", (c: Buffer) => {
@@ -66,16 +75,9 @@ async function waitForHealth(client: SchedulerClient, timeoutMs: number) {
 
 async function main() {
   const workerCount = Number(process.env.SIEVE_WORKERS ?? 2);
-  const specArg = process.env.SIEVE_SPECS;
-  const specs = await listSpecFiles(
-    specArg
-      ? specArg
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : DEFAULT_SPECS,
-  );
-  const commands = specs.map(playwrightCommand);
+  const files = resolveFiles();
+  const command = playwrightFullCommand({ files });
+  const commands = [command];
 
   console.log(`[demo] jobs (bash):`);
   for (const c of commands) console.log(`  - ${c}`);

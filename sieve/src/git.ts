@@ -17,6 +17,32 @@ export function repoRootFromEnv(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 }
 
+async function gitDiff(
+  repoRoot: string,
+  args: string[],
+  refLabel: string,
+): Promise<{
+  diffText: string;
+  diffLineCount: number;
+  refLabel: string;
+}> {
+  const { stdout } = await execFileAsync("git", args, {
+    cwd: repoRoot,
+    maxBuffer: 20 * 1024 * 1024,
+  });
+  return {
+    diffText: stdout,
+    diffLineCount: parseDiffLines(stdout).size,
+    refLabel,
+  };
+}
+
+/**
+ * Diff used for plan preview / Run.
+ *
+ * Default: uncommitted changes (`git diff HEAD` = staged + unstaged vs HEAD).
+ * Optional overrides: SIEVE_BOOTSTRAP_DIFF_FILE / SIEVE_BOOTSTRAP_DIFF.
+ */
 export async function loadGitDiff(repoRoot: string): Promise<{
   diffText: string;
   diffLineCount: number;
@@ -25,14 +51,17 @@ export async function loadGitDiff(repoRoot: string): Promise<{
   if (process.env.SIEVE_BOOTSTRAP_DIFF_FILE) {
     try {
       const { readFile } = await import("node:fs/promises");
-      const diffText = await readFile(process.env.SIEVE_BOOTSTRAP_DIFF_FILE, "utf8");
+      const diffText = await readFile(
+        process.env.SIEVE_BOOTSTRAP_DIFF_FILE,
+        "utf8",
+      );
       return {
         diffText,
         diffLineCount: parseDiffLines(diffText).size,
         refLabel: "SIEVE_BOOTSTRAP_DIFF_FILE",
       };
     } catch {
-      // fall through to other sources
+      // fall through
     }
   }
 
@@ -45,24 +74,7 @@ export async function loadGitDiff(repoRoot: string): Promise<{
     };
   }
 
-  const tryDiff = async (args: string[], refLabel: string) => {
-    const { stdout } = await execFileAsync("git", args, {
-      cwd: repoRoot,
-      maxBuffer: 20 * 1024 * 1024,
-    });
-    return { diffText: stdout, diffLineCount: parseDiffLines(stdout).size, refLabel };
-  };
-
-  try {
-    return await tryDiff(["diff", "main...HEAD"], "main…HEAD");
-  } catch {
-    try {
-      return await tryDiff(["diff", "master...HEAD"], "master…HEAD");
-    } catch {
-      const fallback = await tryDiff(["diff", "HEAD"], "HEAD (working tree)");
-      return fallback;
-    }
-  }
+  return gitDiff(repoRoot, ["diff", "HEAD"], "uncommitted");
 }
 
 export function repoLabel(repoRoot: string): string {

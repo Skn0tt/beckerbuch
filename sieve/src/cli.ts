@@ -1,92 +1,18 @@
 /**
- * CLI helpers. Jobs are arbitrary bash commands; Playwright is only one
- * way to produce the NDJSON result stream.
+ * CLI against a live scheduler: run-full, create-run-diff, status.
  */
 
-import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SchedulerClient } from "./client.ts";
-import { playwrightCommand } from "./commands.ts";
-
-export {
-  playwrightCommand,
-  playwrightShardCommand,
-  shellQuote,
-} from "./commands.ts";
+import { playwrightFullCommand } from "./commands.ts";
+import { dumpBaselineSql, resolveDatabaseUrl } from "./dump-baseline.ts";
+import { loadGitDiff, repoRootFromEnv } from "./git.ts";
 
 const SIEVE_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
-const REPO_ROOT = path.resolve(SIEVE_ROOT, "..");
-
-export async function listSpecFiles(filter?: string[]): Promise<string[]> {
-  if (filter && filter.length > 0) {
-    return [...new Set(filter.map((f) => f.replace(/^\.\//, "")))];
-  }
-  return listViaPlaywright();
-}
-
-async function listViaPlaywright(): Promise<string[]> {
-  const raw = await new Promise<string>((resolve, reject) => {
-    const child = spawn(
-      "npx",
-      ["playwright", "test", "--list", "--reporter=json"],
-      {
-        cwd: REPO_ROOT,
-        env: { ...process.env, PLAYWRIGHT_FORCE_ASYNC_LOADER: "1" },
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (c: Buffer) => {
-      stdout += c.toString("utf8");
-    });
-    child.stderr.on("data", (c: Buffer) => {
-      stderr += c.toString("utf8");
-    });
-    child.on("exit", (code) => {
-      if (code !== 0) {
-        reject(
-          new Error(
-            `playwright --list failed (${code}): ${stderr.slice(-2000)}`,
-          ),
-        );
-        return;
-      }
-      resolve(stdout);
-    });
-  });
-
-  const files = new Set<string>();
-  try {
-    const parsed = JSON.parse(raw) as {
-      suites?: Array<{ file?: string; suites?: unknown[] }>;
-    };
-    const walk = (
-      suites: Array<{ file?: string; suites?: unknown[] }> | undefined,
-    ) => {
-      for (const s of suites ?? []) {
-        if (s.file) {
-          files.add(
-            path.relative(REPO_ROOT, s.file).split(path.sep).join("/"),
-          );
-        }
-        walk(s.suites as typeof suites);
-      }
-    };
-    walk(parsed.suites);
-  } catch {
-    for (const line of raw.split("\n")) {
-      const m = line.match(/tests\/[\w./-]+\.spec\.ts/);
-      if (m) files.add(m[0]);
-    }
-  }
-  return [...files].sort();
-}
 
 function parseFlag(
   args: string[],
@@ -109,71 +35,160 @@ function parseFlag(
   return { value, rest: out };
 }
 
+function hasFlag(args: string[], name: string): boolean {
+  return args.includes(name);
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
   const schedulerUrl =
     process.env.SIEVE_SCHEDULER_URL ?? "http://127.0.0.1:9101";
   const client = new SchedulerClient(schedulerUrl);
 
-  if (cmd === "list-specs") {
-    const files = await listSpecFiles(args.length ? args : undefined);
-    for (const f of files) console.log(f);
-    return;
-  }
+  if (cmd === "run-full") {
+    // usage: run-full [--dump [path]] [--no-wait]
+    const dumpFlag = hasFlag(args, "--dump");
+    const noWait = hasFlag(args, "--no-wait");
+    let rest = args.filter((a) => a !== "--dump" && a !== "--no-wait");
+    let dumpPath: string | undefined;
+    if (dumpFlag) {
+      const dumpEq = args.find((a) => a.startsWith("--dump="));
+      if (dumpEq) {
+        dumpPath = dumpEq.slice("--dump=".length);
+        rest = rest.filter((a) => a !== dumpEq);
+      } else if (rest[0]?.endsWith(".sql")) {
+        dumpPath = rest.shift();
+      } else {
+        dumpPath = path.join(SIEVE_ROOT, "fixtures", "baseline.sql");
+      }
+    } else {
+      dumpPath = path.join(SIEVE_ROOT, "fixtures", "baseline.sql");
+    }
+    if (rest.length) {
+      console.error("usage: cli run-full [--dump [path]] [--no-wait]");
+      process.exit(1);
+    }
 
-  if (cmd === "create-run") {
-    const dash = args.indexOf("--");
-    if (dash < 0) {
+    if (!(await client.health())) {
       console.error(
-        "usage: cli create-run <label> -- <bash-command> [<bash-command>...]",
+        `scheduler not healthy at ${schedulerUrl} — start npm run serve-ui first`,
       );
       process.exit(1);
     }
-    const label = args.slice(0, dash)[0] ?? `run-${new Date().toISOString()}`;
-    const commands = args.slice(dash + 1).filter(Boolean);
-    if (commands.length === 0) {
-      console.error("no commands after --");
-      process.exit(1);
-    }
-    const created = await client.createRun(label, commands);
-    console.log(JSON.stringify(created, null, 2));
-    return;
-  }
 
-  if (cmd === "create-run-playwright") {
-    const label = args[0] ?? `run-${new Date().toISOString()}`;
-    const specs = await listSpecFiles(args.slice(1));
-    if (specs.length === 0) {
-      console.error("no spec files");
-      process.exit(1);
+    const pwWorkersRaw = process.env.SIEVE_PW_WORKERS;
+    const pwWorkers =
+      pwWorkersRaw && Number.isFinite(Number(pwWorkersRaw))
+        ? Number(pwWorkersRaw)
+        : undefined;
+    const command = playwrightFullCommand({ pwWorkers });
+    console.log(`[run-full] enqueue 1 job: ${command}`);
+
+    const created = await client.createRun(
+      `full-${new Date().toISOString()}`,
+      [command],
+    );
+    console.log(
+      `[run-full] run ${created.runId} (${created.jobCount} job(s))`,
+    );
+
+    if (noWait) {
+      console.log(`[run-full] --no-wait; poll with: npm run cli -- status ${created.runId}`);
+      return;
     }
-    const commands = specs.map(playwrightCommand);
-    const created = await client.createRun(label, commands);
-    console.log(JSON.stringify(created, null, 2));
+
+    const deadline =
+      Date.now() + Number(process.env.SIEVE_RUN_TIMEOUT_MS ?? 3_600_000);
+    let summary: Awaited<ReturnType<SchedulerClient["getRun"]>> | undefined;
+    for (;;) {
+      if (Date.now() > deadline) {
+        throw new Error("run-full timed out waiting for run to finish");
+      }
+      summary = await client.getRun(created.runId);
+      const doneJobs = summary.jobs.filter(
+        (j) => j.status === "done" || j.status === "failed",
+      ).length;
+      console.log(
+        `[run-full] status=${summary.run.status} jobs=${doneJobs}/${summary.jobs.length} results=${summary.results.length}`,
+      );
+      if (
+        summary.run.status === "done" ||
+        summary.run.status === "failed"
+      ) {
+        break;
+      }
+      await sleep(5_000);
+    }
+
+    console.log(
+      `[run-full] finished ${summary!.run.status} with ${summary!.results.length} test result(s)`,
+    );
+    if (summary!.results.length === 0) {
+      console.error("[run-full] 0 results — not dumping fixture");
+      process.exitCode = 1;
+      return;
+    }
+    if (summary!.run.status !== "done") {
+      console.warn(
+        `[run-full] run status=${summary!.run.status} (Playwright exit ≠ 0) — dumping partial corpus anyway`,
+      );
+      process.exitCode = 1;
+    }
+
+    const dbUrl = await resolveDatabaseUrl();
+    if (!dbUrl) {
+      console.warn(
+        "[run-full] no SIEVE_DATABASE_URL / sieve/.database-url — skip fixture dump",
+      );
+      return;
+    }
+    if (!dumpPath) return;
+    const { resultCount } = await dumpBaselineSql(
+      dbUrl,
+      created.runId,
+      dumpPath,
+    );
+    console.log(
+      `[run-full] wrote ${dumpPath} (${resultCount} results from ${created.runId})`,
+    );
     return;
   }
 
   if (cmd === "create-run-diff") {
     let rest = args;
-    const diffParsed = parseFlag(rest, "--diff");
-    rest = diffParsed.rest;
-    const budgetParsed = parseFlag(rest, "--budget");
-    rest = budgetParsed.rest;
+    const cpuParsed = parseFlag(rest, "--cpu-time");
+    rest = cpuParsed.rest;
+    const wallParsed = parseFlag(rest, "--wall-time");
+    rest = wallParsed.rest;
     const baselineParsed = parseFlag(rest, "--baseline");
     rest = baselineParsed.rest;
     const shardsParsed = parseFlag(rest, "--shards");
     rest = shardsParsed.rest;
 
     const label = rest[0] ?? `run-${new Date().toISOString()}`;
-    if (!diffParsed.value || !budgetParsed.value) {
+    if (!cpuParsed.value) {
       console.error(
-        "usage: cli create-run-diff <label> --diff <path> --budget <ms> [--baseline <runId>] [--shards N]",
+        "usage: cli create-run-diff [<label>] --cpu-time <ms> [--wall-time <ms>] [--baseline <runId>] [--shards N]",
       );
       process.exit(1);
     }
-    const budgetMs = Number(budgetParsed.value);
+    const budgetMs = Number(cpuParsed.value);
     if (!Number.isFinite(budgetMs) || budgetMs <= 0) {
-      console.error("budget must be a positive number");
+      console.error("cpu-time must be a positive number (ms)");
+      process.exit(1);
+    }
+    const latencyMs = wallParsed.value
+      ? Number(wallParsed.value)
+      : undefined;
+    if (
+      latencyMs !== undefined &&
+      (!Number.isFinite(latencyMs) || latencyMs <= 0)
+    ) {
+      console.error("wall-time must be a positive number (ms)");
       process.exit(1);
     }
     const shardCount = shardsParsed.value
@@ -187,7 +202,12 @@ async function main() {
       process.exit(1);
     }
 
-    const diff = await readFile(diffParsed.value, "utf8");
+    const repoRoot = repoRootFromEnv();
+    const { diffText, diffLineCount, refLabel } = await loadGitDiff(repoRoot);
+    console.log(
+      `[create-run-diff] ${refLabel} · ${diffLineCount} covered line(s) under ${repoRoot}`,
+    );
+
     const pwWorkersRaw = process.env.SIEVE_PW_WORKERS;
     const pwWorkers =
       pwWorkersRaw && Number.isFinite(Number(pwWorkersRaw))
@@ -196,8 +216,9 @@ async function main() {
 
     const created = await client.createDiffRun({
       label,
-      diff,
+      diff: diffText,
       budgetMs,
+      latencyMs,
       shardCount,
       baselineRunId: baselineParsed.value,
       pwWorkers,
@@ -217,9 +238,7 @@ async function main() {
     return;
   }
 
-  console.error(
-    "usage: cli <list-specs|create-run|create-run-playwright|create-run-diff|status> ...",
-  );
+  console.error("usage: cli <run-full|create-run-diff|status> ...");
   process.exit(1);
 }
 

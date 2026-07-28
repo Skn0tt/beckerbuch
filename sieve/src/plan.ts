@@ -43,8 +43,8 @@ export type PlanDiffResult = {
   /** Budgeted selection (same order as selectTests). */
   selected: PlanTestRow[];
   /**
-   * Full display list for the UI. Diff-relevant tests in greedy rank order
-   * (selected flagged); then remaining corpus rows. Budget flips `selected`.
+   * Diff-affected tests only (greedy rank order). Budget flips `selected`;
+   * beyond-budget rows stay in the list dimmed. Unrelated corpus tests omitted.
    */
   tests: PlanTestRow[];
   shards: Array<{ shardIndex: number; testIds: string[]; durationMs: number }>;
@@ -92,7 +92,8 @@ export async function loadBaselineCorpus(
     `SELECT DISTINCT ON (test_id)
        test_id, source, title_path, duration_ms, hit_lines
      FROM test_results tr
-     JOIN job_attempts ja ON ja.id = tr.attempt_id AND ja.status = 'done'
+     JOIN job_attempts ja ON ja.id = tr.attempt_id
+       AND ja.status IN ('done', 'failed')
      WHERE tr.run_id = $1::uuid
      ORDER BY test_id, tr.received_at DESC`,
     [baselineRunId],
@@ -175,8 +176,8 @@ export async function planDiffRun(
     rowFor(testId, true, shardOf.get(testId) ?? 0),
   );
 
-  // Full greedy ranking under an unlimited budget → stable-ish order for
-  // diff-relevant tests; then any remaining corpus rows.
+  // Diff-affected only: greedy rank under an unlimited budget. Budget then
+  // flips `selected` / shardIndex — no unrelated corpus filler rows.
   const totalDur = rows.reduce((s, r) => s + (r.durationMs > 0 ? r.durationMs : 1), 0);
   const rankedRelevant = selectTests({
     index,
@@ -184,26 +185,14 @@ export async function planDiffRun(
     diff: opts.diff,
     budgetMs: Math.max(totalDur, opts.budgetMs) + 1,
   });
-  const seen = new Set<string>();
-  const tests: PlanTestRow[] = [];
-  for (const testId of rankedRelevant) {
-    seen.add(testId);
+  const tests: PlanTestRow[] = rankedRelevant.map((testId) => {
     const inBudget = selectedSet.has(testId);
-    tests.push(
-      rowFor(testId, inBudget, inBudget ? (shardOf.get(testId) ?? 0) : null),
+    return rowFor(
+      testId,
+      inBudget,
+      inBudget ? (shardOf.get(testId) ?? 0) : null,
     );
-  }
-  const rest = rows
-    .map((r) => r.testId)
-    .filter((id) => !seen.has(id))
-    .sort((a, b) => {
-      const sa = sourceById[a] ?? "";
-      const sb = sourceById[b] ?? "";
-      return sa.localeCompare(sb) || a.localeCompare(b);
-    });
-  for (const testId of rest) {
-    tests.push(rowFor(testId, false, null));
-  }
+  });
 
   return {
     baselineRunId,
