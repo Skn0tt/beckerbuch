@@ -4,6 +4,7 @@
 -- PoC: drop-and-recreate so schema iterations stay simple under
 -- Testcontainers reuse.
 
+DROP TABLE IF EXISTS coverage_hits CASCADE;
 DROP TABLE IF EXISTS test_results CASCADE;
 DROP TABLE IF EXISTS job_attempts CASCADE;
 DROP TABLE IF EXISTS jobs CASCADE;
@@ -66,10 +67,23 @@ CREATE TABLE test_results (
   title_path    text NOT NULL DEFAULT '',
   status        text NOT NULL,
   duration_ms   double precision NOT NULL,
-  hit_lines     text[] NOT NULL DEFAULT '{}',
   received_at   timestamptz NOT NULL DEFAULT now(),
   UNIQUE (attempt_id, test_id)
 );
+
+-- Inverted coverage index: source of truth for diff-aware selection.
+-- Plan queries (run_id, file_path, line) ∈ diff and never loads per-test
+-- full hit lists into the app.
+CREATE TABLE coverage_hits (
+  run_id     uuid NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  test_id    text NOT NULL,
+  file_path  text NOT NULL,
+  line       int NOT NULL CHECK (line > 0),
+  PRIMARY KEY (run_id, test_id, file_path, line)
+);
+
+CREATE INDEX coverage_hits_run_line_idx
+  ON coverage_hits (run_id, file_path, line);
 
 CREATE TABLE workers (
   id            text PRIMARY KEY,

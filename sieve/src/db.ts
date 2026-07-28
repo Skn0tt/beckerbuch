@@ -19,6 +19,17 @@ export async function migrate(pool: pg.Pool): Promise<void> {
     `ALTER TABLE test_results
      ADD COLUMN IF NOT EXISTS title_path text NOT NULL DEFAULT ''`,
   );
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS coverage_hits (
+      run_id     uuid NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+      test_id    text NOT NULL,
+      file_path  text NOT NULL,
+      line       int NOT NULL CHECK (line > 0),
+      PRIMARY KEY (run_id, test_id, file_path, line)
+    )`);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS coverage_hits_run_line_idx
+      ON coverage_hits (run_id, file_path, line)`);
 }
 
 export async function withClient<T>(

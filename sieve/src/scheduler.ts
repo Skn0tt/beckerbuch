@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type pg from "pg";
 import { playwrightShardCommand } from "./commands.ts";
+import { parseHitLines, replaceCoverageHits } from "./coverage-hits.ts";
 import { createPool, migrate, withClient } from "./db.ts";
 import { SchedulerRequestError } from "./errors.ts";
 import { loadGitDiff, repoLabel, repoRootFromEnv } from "./git.ts";
@@ -345,14 +346,13 @@ export async function ingestResult(
       const runId = job.rows[0]!.run_id;
       await client.query(
         `INSERT INTO test_results
-           (attempt_id, run_id, test_id, source, title_path, status, duration_ms, hit_lines)
-         VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8::text[])
+           (attempt_id, run_id, test_id, source, title_path, status, duration_ms)
+         VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7)
          ON CONFLICT (attempt_id, test_id) DO UPDATE SET
            source = EXCLUDED.source,
            title_path = EXCLUDED.title_path,
            status = EXCLUDED.status,
            duration_ms = EXCLUDED.duration_ms,
-           hit_lines = EXCLUDED.hit_lines,
            received_at = now()`,
         [
           body.attemptId,
@@ -362,9 +362,17 @@ export async function ingestResult(
           body.titlePath ?? "",
           body.status,
           body.durationMs,
-          body.hitLines,
         ],
       );
+      // onTestBegin posts status=running with empty hitLines — don't wipe
+      // coverage that a prior attempt or retry may already have written.
+      if (body.status !== "running") {
+        await replaceCoverageHits(client, {
+          runId,
+          testId: body.testId,
+          hits: parseHitLines(body.hitLines ?? []),
+        });
+      }
       await client.query("COMMIT");
       return { ok: true, runId };
     } catch (err) {
@@ -519,7 +527,9 @@ export async function getRunSummary(pool: pg.Pool, runId: string) {
   // produced per-test rows we want for status / corpus dumps.
   const results = await pool.query(
     `SELECT tr.test_id, tr.source, tr.title_path, tr.status, tr.duration_ms,
-            cardinality(tr.hit_lines) AS hit_line_count,
+            (SELECT count(*)::int FROM coverage_hits ch
+             WHERE ch.run_id = tr.run_id AND ch.test_id = tr.test_id
+            ) AS hit_line_count,
             ja.attempt_no, ja.status AS attempt_status
      FROM test_results tr
      JOIN job_attempts ja ON ja.id = tr.attempt_id

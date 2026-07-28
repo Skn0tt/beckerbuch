@@ -52,6 +52,17 @@ export function lineKey(file: string, line: number): LineKey {
   return `${file}:${line}`;
 }
 
+/** Split `app/foo.ts:10` on the last `:`. Returns null if malformed. */
+export function parseLineKey(
+  key: string,
+): { file: string; line: number } | null {
+  const i = key.lastIndexOf(":");
+  if (i <= 0 || i === key.length - 1) return null;
+  const line = Number(key.slice(i + 1));
+  if (!Number.isInteger(line) || line < 1) return null;
+  return { file: key.slice(0, i), line };
+}
+
 /** Collect source line keys hit by an Istanbul coverage map. */
 export function hitLinesFromIstanbul(
   coverage: Record<string, IstanbulFileCoverage>,
@@ -253,6 +264,11 @@ export function selectTests(opts: {
   durations: Record<string, number>;
   diff: string;
   budgetMs: number;
+  /**
+   * Corpus size for IDF. Defaults to `index.testLines.size`. Pass explicitly
+   * when `index` is a sparse (diff-filtered) view of a larger corpus.
+   */
+  corpusSize?: number;
 }): string[] {
   const { index, durations, budgetMs } = opts;
   if (!(budgetMs > 0)) return [];
@@ -264,7 +280,10 @@ export function selectTests(opts: {
   }
   if (target.size === 0) return [];
 
-  const corpusSize = Math.max(index.testLines.size, 1);
+  const corpusSize = Math.max(
+    opts.corpusSize ?? index.testLines.size,
+    1,
+  );
   const idf = new Map<LineKey, number>();
   for (const line of target) {
     idf.set(

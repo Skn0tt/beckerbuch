@@ -13,6 +13,7 @@ import {
   hitLinesFromIstanbul,
   orderAndFilterTestIds,
   parseDiffLines,
+  parseLineKey,
   selectTests,
   testIdFromCoverageDirName,
 } from "./coverage-select";
@@ -309,6 +310,18 @@ deleted file mode 100644
     );
     expect(keep).toEqual(["b", "a"]);
     expect(exclude.sort()).toEqual(["c"]);
+  });
+
+  test("parseLineKey splits on the last colon", () => {
+    expect(parseLineKey("app/a.ts:10")).toEqual({ file: "app/a.ts", line: 10 });
+    expect(parseLineKey("app/weird:name.ts:3")).toEqual({
+      file: "app/weird:name.ts",
+      line: 3,
+    });
+    expect(parseLineKey("noline")).toBeNull();
+    expect(parseLineKey(":1")).toBeNull();
+    expect(parseLineKey("app/a.ts:0")).toBeNull();
+    expect(parseLineKey("app/a.ts:x")).toBeNull();
   });
 
   test("buildIndexFromHitLines builds the same inverted index shape", () => {

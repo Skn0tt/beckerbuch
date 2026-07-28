@@ -10,15 +10,17 @@ function sqlStr(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
-function sqlTextArray(arr: string[]): string {
-  if (arr.length === 0) return `ARRAY[]::text[]`;
-  return `ARRAY[${arr.map(sqlStr).join(",")}]`;
-}
-
 function sqlNullableTs(value: Date | string | null): string {
   if (value == null) return "NULL";
   const d = value instanceof Date ? value : new Date(value);
   return sqlStr(d.toISOString());
+}
+
+function sqlValuesChunk<T>(
+  rows: T[],
+  format: (row: T, isLast: boolean) => string,
+): string {
+  return rows.map((row, i) => format(row, i === rows.length - 1)).join("\n");
 }
 
 export async function dumpBaselineSql(
@@ -98,11 +100,10 @@ async function dumpWithPool(
     title_path: string;
     status: string;
     duration_ms: number;
-    hit_lines: string[];
     received_at: Date;
   }>(
     `SELECT id, attempt_id, run_id, test_id, source, title_path, status,
-            duration_ms, hit_lines, received_at
+            duration_ms, received_at
      FROM test_results WHERE run_id = $1::uuid
      ORDER BY received_at, test_id`,
     [runId],
@@ -111,6 +112,18 @@ async function dumpWithPool(
   if (results.rowCount === 0) {
     throw new Error(`run ${runId} has 0 test_results`);
   }
+
+  const hits = await pool.query<{
+    run_id: string;
+    test_id: string;
+    file_path: string;
+    line: number;
+  }>(
+    `SELECT run_id, test_id, file_path, line
+     FROM coverage_hits WHERE run_id = $1::uuid
+     ORDER BY test_id, file_path, line`,
+    [runId],
+  );
 
   const lines: string[] = [
     `-- Data-only seed for the HTML UI demo.`,
@@ -156,18 +169,33 @@ async function dumpWithPool(
 
   lines.push(`INSERT INTO test_results`);
   lines.push(
-    `  (id, attempt_id, run_id, test_id, source, title_path, status, duration_ms, hit_lines, received_at)`,
+    `  (id, attempt_id, run_id, test_id, source, title_path, status, duration_ms, received_at)`,
   );
   lines.push(`VALUES`);
   lines.push(
-    results.rows
-      .map(
-        (tr, i) =>
-          `  (${sqlStr(tr.id)}, ${sqlStr(tr.attempt_id)}, ${sqlStr(tr.run_id)}, ${sqlStr(tr.test_id)}, ${sqlStr(tr.source)}, ${sqlStr(tr.title_path)}, ${sqlStr(tr.status)}, ${tr.duration_ms}, ${sqlTextArray(tr.hit_lines ?? [])}, ${sqlNullableTs(tr.received_at)})${i === results.rows.length - 1 ? ";" : ","}`,
-      )
-      .join("\n"),
+    sqlValuesChunk(results.rows, (tr, isLast) =>
+      `  (${sqlStr(tr.id)}, ${sqlStr(tr.attempt_id)}, ${sqlStr(tr.run_id)}, ${sqlStr(tr.test_id)}, ${sqlStr(tr.source)}, ${sqlStr(tr.title_path)}, ${sqlStr(tr.status)}, ${tr.duration_ms}, ${sqlNullableTs(tr.received_at)})${isLast ? ";" : ","}`,
+    ),
   );
   lines.push(``);
+
+  if (hits.rowCount) {
+    // Chunk large inverted indexes into multiple INSERTs.
+    const CHUNK = 500;
+    for (let offset = 0; offset < hits.rows.length; offset += CHUNK) {
+      const slice = hits.rows.slice(offset, offset + CHUNK);
+      lines.push(
+        `INSERT INTO coverage_hits (run_id, test_id, file_path, line) VALUES`,
+      );
+      lines.push(
+        sqlValuesChunk(slice, (h, isLast) =>
+          `  (${sqlStr(h.run_id)}, ${sqlStr(h.test_id)}, ${sqlStr(h.file_path)}, ${h.line})${isLast ? ";" : ","}`,
+        ),
+      );
+      lines.push(``);
+    }
+  }
+
   lines.push(`COMMIT;`);
   lines.push(``);
 

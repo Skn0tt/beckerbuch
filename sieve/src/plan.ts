@@ -3,11 +3,8 @@
  */
 
 import type pg from "pg";
-import {
-  buildIndexFromHitLines,
-  parseDiffLines,
-  selectTests,
-} from "../../tests/coverage-select.ts";
+import { parseDiffLines, selectTests } from "../../tests/coverage-select.ts";
+import { loadDiffCoverageIndex } from "./coverage-hits.ts";
 import { packShards } from "./pack.ts";
 import { SchedulerRequestError } from "./errors.ts";
 
@@ -16,7 +13,6 @@ export type CorpusRow = {
   source: string;
   titlePath: string;
   durationMs: number;
-  hitLines: string[];
 };
 
 export type PlanDiffOpts = {
@@ -87,10 +83,9 @@ export async function loadBaselineCorpus(
     source: string;
     title_path: string;
     duration_ms: number;
-    hit_lines: string[];
   }>(
     `SELECT DISTINCT ON (test_id)
-       test_id, source, title_path, duration_ms, hit_lines
+       test_id, source, title_path, duration_ms
      FROM test_results tr
      JOIN job_attempts ja ON ja.id = tr.attempt_id
        AND ja.status IN ('done', 'failed')
@@ -107,7 +102,6 @@ export async function loadBaselineCorpus(
       source: r.source ?? "",
       titlePath: r.title_path ?? "",
       durationMs: r.duration_ms,
-      hitLines: r.hit_lines ?? [],
     })),
   };
 }
@@ -126,9 +120,7 @@ export async function planDiffRun(
 
   const baselineRunId = await resolveBaselineRunId(client, opts.baselineRunId);
   const { rows } = await loadBaselineCorpus(client, baselineRunId);
-  const index = buildIndexFromHitLines(
-    rows.map((r) => ({ testId: r.testId, hitLines: r.hitLines })),
-  );
+  const index = await loadDiffCoverageIndex(client, baselineRunId, opts.diff);
   const durations: Record<string, number> = {};
   const sourceById: Record<string, string> = {};
   const titlePathById: Record<string, string> = {};
@@ -138,11 +130,13 @@ export async function planDiffRun(
     titlePathById[r.testId] = r.titlePath;
   }
 
+  const corpusSize = rows.length;
   const selectedTestIds = selectTests({
     index,
     durations,
     diff: opts.diff,
     budgetMs: opts.budgetMs,
+    corpusSize,
   });
   const packed = packShards(selectedTestIds, durations, shardCount);
 
@@ -184,6 +178,7 @@ export async function planDiffRun(
     durations,
     diff: opts.diff,
     budgetMs: Math.max(totalDur, opts.budgetMs) + 1,
+    corpusSize,
   });
   const tests: PlanTestRow[] = rankedRelevant.map((testId) => {
     const inBudget = selectedSet.has(testId);

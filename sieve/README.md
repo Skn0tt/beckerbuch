@@ -1,8 +1,9 @@
 # Sieve — test-focused CI control plane (PoC)
 
 Local proof-of-concept for a scheduler that stores **per-test durations**
-and **line coverage**, plus workers that claim jobs and run bash commands
-that emit a standard NDJSON result stream (Playwright is one producer).
+and an **inverted line-coverage index**, plus workers that claim jobs and
+run bash commands that emit a standard NDJSON result stream (Playwright
+is one producer).
 
 ## Design (short)
 
@@ -116,7 +117,10 @@ append one JSON object per line:
 }
 ```
 
-See [`src/protocol.ts`](src/protocol.ts).
+See [`src/protocol.ts`](src/protocol.ts). Coverage hits are written into
+`coverage_hits (run_id, test_id, file_path, line)`; diff-aware planning
+queries only the lines in the diff instead of loading full per-test
+arrays.
 
 ## Layout
 
@@ -134,6 +138,7 @@ sieve/
     worker.ts
     cli.ts             # run-full | create-run-diff | status
     dump-baseline.ts
+    coverage-hits.ts   # inverted index write + diff-scoped load
     commands.ts        # playwrightFullCommand + shard command
   scripts/
     serve-ui.ts        # demo boot (fixture → UI)
@@ -145,4 +150,4 @@ sieve/
 
 - Spawning workers from the UI
 - Auth / TLS / replacing GitHub Actions
-- Cross-run corpus merge or remapping `hit_lines` across commits
+- Cross-run corpus merge or remapping `coverage_hits` across commits

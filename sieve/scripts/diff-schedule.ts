@@ -72,9 +72,22 @@ async function seedBaseline(pool: ReturnType<typeof createPool>): Promise<string
       for (const r of rows) {
         await client.query(
           `INSERT INTO test_results
-             (attempt_id, run_id, test_id, source, status, duration_ms, hit_lines)
-           VALUES ($1::uuid, $2::uuid, $3, 'seed', 'passed', $4, $5::text[])`,
-          [attemptId, runId, r.testId, r.durationMs, r.hitLines],
+             (attempt_id, run_id, test_id, source, status, duration_ms)
+           VALUES ($1::uuid, $2::uuid, $3, 'seed', 'passed', $4)`,
+          [attemptId, runId, r.testId, r.durationMs],
+        );
+        const files: string[] = [];
+        const lines: number[] = [];
+        for (const key of r.hitLines) {
+          const i = key.lastIndexOf(":");
+          files.push(key.slice(0, i));
+          lines.push(Number(key.slice(i + 1)));
+        }
+        await client.query(
+          `INSERT INTO coverage_hits (run_id, test_id, file_path, line)
+           SELECT $1::uuid, $2, f, l
+           FROM unnest($3::text[], $4::int[]) AS t(f, l)`,
+          [runId, r.testId, files, lines],
         );
       }
 
@@ -245,15 +258,22 @@ async function main() {
       [otherBaseline],
     );
     await client.query(
-      `UPDATE test_results SET hit_lines = '{}'::text[] WHERE run_id = $1::uuid`,
+      `DELETE FROM coverage_hits WHERE run_id = $1::uuid`,
       [otherBaseline],
     );
     await client.query(
       `INSERT INTO test_results
-         (attempt_id, run_id, test_id, source, status, duration_ms, hit_lines)
-       VALUES ($1::uuid, $2::uuid, 'poison', 'seed', 'passed', 1, ARRAY['app/x.ts:1','app/x.ts:2'])
+         (attempt_id, run_id, test_id, source, status, duration_ms)
+       VALUES ($1::uuid, $2::uuid, 'poison', 'seed', 'passed', 1)
        ON CONFLICT DO NOTHING`,
       [attempt.rows[0]!.id, otherBaseline],
+    );
+    await client.query(
+      `INSERT INTO coverage_hits (run_id, test_id, file_path, line) VALUES
+         ($1::uuid, 'poison', 'app/x.ts', 1),
+         ($1::uuid, 'poison', 'app/x.ts', 2)
+       ON CONFLICT DO NOTHING`,
+      [otherBaseline],
     );
   });
 
