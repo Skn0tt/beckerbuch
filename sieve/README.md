@@ -12,7 +12,7 @@ is one producer).
 - **N workers** claim jobs (`FOR UPDATE SKIP LOCKED`); each job is bash.
 - **Diff-aware scheduling**: budgeted `selectTests` from the latest run’s
   test roster, with per-test coverage taken from each test’s last green
-  result, packed into contiguous shard jobs.
+  result, packed into file-aware (LPT) shard jobs.
 - **HTML UI**: `/` + bootstrap/plan HTTP; live workers/results over `/ws`.
 
 ## Demo UI (start here)
@@ -67,7 +67,10 @@ picks the latest finished **corpus** run with results —
   all **Popular failures** (red ★, DB fail and not a corpus flake) and
   **Flaky** (👻, corpus pass+fail) tests from full history via `GET /api/signals`
 - **CPU time** → `selectTests` (diff-affected list; beyond-budget rows dimmed)
-- **Wall time** → shard count `N = ceil(selectedDuration / latencyMs)`
+- **Wall time** → shard count `N = ceil(selectedDuration / latencyMs)`;
+  tests are packed by **source file** (same-file together), splitting a file
+  only when it exceeds the per-shard duration target, then LPT-balanced
+  across shards
 - **Deprioritize flakes** → density × `(1 - 0.9 × flipRate)` for tests that
   both passed and failed on **corpus** runs (`baseline_run_id IS NULL`).
   Flip rate = status changes between consecutive corpus outcomes /
@@ -154,7 +157,7 @@ sieve/
     scheduler.ts
     hub.ts
     plan.ts
-    pack.ts
+    pack.ts            # file-group LPT shard packing
     workers.ts
     worker.ts
     cli.ts             # run-full | dump | create-run-diff | status

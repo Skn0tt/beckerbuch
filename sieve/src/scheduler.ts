@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type pg from "pg";
 import { playwrightShardCommand } from "./commands.ts";
+import { shardSourceFiles } from "./pack.ts";
 import { parseHitLines, replaceCoverageHits } from "./coverage-hits.ts";
 import { createPool, migrate, withClient } from "./db.ts";
 import { SchedulerRequestError } from "./errors.ts";
@@ -171,9 +172,17 @@ export async function createDiffAwareRun(
       );
       const runId = run.rows[0]!.id;
 
+      const sourceById: Record<string, string> = {};
+      for (const t of plan.selected) sourceById[t.testId] = t.source;
+
       const shards: CreateDiffRunResult["shards"] = [];
       for (const shard of plan.shards) {
-        const command = playwrightShardCommand(shard.testIds, opts.pwWorkers);
+        const files = shardSourceFiles(shard.testIds, sourceById);
+        const command = playwrightShardCommand(
+          shard.testIds,
+          opts.pwWorkers,
+          files,
+        );
         await client.query(
           `INSERT INTO jobs
              (run_id, command, status, shard_index, test_ids, priority)

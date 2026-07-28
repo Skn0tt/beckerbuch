@@ -35,17 +35,21 @@ export function playwrightFullCommand(
 }
 
 /**
- * Diff-aware shard: full suite discovery, filtered to `testIds` via
- * SIEVE_TEST_IDS + the sieve reporter preprocess.
+ * Diff-aware shard: discover the shard’s source files (when known), filtered
+ * to `testIds` via SIEVE_TEST_IDS + the sieve reporter preprocess.
  */
 export function playwrightShardCommand(
   testIds: string[],
   pwWorkers?: number,
+  files?: string[],
 ): string {
   const parts = [
     `${TEST_IDS_ENV}=${shellQuote(JSON.stringify(testIds))}`,
     "npx playwright test",
   ];
+  for (const file of files ?? []) {
+    parts.push(shellQuote(file));
+  }
   if (typeof pwWorkers === "number" && pwWorkers > 0) {
     parts.push(`--workers=${pwWorkers}`);
   }

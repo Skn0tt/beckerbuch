@@ -106,35 +106,47 @@ async function seedBaseline(pool: ReturnType<typeof createPool>): Promise<string
 }
 
 async function main() {
-  // Pure pack unit checks (no DB) — contiguous bands.
+  // Pure pack unit checks (no DB) — file-aware LPT.
   {
     const packed = packShards(
       ["a", "b", "c"],
       { a: 10, b: 10, c: 100 },
       2,
+      {
+        a: "tests/light.spec.ts",
+        b: "tests/light.spec.ts",
+        c: "tests/heavy.spec.ts",
+      },
     );
     assert(packed.length === 2, "expected 2 non-empty shards");
+    const heavyShard = packed.find((s) => s.includes("c"));
+    const lightShard = packed.find((s) => s.includes("a"));
+    assert(heavyShard != null && lightShard != null, "missing shards");
     assert(
-      JSON.stringify(packed[0]) === JSON.stringify(["a", "b"]),
-      `expected contiguous [a,b], got ${JSON.stringify(packed[0])}`,
+      heavyShard!.includes("c") && !heavyShard!.includes("a"),
+      `heavy should be alone, got ${JSON.stringify(heavyShard)}`,
     );
     assert(
-      JSON.stringify(packed[1]) === JSON.stringify(["c"]),
-      `expected contiguous [c], got ${JSON.stringify(packed[1])}`,
+      lightShard!.includes("a") && lightShard!.includes("b"),
+      `same-file lights together, got ${JSON.stringify(lightShard)}`,
     );
-    console.log("[diff-schedule] packShards contiguous ok", packed);
+    console.log("[diff-schedule] packShards file-aware ok", packed);
   }
 
-  // Mid selection must stay contiguous across shards.
   {
     const packed = packShards(
       ["cheap", "other"],
       { cheap: 10, other: 10 },
       2,
+      { cheap: "tests/a.spec.ts", other: "tests/b.spec.ts" },
     );
     assert(packed.length === 2, "expected 2 shards");
-    assert(packed[0]![0] === "cheap" && packed[1]![0] === "other", "order preserved");
-    console.log("[diff-schedule] packShards two-equal ok", packed);
+    assert(
+      packed.some((s) => s[0] === "cheap") &&
+        packed.some((s) => s[0] === "other"),
+      "each file on its own shard",
+    );
+    console.log("[diff-schedule] packShards two-files ok", packed);
   }
 
   // Separate DB from serve-ui's reused `sieve` so drills don't wipe the

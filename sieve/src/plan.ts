@@ -1,6 +1,6 @@
 /**
  * Diff-aware plan: latest-run test set + last-green coverage → selectTests
- * → contiguous packShards.
+ * → file-aware packShards (LPT over source-file groups).
  */
 
 import type pg from "pg";
@@ -194,7 +194,12 @@ export async function planDiffRun(
     ...selectOpts,
     budgetMs: opts.budgetMs,
   });
-  const packed = packShards(selectedTestIds, durations, shardCount);
+  const packed = packShards(
+    selectedTestIds,
+    durations,
+    shardCount,
+    sourceById,
+  );
 
   const shardOf = new Map<string, number>();
   const shards: PlanDiffResult["shards"] = [];
