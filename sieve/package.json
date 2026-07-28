@@ -7,16 +7,20 @@
     "worker": "tsx src/worker.ts",
     "cli": "tsx src/cli.ts",
     "demo": "tsx scripts/demo.ts",
-    "claim-race": "tsx scripts/claim-race.ts"
+    "claim-race": "tsx scripts/claim-race.ts",
+    "diff-schedule": "tsx scripts/diff-schedule.ts",
+    "ui-smoke": "tsx scripts/ui-smoke.ts"
   },
   "dependencies": {
     "@testcontainers/postgresql": "^12.0.1",
     "pg": "^8.20.0",
-    "tsx": "^4.20.3"
+    "tsx": "^4.20.3",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@types/node": "^22",
     "@types/pg": "^8.20.0",
+    "@types/ws": "^8.18.1",
     "typescript": "^5.9.3"
   }
 }

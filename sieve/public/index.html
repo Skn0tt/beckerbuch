@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sieve</title>
+    <style>
+      :root {
+        --bg: #f4f6f8;
+        --panel: #ffffff;
+        --border: #d8dee6;
+        --text: #1a2330;
+        --muted: #6b7788;
+        --accent: #1f7a5c;
+        --stale: #b33b3b;
+        --pending: #c5ced8;
+        --mono: "SF Mono", "Menlo", "Consolas", monospace;
+        --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+
+        /* shard palette — punchy apricot / amber (still light enough for text) */
+        --s0: #ffc98a;
+        --s0-edge: #c45a00;
+        --s1: #ffb347;
+        --s1-edge: #a84800;
+        --s2: #ffd166;
+        --s2-edge: #b07a00;
+        --s3: #ffa86b;
+        --s3-edge: #c44d00;
+        --s4: #ffcc66;
+        --s4-edge: #9a6b00;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+      }
+
+      body {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-height: 100%;
+      }
+
+      header {
+        display: flex;
+        align-items: baseline;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+      }
+
+      header .repo {
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 0.78rem;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 1fr 240px;
+        min-height: 0;
+      }
+
+      main {
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        min-height: 0;
+        border-right: 1px solid var(--border);
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 1rem;
+        align-items: end;
+        padding: 0.85rem 1rem;
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .knob label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.82rem;
+        margin-bottom: 0.3rem;
+      }
+
+      .knob label span:last-child {
+        font-family: var(--mono);
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      .knob input[type="range"] {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+
+      button.run {
+        appearance: none;
+        border: 0;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 650;
+        font-size: 0.9rem;
+        padding: 0.55rem 1rem;
+        border-radius: 7px;
+        cursor: pointer;
+        min-width: 88px;
+      }
+
+      button.run:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        align-items: center;
+        padding: 0.55rem 1rem;
+        font-size: 0.78rem;
+        color: var(--muted);
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+        font-family: var(--mono);
+      }
+
+      .meta strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      .shards {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin-left: auto;
+      }
+
+      .shard {
+        font-size: 0.72rem;
+        padding: 0.15rem 0.45rem;
+        border-radius: 4px;
+        border: 1px solid transparent;
+        color: var(--text);
+      }
+
+      .tests {
+        min-height: 0;
+        padding: 0.75rem 1rem 1rem;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .test-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        overflow: auto;
+        flex: 1;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-family: var(--mono);
+        font-size: 0.78rem;
+      }
+
+      .test-list li {
+        display: grid;
+        grid-template-columns: 18px 1fr auto;
+        gap: 0.55rem;
+        align-items: center;
+        padding: 0.4rem 0.7rem;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        border-left: 3px solid transparent;
+      }
+
+      .test-list li:last-child {
+        border-bottom: 0;
+      }
+
+      .test-list li.beyond {
+        opacity: 0.35;
+        background: transparent !important;
+        border-left-color: transparent !important;
+      }
+
+      .test-list .dur {
+        color: var(--muted);
+      }
+
+      .icon {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+        border: 2px solid var(--pending);
+        background: transparent;
+      }
+
+      .icon.queued {
+        border-color: var(--pending);
+      }
+
+      .icon.running {
+        border-color: var(--accent);
+        border-top-color: transparent;
+        animation: spin 0.7s linear infinite;
+      }
+
+      .icon.ok {
+        border-color: var(--accent);
+        background: var(--accent);
+        box-shadow: inset 0 0 0 2px #fff;
+      }
+
+      .icon.fail {
+        border-color: var(--stale);
+        background: var(--stale);
+        border-radius: 3px;
+      }
+
+      .icon.skipped {
+        border-color: var(--pending);
+        background: var(--pending);
+      }
+
+      .icon.beyond {
+        width: 10px;
+        height: 2px;
+        border: 0;
+        border-radius: 1px;
+        background: var(--pending);
+        opacity: 0.9;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      aside.workers {
+        padding: 0.75rem;
+        background: var(--panel);
+        overflow: auto;
+      }
+
+      .worker-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .worker {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.55rem 0.6rem;
+        background: var(--bg);
+        box-shadow: inset 3px 0 0 transparent;
+      }
+
+      .worker.stale {
+        border-color: var(--border);
+        opacity: 0.65;
+        box-shadow: inset 3px 0 0 #9aa3ad;
+        background: var(--bg);
+      }
+
+      .worker.stale .state {
+        color: var(--muted);
+      }
+
+      .worker .top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.4rem;
+        margin-bottom: 0.2rem;
+      }
+
+      .worker .id-row {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        min-width: 0;
+      }
+
+      .worker .id {
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        font-weight: 600;
+      }
+
+      .worker .state {
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+      }
+
+      .worker.stale .state {
+        color: var(--stale);
+      }
+
+      .worker .job {
+        font-size: 0.72rem;
+        color: var(--text);
+      }
+
+      /* Heartbeat lamp: green within lease policy, red when stale;
+         `.pulse` fires once when a new heartbeat arrives. */
+      .worker .hb {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        background: var(--stale);
+        box-shadow: 0 0 0 0 transparent;
+      }
+
+      .worker .hb.ok {
+        background: var(--accent);
+      }
+
+      .worker .hb.pulse.ok {
+        animation: hb-pulse-ok 0.55s ease-out;
+      }
+
+      .worker .hb.pulse:not(.ok) {
+        animation: hb-pulse-bad 0.55s ease-out;
+      }
+
+      @keyframes hb-pulse-ok {
+        0% {
+          transform: scale(1);
+          box-shadow: 0 0 0 0 rgba(31, 122, 92, 0.55);
+        }
+        40% {
+          transform: scale(1.55);
+          box-shadow: 0 0 0 6px rgba(31, 122, 92, 0);
+        }
+        100% {
+          transform: scale(1);
+          box-shadow: 0 0 0 0 transparent;
+        }
+      }
+
+      @keyframes hb-pulse-bad {
+        0% {
+          transform: scale(1);
+          box-shadow: 0 0 0 0 rgba(179, 59, 59, 0.45);
+        }
+        40% {
+          transform: scale(1.55);
+          box-shadow: 0 0 0 6px rgba(179, 59, 59, 0);
+        }
+        100% {
+          transform: scale(1);
+          box-shadow: 0 0 0 0 transparent;
+        }
+      }
+
+      @media (max-width: 900px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        main {
+          border-right: 0;
+        }
+
+        .controls {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Sieve</h1>
+      <div class="repo" id="repoLabel">…</div>
+    </header>
+
+    <div class="shell">
+      <main>
+        <div class="controls">
+          <div class="knob">
+            <label>
+              <span>Budget</span>
+              <span id="budgetVal">60s</span>
+            </label>
+            <input id="budget" type="range" min="5" max="180" value="60" step="5" />
+          </div>
+          <div class="knob">
+            <label>
+              <span>Latency</span>
+              <span id="latencyVal">30s</span>
+            </label>
+            <input id="latency" type="range" min="5" max="120" value="30" step="5" />
+          </div>
+          <button class="run" id="runBtn" type="button">Run</button>
+        </div>
+
+        <div class="meta">
+          <span>diff <strong id="diffLines">0</strong> lines</span>
+          <span><strong id="selCount">0</strong>/<strong id="corpusCount">0</strong> tests · <strong id="selDur">0s</strong></span>
+          <div class="shards" id="shards"></div>
+        </div>
+
+        <div class="tests">
+          <ul class="test-list" id="testList"></ul>
+        </div>
+      </main>
+
+      <aside class="workers">
+        <div class="worker-grid" id="workerGrid"></div>
+      </aside>
+    </div>
+
+    <script src="/app.js?v=titlepath1" type="module"></script>
+  </body>
+</html>

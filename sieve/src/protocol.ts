@@ -15,6 +15,7 @@
  *     "status": "passed" | "failed" | "timedOut" | "skipped" | ...,
  *     "durationMs": 12.5,
  *     "source": "optional/path/or/label",
+ *     "titlePath": "optional › playwright › title path",
  *     "hitLines": ["app/foo.ts:10", "..."]   // optional
  *   }
  *
@@ -22,6 +23,9 @@
  */
 
 export const RESULTS_FILE_ENV = "SIEVE_RESULTS_FILE";
+
+/** JSON array of Playwright test.id values this shard should keep. */
+export const TEST_IDS_ENV = "SIEVE_TEST_IDS";
 
 export const TEST_RESULT_TYPE = "test_result" as const;
 
@@ -32,6 +36,8 @@ export type TestResultEvent = {
   durationMs: number;
   /** Optional locator (file path, suite name, …). */
   source?: string;
+  /** Optional Playwright title path (`suite › test`). */
+  titlePath?: string;
   /** Optional coverage hit keys (`file:line`). */
   hitLines?: string[];
 };
@@ -46,6 +52,7 @@ export function isTestResultEvent(value: unknown): value is TestResultEvent {
     return false;
   }
   if (v.source !== undefined && typeof v.source !== "string") return false;
+  if (v.titlePath !== undefined && typeof v.titlePath !== "string") return false;
   if (v.hitLines !== undefined) {
     if (!Array.isArray(v.hitLines)) return false;
     if (!v.hitLines.every((x) => typeof x === "string")) return false;
@@ -70,6 +77,7 @@ export function parseResultLine(line: string): TestResultEvent | null {
     status: parsed.status,
     durationMs: parsed.durationMs,
     source: parsed.source,
+    titlePath: parsed.titlePath,
     hitLines: parsed.hitLines ? [...parsed.hitLines] : undefined,
   };
 }
@@ -82,6 +90,7 @@ export function formatResultLine(event: TestResultEvent): string {
     durationMs: event.durationMs,
   };
   if (event.source !== undefined) body.source = event.source;
+  if (event.titlePath !== undefined) body.titlePath = event.titlePath;
   if (event.hitLines !== undefined) body.hitLines = event.hitLines;
   return JSON.stringify(body);
 }

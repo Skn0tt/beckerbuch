@@ -199,6 +199,7 @@ async function runBashJob(
         attemptId: job.attemptId,
         testId: ev.testId,
         source: ev.source ?? "",
+        titlePath: ev.titlePath ?? "",
         status: ev.status,
         durationMs: ev.durationMs,
         hitLines: ev.hitLines ?? [],
@@ -303,6 +304,12 @@ export async function workerLoop(opts: {
   );
 
   for (;;) {
+    try {
+      await client.hello(opts.workerId, os.hostname());
+    } catch (err) {
+      console.error(`[worker ${opts.workerId}] hello failed`, err);
+    }
+
     const job = await client.claim(opts.workerId, opts.runId);
     if (!job) {
       if (opts.once) {

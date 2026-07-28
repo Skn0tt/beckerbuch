@@ -122,6 +122,34 @@ export async function buildIndex(coverageDir: string): Promise<CoverageIndex> {
 }
 
 /**
+ * Build a coverage index from stored per-test hit-line lists (e.g. sieve
+ * `test_results.hit_lines`). Last row wins if the same `testId` appears twice.
+ */
+export function buildIndexFromHitLines(
+  rows: Array<{ testId: string; hitLines: Iterable<string> }>,
+): CoverageIndex {
+  const testLines = new Map<string, Set<LineKey>>();
+  const lineTests = new Map<LineKey, Set<string>>();
+
+  for (const row of rows) {
+    testLines.set(row.testId, new Set(row.hitLines));
+  }
+
+  for (const [testId, lines] of testLines) {
+    for (const line of lines) {
+      let set = lineTests.get(line);
+      if (!set) {
+        set = new Set();
+        lineTests.set(line, set);
+      }
+      set.add(testId);
+    }
+  }
+
+  return { testLines, lineTests };
+}
+
+/**
  * Parse a unified diff into `app/...:line` keys.
  *
  * - **Added** lines use **new-side** line numbers (match prior coverage when

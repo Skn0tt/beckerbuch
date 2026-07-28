@@ -13,12 +13,13 @@ DROP TABLE IF EXISTS runs CASCADE;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE runs (
-  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  label         text NOT NULL,
-  status        text NOT NULL DEFAULT 'queued'
-                  CHECK (status IN ('queued', 'running', 'done', 'failed')),
-  created_at    timestamptz NOT NULL DEFAULT now(),
-  finished_at   timestamptz
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  label            text NOT NULL,
+  status           text NOT NULL DEFAULT 'queued'
+                     CHECK (status IN ('queued', 'running', 'done', 'failed')),
+  baseline_run_id  uuid REFERENCES runs(id),
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  finished_at      timestamptz
 );
 
 CREATE TABLE jobs (
@@ -32,7 +33,10 @@ CREATE TABLE jobs (
   lease_expires_at  timestamptz,
   attempt           int NOT NULL DEFAULT 0,
   claimed_at        timestamptz,
-  finished_at       timestamptz
+  finished_at       timestamptz,
+  shard_index       int,
+  test_ids          text[],
+  priority          int NOT NULL DEFAULT 0
 );
 
 CREATE INDEX jobs_run_status_idx ON jobs (run_id, status);
@@ -59,6 +63,7 @@ CREATE TABLE test_results (
   run_id        uuid NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
   test_id       text NOT NULL,
   source        text NOT NULL DEFAULT '',
+  title_path    text NOT NULL DEFAULT '',
   status        text NOT NULL,
   duration_ms   double precision NOT NULL,
   hit_lines     text[] NOT NULL DEFAULT '{}',

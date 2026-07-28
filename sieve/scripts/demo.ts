@@ -9,7 +9,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { SchedulerClient } from "../src/client.ts";
-import { listSpecFiles, playwrightCommand } from "../src/cli.ts";
+import { listSpecFiles } from "../src/cli.ts";
+import { playwrightCommand } from "../src/commands.ts";
 
 const SIEVE_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
