@@ -150,21 +150,21 @@ async function main() {
       return;
     }
     if (!dumpPath) return;
-    // Always dump the full corpus history (all mainline runs) so flake
-    // signal survives restore — not only this run's roster.
+    // Naive dump of every finished run (corpus + diff-aware) so restore
+    // does not drop PR / product-change history.
     const backup = await writeCorpusBackups(dbUrl, {
       fixturePath: dumpPath,
     });
     console.log(
-      `[run-full] wrote corpus dump ${backup.fixturePath} (${backup.runCount} run(s), ${backup.resultCount} results)`,
+      `[run-full] wrote dump ${backup.fixturePath} (${backup.runCount} run(s), ${backup.resultCount} results)`,
     );
     console.log(`[run-full] backup ${backup.stampedPath}`);
     console.log(`[run-full] backup ${backup.latestPath}`);
     return;
   }
 
-  if (cmd === "dump-corpus") {
-    // usage: dump-corpus [out.sql]
+  if (cmd === "dump-corpus" || cmd === "dump") {
+    // usage: dump-corpus|dump [out.sql]
     const out =
       args[0] ?? path.join(SIEVE_ROOT, "fixtures", "baseline.sql");
     const dbUrl = await resolveDatabaseUrl();
@@ -174,10 +174,10 @@ async function main() {
     }
     const backup = await writeCorpusBackups(dbUrl, { fixturePath: out });
     console.log(
-      `[dump-corpus] ${backup.fixturePath} (${backup.runCount} run(s), ${backup.resultCount} results)`,
+      `[dump] ${backup.fixturePath} (${backup.runCount} run(s), ${backup.resultCount} results)`,
     );
-    console.log(`[dump-corpus] ${backup.stampedPath}`);
-    console.log(`[dump-corpus] ${backup.latestPath}`);
+    console.log(`[dump] ${backup.stampedPath}`);
+    console.log(`[dump] ${backup.latestPath}`);
     return;
   }
 
@@ -261,7 +261,9 @@ async function main() {
     return;
   }
 
-  console.error("usage: cli <run-full|dump-corpus|create-run-diff|status> ...");
+  console.error(
+    "usage: cli <run-full|dump|dump-corpus|create-run-diff|status> ...",
+  );
   process.exit(1);
 }
 

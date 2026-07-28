@@ -20,6 +20,12 @@ test.describe("popular", () => {
     expect(s.fails).toBe(1);
   });
 
+  test("corpus flakes are not popular", () => {
+    const s = popularFromCounts({ fails: 4, attempts: 10, flaky: true });
+    expect(s.popular).toBe(false);
+    expect(s.fails).toBe(4);
+  });
+
   test("POPULAR_BOOST is strong", () => {
     expect(POPULAR_BOOST).toBe(10);
   });

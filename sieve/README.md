@@ -44,36 +44,37 @@ the SQL fixture for later `serve-ui` cold starts:
 
 ```bash
 cd sieve && npm run serve-ui   # in one shell (scheduler + workers)
-cd sieve && npm run run-full   # dumps ALL corpus runs → fixtures/baseline.sql
-                               # + ~/Documents/beckerbuch-sieve/corpus-*.sql
+cd sieve && npm run run-full   # dumps ALL finished runs → fixtures/baseline.sql
+                               # + ~/Documents/beckerbuch-sieve/dump-*.sql
 # optional: SIEVE_PW_WORKERS=4 npm run run-full
 # optional: npm run run-full -- --dump /tmp/baseline.sql
 # optional: npm run run-full -- --no-wait
-# optional: npm run cli -- dump-corpus   # backup without running tests
+# optional: npm run cli -- dump   # backup without running tests
 ```
 
 Uses `sieve/.database-url` written by `serve-ui` (or `SIEVE_DATABASE_URL`).
-Each `run-full` dumps **every** finished corpus run (`baseline_run_id IS NULL`),
-not just the latest — so flake history survives restore. Also writes a stamped
-copy under `~/Documents/beckerbuch-sieve/` (`corpus-latest.sql` + timestamped).
-Restart `serve-ui` after the dump to reload the corpus (or refresh —
-bootstrap picks the latest finished **corpus** run with results —
-`baseline_run_id IS NULL`, including `failed` full runs — not a prior
-diff-aware UI subset).
+Each dump is **naive**: every finished run with results (corpus **and**
+diff-aware / PR shards), so restore does not drop product-change history.
+Also writes stamped copies under `~/Documents/beckerbuch-sieve/`
+(`dump-latest.sql` + timestamped; `corpus-latest.sql` kept as a copy).
+Restart `serve-ui` after the dump to reload (or refresh — bootstrap still
+picks the latest finished **corpus** run with results —
+`baseline_run_id IS NULL`, including `failed` full runs — for the roster).
 
 ### Dashboard knobs
 
 - **Plan / Signals tabs** → Plan is the diff-aware runner; Signals lists
-  all **Popular failures** (red ★, any DB fail) and **Flaky** (👻, corpus
-  pass+fail) tests from full history via `GET /api/signals`
+  all **Popular failures** (red ★, DB fail and not a corpus flake) and
+  **Flaky** (👻, corpus pass+fail) tests from full history via `GET /api/signals`
 - **CPU time** → `selectTests` (diff-affected list; beyond-budget rows dimmed)
 - **Wall time** → shard count `N = ceil(selectedDuration / latencyMs)`
 - **Deprioritize flakes** → density × `(1 - 0.9 × flipRate)` for tests that
   both passed and failed on **corpus** runs (`baseline_run_id IS NULL`).
   Flip rate = status changes between consecutive corpus outcomes /
   transitions. 👻 badge; hover for pass/fail + flip rate
-- **Prefer popular failures** → density × `10` for tests that failed anywhere
-  in the sieve DB (corpus + diff-aware). Red ★ badge; hover for fail counts
+- **Prefer popular failures** → density × `10` for tests that failed in the
+  sieve DB but are **not** corpus flakes (flakes stay on the flaky signal).
+  Red ★ badge; hover for fail counts
 - **Run** → diff-aware `POST /runs`; icons + worker cards update over WebSocket
 - Empty / uncovered diffs → empty list (no unrelated corpus filler)
 
@@ -156,11 +157,11 @@ sieve/
     pack.ts
     workers.ts
     worker.ts
-    cli.ts             # run-full | dump-corpus | create-run-diff | status
-    dump-baseline.ts   # multi-run corpus SQL dump + Documents backup
+    cli.ts             # run-full | dump | create-run-diff | status
+    dump-baseline.ts   # naive full-DB SQL dump + Documents backup
     coverage-hits.ts   # inverted index write + diff-scoped load
     flakiness.ts       # corpus pass+fail → flaky / flipRate flakeScore
-    popular.ts         # any DB fail → popular (+ Prefer popular boost)
+    popular.ts         # DB fail − corpus flakes → popular (+ Prefer popular boost)
     signals.ts         # GET /api/signals popular + flaky inventory
     commands.ts        # playwrightFullCommand + shard command
   scripts/

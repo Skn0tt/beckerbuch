@@ -1,7 +1,6 @@
 /**
- * After the corpus `run-full` batch finishes, apply two small product
- * changes in turn, run a budgeted diff-aware suite for each, then restore
- * the files. Writes a failure report under ~/Documents/beckerbuch-sieve/.
+ * Apply small product changes in turn, run a budgeted diff-aware suite for
+ * each, restore the files, then dump the full DB (corpus + diff runs).
  *
  *   npx tsx scripts/product-change-experiments.ts
  */
@@ -10,13 +9,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SchedulerClient } from "../src/client.ts";
 import { loadGitDiff } from "../src/git.ts";
-import { writeCorpusBackups, resolveDatabaseUrl } from "../src/dump-baseline.ts";
+import {
+  writeDatabaseBackups,
+  resolveDatabaseUrl,
+} from "../src/dump-baseline.ts";
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
 );
-const BATCH_LOG = "/tmp/sieve-batch.log";
 const EXP_LOG = "/tmp/sieve-product-experiments.log";
 const BACKUP_DIR = path.join(
   process.env.HOME ?? "/tmp",
@@ -33,27 +34,43 @@ type Experiment = {
 
 const experiments: Experiment[] = [
   {
-    id: "home-search-ux",
-    title: "Home: snappier search debounce + clearer placeholder",
+    id: "home-search-copy",
+    title: "Home: friendlier search placeholder + slightly snappier debounce",
     file: path.join(REPO_ROOT, "app/routes/home.tsx"),
     apply: (src) =>
       src
-        .replace(", 250);", ", 180);")
+        .replace(", 250);", ", 200);")
         .replace(
           'placeholder="Search recipes…"',
-          'placeholder="Search by name or ingredient…"',
+          'placeholder="Find a recipe…"',
+        )
+        .replace(
+          'aria-label="Search recipes"',
+          'aria-label="Find a recipe"',
         ),
   },
   {
-    id: "login-autofill",
-    title: "Login: clearer invalid-credentials copy + username autofill tweak",
+    id: "login-error-copy",
+    title: "Login: clearer invalid-credentials copy + email autofill hint",
     file: path.join(REPO_ROOT, "app/routes/login.tsx"),
     apply: (src) =>
       src
         .replace('autoComplete="username"', 'autoComplete="email"')
         .replace(
           'return { error: "Invalid email or password." };',
-          'return { error: "Invalid email or password. Try again." };',
+          'return { error: "That email or password didn\'t work." };',
+        ),
+  },
+  {
+    id: "kitchen-filter-placeholder",
+    title: "Kitchen: clearer planned-ingredients filter placeholder",
+    file: path.join(REPO_ROOT, "app/routes/kitchen.tsx"),
+    apply: (src) =>
+      src
+        .replace('placeholder="Filter…"', 'placeholder="Filter ingredients…"')
+        .replace(
+          'aria-label="Filter planned ingredients"',
+          'aria-label="Filter ingredients list"',
         ),
   },
 ];
@@ -66,22 +83,6 @@ async function log(line: string) {
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-async function waitForCorpusBatch() {
-  await log(`waiting for corpus batch DONE in ${BATCH_LOG}`);
-  for (;;) {
-    try {
-      const text = await readFile(BATCH_LOG, "utf8");
-      if (text.includes("[batch] DONE")) {
-        await log("corpus batch finished");
-        return;
-      }
-    } catch {
-      // log not ready yet
-    }
-    await sleep(15_000);
-  }
 }
 
 async function waitForRun(
@@ -121,16 +122,7 @@ async function main() {
   if (!(await client.health())) {
     throw new Error(`scheduler not healthy at ${schedulerUrl}`);
   }
-
-  await waitForCorpusBatch();
-
-  const dbUrl = await resolveDatabaseUrl();
-  if (dbUrl) {
-    const backup = await writeCorpusBackups(dbUrl);
-    await log(
-      `pre-experiment corpus backup: ${backup.runCount} runs → ${backup.stampedPath}`,
-    );
-  }
+  await log(`scheduler healthy at ${schedulerUrl}`);
 
   const reports: Array<{
     id: string;
@@ -210,7 +202,7 @@ async function main() {
   const report = {
     generatedAt: new Date().toISOString(),
     note:
-      "Diff-aware (non-corpus) runs for staged product changes. Failures are candidates for 'fails often outside main' — often intermittent DEMO FLAKE noise correlated with the suite each change selected.",
+      "Diff-aware (non-corpus) runs for staged product changes. Failures feed the popular-failure signal when they are not corpus flakes.",
     experiments: reports,
     failProneness: [...byTest.entries()]
       .map(([testId, v]) => ({
@@ -237,6 +229,19 @@ async function main() {
   await writeFile(latestReport, JSON.stringify(report, null, 2) + "\n", "utf8");
   await log(`wrote ${reportPath}`);
   await log(`wrote ${latestReport}`);
+
+  const dbUrl = await resolveDatabaseUrl();
+  if (!dbUrl) {
+    await log("no database URL — skip full dump");
+  } else {
+    const backup = await writeDatabaseBackups(dbUrl);
+    await log(
+      `full dump ${backup.runCount} run(s), ${backup.resultCount} results → ${backup.fixturePath}`,
+    );
+    await log(`backup ${backup.stampedPath}`);
+    await log(`backup ${backup.latestPath}`);
+  }
+
   await log("all product-change experiments finished");
 }
 

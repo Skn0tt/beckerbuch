@@ -25,7 +25,7 @@ export type PlanDiffOpts = {
   baselineRunId?: string;
   /** When true, lower selection density for historically flaky tests. */
   deprioritizeFlakes?: boolean;
-  /** When true, strongly boost tests that failed anywhere in the DB. */
+  /** When true, strongly boost non-flaky tests that failed in the DB. */
   preferPopular?: boolean;
 };
 
@@ -47,7 +47,7 @@ export type PlanTestRow = {
   passes: number;
   fails: number;
   attempts: number;
-  /** Failed at least once in any finished run in the DB. */
+  /** Failed in DB history and not a corpus flake. */
   popular: boolean;
   /** Fail count across the whole DB (popular window). */
   popularFails: number;
@@ -170,7 +170,7 @@ export async function planDiffRun(
     flakeScores[id] = stats.flakeScore;
   }
 
-  const popularById = await loadPopularStats(client, testIds);
+  const popularById = await loadPopularStats(client, testIds, flakeById);
   const popularTestIds = new Set<string>();
   for (const [id, stats] of popularById) {
     if (stats.popular) popularTestIds.add(id);

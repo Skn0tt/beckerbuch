@@ -263,8 +263,8 @@ export function lineIdf(opts: {
  * `1 - 0.9 * flakeScore` (see sieve flakiness helpers) so intermittent
  * tests rank below equally covering stable ones. `flakeScore` is flip rate.
  *
- * When `preferPopular` is set, density for popular tests is multiplied by
- * `popularBoost` (default 10).
+ * When `preferPopular` is set, density for popular tests (caller excludes
+ * corpus flakes) is multiplied by `popularBoost` (default 10).
  */
 export function selectTests(opts: {
   index: CoverageIndex;
@@ -280,7 +280,7 @@ export function selectTests(opts: {
   flakeScores?: Record<string, number>;
   /** Apply flakeScores as a density penalty. */
   deprioritizeFlakes?: boolean;
-  /** Test ids that failed somewhere in DB history (popular). */
+  /** Test ids marked popular (DB fails excluding corpus flakes). */
   popularTestIds?: Set<string> | ReadonlySet<string>;
   /** Multiply density by popularBoost for popular tests. */
   preferPopular?: boolean;

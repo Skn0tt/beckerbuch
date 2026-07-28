@@ -1,9 +1,13 @@
 /**
  * “Popular” tests: failed at least once anywhere in the live sieve DB
- * (corpus + diff-aware). Demo window = entire database.
+ * (corpus + diff-aware), excluding corpus flakes.
+ *
+ * Flaky tests (pass+fail on corpus) are owned by the flakiness signal so
+ * intermittent noise does not look like a reliable failure hotspot.
  */
 
 import type pg from "pg";
+import { loadFlakeStats, type FlakeStats } from "./flakiness.ts";
 
 export type PopularStats = {
   attempts: number;
@@ -17,22 +21,30 @@ export const POPULAR_BOOST = 10;
 export function popularFromCounts(opts: {
   fails: number;
   attempts?: number;
+  /** When true, never mark popular — flakes are a separate signal. */
+  flaky?: boolean;
 }): PopularStats {
   const fails = Math.max(0, opts.fails);
   const attempts = opts.attempts ?? fails;
+  const flaky = opts.flaky === true;
   return {
     attempts,
     fails,
-    popular: fails > 0,
+    popular: fails > 0 && !flaky,
   };
 }
 
 /**
  * Load popular stats from all finished runs (no baseline_run_id filter).
+ * Corpus-flaky tests are excluded from `popular` (see `flaky` on flake stats).
+ *
+ * Pass `flakeById` when the caller already loaded flake stats to avoid a
+ * second query; otherwise flakes are loaded here.
  */
 export async function loadPopularStats(
   client: pg.PoolClient,
   testIds?: string[],
+  flakeById?: Map<string, Pick<FlakeStats, "flaky">>,
 ): Promise<Map<string, PopularStats>> {
   const params: unknown[] = [];
   let testFilter = "";
@@ -62,6 +74,8 @@ export async function loadPopularStats(
     params,
   );
 
+  const flakes = flakeById ?? (await loadFlakeStats(client, testIds));
+
   const out = new Map<string, PopularStats>();
   for (const row of rows.rows) {
     out.set(
@@ -69,6 +83,7 @@ export async function loadPopularStats(
       popularFromCounts({
         attempts: Number(row.attempts),
         fails: Number(row.fails),
+        flaky: flakes.get(row.test_id)?.flaky ?? false,
       }),
     );
   }

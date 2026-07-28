@@ -50,8 +50,8 @@ function labelKey(titlePath: string, source: string, testId: string): string {
 }
 
 /**
- * Popular (any DB fail) + flaky (corpus pass+fail), with labels/durations
- * from the latest finished corpus run when available.
+ * Popular (DB fail, excluding corpus flakes) + flaky (corpus pass+fail),
+ * with labels/durations from the latest finished corpus run when available.
  */
 export async function loadSignals(
   client: pg.PoolClient,
@@ -70,10 +70,9 @@ export async function loadSignals(
     }
   }
 
-  const [popularById, flakeById] = await Promise.all([
-    loadPopularStats(client),
-    loadFlakeStats(client),
-  ]);
+  // Flakes first so popular can exclude them without a second flake query.
+  const flakeById = await loadFlakeStats(client);
+  const popularById = await loadPopularStats(client, undefined, flakeById);
 
   const popular: SignalPopularRow[] = [];
   for (const [testId, stats] of popularById) {

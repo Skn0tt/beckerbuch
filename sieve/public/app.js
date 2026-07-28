@@ -112,7 +112,7 @@ function syncTestRow(li, t) {
     : "";
   const popularFails = Number(t.popularFails ?? t.fails ?? 0);
   const popularTitle = showPopular
-    ? `Popular failure — failed ${popularFails} time${popularFails === 1 ? "" : "s"} in DB history`
+    ? `Popular failure — failed ${popularFails} time${popularFails === 1 ? "" : "s"} in DB history (not a corpus flake)`
     : "";
 
   const badgeClass = [
@@ -566,7 +566,7 @@ function renderSignals() {
 
   if (popular.length === 0) {
     popularList.innerHTML =
-      '<li class="empty">No popular failures in DB history</li>';
+      '<li class="empty">No popular failures (non-flake) in DB history</li>';
   } else {
     popularList.innerHTML = popular
       .map((t) => {
