@@ -14,6 +14,7 @@ const budget = document.getElementById("budget");
 const latency = document.getElementById("latency");
 const budgetVal = document.getElementById("budgetVal");
 const latencyVal = document.getElementById("latencyVal");
+const deprioritizeFlakes = document.getElementById("deprioritizeFlakes");
 const testList = document.getElementById("testList");
 const workerGrid = document.getElementById("workerGrid");
 const runBtn = document.getElementById("runBtn");
@@ -31,8 +32,8 @@ const repoLabel = document.getElementById("repoLabel");
 let boot = null;
 
 /** @type {null | {
- *   selected: Array<{testId:string,source:string,durationMs:number,shardIndex:number|null,selected?:boolean,titlePath?:string}>,
- *   tests?: Array<{testId:string,source:string,durationMs:number,shardIndex:number|null,selected:boolean,titlePath?:string}>,
+ *   selected: Array<{testId:string,source:string,durationMs:number,shardIndex:number|null,selected?:boolean,titlePath?:string,flaky?:boolean,flakeScore?:number,passes?:number,fails?:number}>,
+ *   tests?: Array<{testId:string,source:string,durationMs:number,shardIndex:number|null,selected:boolean,titlePath?:string,flaky?:boolean,flakeScore?:number,passes?:number,fails?:number}>,
  *   shards: Array<{shardIndex:number,testIds:string[],durationMs:number}>,
  *   shardCount: number,
  *   baselineRunId: string,
@@ -76,9 +77,21 @@ function syncTestRow(li, t) {
   const inBudget = t.selected === true;
   const label = labelFor(t);
   const dur = `${Number(t.durationMs).toFixed(0)}ms`;
+  const flaky = t.flaky === true;
+  const flakeTitle = flaky
+    ? [
+        "Flaky",
+        `${t.passes ?? 0} passed · ${t.fails ?? 0} failed`,
+        typeof t.flakeScore === "number"
+          ? `fail share ${(t.flakeScore * 100).toFixed(0)}%`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" — ")
+    : "";
 
   if (!inBudget) {
-    li.className = "beyond";
+    li.className = flaky ? "beyond flaky" : "beyond";
     li.removeAttribute("style");
     ensureRowDom(li);
     const icon = li.children[0];
@@ -86,12 +99,16 @@ function syncTestRow(li, t) {
     icon.removeAttribute("title");
     li.children[1].textContent = label;
     li.children[2].textContent = dur;
+    const flake = li.children[3];
+    flake.classList.toggle("is-empty", !flaky);
+    flake.title = flakeTitle;
+    flake.setAttribute("aria-hidden", flaky ? "false" : "true");
     return;
   }
 
   const st = statuses[t.testId] ?? "queued";
   const c = color(t.shardIndex);
-  li.className = "";
+  li.className = flaky ? "flaky" : "";
   li.style.background = c.bg;
   li.style.borderLeftColor = c.edge;
   ensureRowDom(li);
@@ -104,20 +121,26 @@ function syncTestRow(li, t) {
   icon.title = st;
   li.children[1].textContent = label;
   li.children[2].textContent = dur;
+  const flake = li.children[3];
+  flake.classList.toggle("is-empty", !flaky);
+  flake.title = flakeTitle;
+  flake.setAttribute("aria-hidden", flaky ? "false" : "true");
 }
 
 function ensureRowDom(li) {
   if (
-    li.children.length === 3 &&
+    li.children.length === 4 &&
     li.children[0].classList.contains("icon") &&
-    li.children[2].classList.contains("dur")
+    li.children[2].classList.contains("dur") &&
+    li.children[3].classList.contains("flake")
   ) {
     return;
   }
   li.innerHTML = `
     <span class="icon"></span>
     <span></span>
-    <span class="dur"></span>`;
+    <span class="dur"></span>
+    <span class="flake is-empty" aria-hidden="true" aria-label="flaky">👻</span>`;
 }
 
 function renderList() {
@@ -314,6 +337,7 @@ async function refreshPlan() {
       latencyMs,
       baselineRunId: boot.baselineRunId ?? undefined,
       diff: boot.diffText,
+      deprioritizeFlakes: deprioritizeFlakes.checked,
     };
     plan = await fetchJson("/api/plan", {
       method: "POST",
@@ -377,6 +401,7 @@ function connectWs() {
         runBtn.disabled = false;
         budget.disabled = false;
         latency.disabled = false;
+        deprioritizeFlakes.disabled = false;
       }
     }
   });
@@ -403,6 +428,7 @@ async function onRun() {
   runBtn.disabled = true;
   budget.disabled = true;
   latency.disabled = true;
+  deprioritizeFlakes.disabled = true;
   statuses = Object.fromEntries(plan.selected.map((t) => [t.testId, "queued"]));
   renderList();
 
@@ -416,6 +442,7 @@ async function onRun() {
         budgetMs: Number(budget.value) * 1000,
         shardCount: plan.shardCount ?? plan.shards.length,
         baselineRunId: plan.baselineRunId,
+        deprioritizeFlakes: deprioritizeFlakes.checked,
       }),
     });
     activeRunId = created.runId;
@@ -427,6 +454,7 @@ async function onRun() {
       runBtn.disabled = false;
       budget.disabled = false;
       latency.disabled = false;
+      deprioritizeFlakes.disabled = false;
     }
   } catch (err) {
     console.error(err);
@@ -434,6 +462,7 @@ async function onRun() {
     runBtn.disabled = false;
     budget.disabled = false;
     latency.disabled = false;
+    deprioritizeFlakes.disabled = false;
     alert(String(err.message || err));
   }
 }
@@ -441,6 +470,7 @@ async function onRun() {
 async function main() {
   budget.addEventListener("input", schedulePlan);
   latency.addEventListener("input", schedulePlan);
+  deprioritizeFlakes.addEventListener("change", schedulePlan);
   runBtn.addEventListener("click", () => void onRun());
 
   boot = await fetchJson("/api/bootstrap");

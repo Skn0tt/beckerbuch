@@ -130,6 +130,7 @@ export type CreateDiffRunOpts = {
   shardCount?: number;
   baselineRunId?: string;
   pwWorkers?: number;
+  deprioritizeFlakes?: boolean;
 };
 
 export type CreateDiffRunResult = {
@@ -155,6 +156,7 @@ export async function createDiffAwareRun(
         budgetMs: opts.budgetMs,
         shardCount,
         baselineRunId: opts.baselineRunId,
+        deprioritizeFlakes: opts.deprioritizeFlakes,
       });
 
       const runStatus = plan.shards.length === 0 ? "done" : "queued";
@@ -601,6 +603,7 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
           baselineRunId?: string;
           diff?: string;
           shardCount?: number;
+          deprioritizeFlakes?: boolean;
         }>(req);
         const budgetMs = Number(body.budgetMs);
         if (!(budgetMs > 0)) {
@@ -618,12 +621,14 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
               body.shardCount !== undefined
                 ? Math.floor(Number(body.shardCount))
                 : undefined;
+            const deprioritizeFlakes = body.deprioritizeFlakes === true;
             // Plan once at shardCount=1 to learn selected duration, then pack.
             const preliminary = await planDiffRun(client, {
               diff: diffText!,
               budgetMs,
               shardCount: 1,
               baselineRunId: body.baselineRunId,
+              deprioritizeFlakes,
             });
             const selectedDur = preliminary.selected.reduce(
               (s, t) => s + t.durationMs,
@@ -640,6 +645,7 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
                 budgetMs,
                 shardCount: n,
                 baselineRunId: body.baselineRunId,
+                deprioritizeFlakes,
               })),
               shardCount: n,
             };
@@ -682,6 +688,7 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
           baselineRunId?: string;
           pwWorkers?: number;
           latencyMs?: number;
+          deprioritizeFlakes?: boolean;
         }>(req);
 
         if (!body.label) {
@@ -712,6 +719,7 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
                   budgetMs: Number(body.budgetMs),
                   shardCount: 1,
                   baselineRunId: body.baselineRunId,
+                  deprioritizeFlakes: body.deprioritizeFlakes === true,
                 }),
               );
               const selectedDur = prelim.selected.reduce(
@@ -730,6 +738,7 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
               shardCount,
               baselineRunId: body.baselineRunId,
               pwWorkers: body.pwWorkers,
+              deprioritizeFlakes: body.deprioritizeFlakes === true,
             });
             hub?.emit({
               type: "run",

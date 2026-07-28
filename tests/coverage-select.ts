@@ -258,6 +258,10 @@ export function lineIdf(opts: {
  *
  * IDF is over the whole coverage corpus so ubiquitous import lines
  * contribute little vs rare feature lines.
+ *
+ * When `deprioritizeFlakes` is set, density is multiplied by
+ * `1 - 0.9 * flakeScore` (see sieve flakiness helpers) so intermittent
+ * tests rank below equally covering stable ones.
  */
 export function selectTests(opts: {
   index: CoverageIndex;
@@ -269,6 +273,10 @@ export function selectTests(opts: {
    * when `index` is a sparse (diff-filtered) view of a larger corpus.
    */
   corpusSize?: number;
+  /** Per-test flake scores in [0, 1]; missing keys treated as 0. */
+  flakeScores?: Record<string, number>;
+  /** Apply flakeScores as a density penalty. */
+  deprioritizeFlakes?: boolean;
 }): string[] {
   const { index, durations, budgetMs } = opts;
   if (!(budgetMs > 0)) return [];
@@ -307,6 +315,8 @@ export function selectTests(opts: {
 
   const selected: string[] = [];
   let remaining = budgetMs;
+  const flakeScores = opts.flakeScores;
+  const deprioritize = opts.deprioritizeFlakes === true && !!flakeScores;
 
   while (pool.size > 0) {
     let bestId: string | null = null;
@@ -328,7 +338,12 @@ export function selectTests(opts: {
       }
       if (value <= 0) continue;
 
-      const density = value / dur;
+      let density = value / dur;
+      if (deprioritize) {
+        const score = flakeScores![testId] ?? 0;
+        // Keep a residual so flaky tests are last, not impossible.
+        density *= 1 - 0.9 * Math.min(1, Math.max(0, score));
+      }
       if (
         density > bestDensity ||
         (density === bestDensity &&

@@ -6,6 +6,7 @@
 import type pg from "pg";
 import { parseDiffLines, selectTests } from "../../tests/coverage-select.ts";
 import { loadDiffCoverageIndex } from "./coverage-hits.ts";
+import { loadFlakeStats } from "./flakiness.ts";
 import { packShards } from "./pack.ts";
 import { SchedulerRequestError } from "./errors.ts";
 
@@ -21,6 +22,8 @@ export type PlanDiffOpts = {
   budgetMs: number;
   shardCount: number;
   baselineRunId?: string;
+  /** When true, lower selection density for historically flaky tests. */
+  deprioritizeFlakes?: boolean;
 };
 
 export type PlanTestRow = {
@@ -31,6 +34,12 @@ export type PlanTestRow = {
   /** Set when included in the budgeted selection; null when greyed out. */
   shardIndex: number | null;
   selected: boolean;
+  /** Observed pass+fail across finished runs. */
+  flaky: boolean;
+  /** Fail share among outcomes when flaky; else 0. */
+  flakeScore: number;
+  passes: number;
+  fails: number;
 };
 
 export type PlanDiffResult = {
@@ -45,6 +54,7 @@ export type PlanDiffResult = {
    */
   tests: PlanTestRow[];
   shards: Array<{ shardIndex: number; testIds: string[]; durationMs: number }>;
+  deprioritizeFlakes: boolean;
 };
 
 export async function resolveBaselineRunId(
@@ -141,13 +151,28 @@ export async function planDiffRun(
     titlePathById[r.testId] = r.titlePath;
   }
 
+  const flakeById = await loadFlakeStats(
+    client,
+    rows.map((r) => r.testId),
+  );
+  const flakeScores: Record<string, number> = {};
+  for (const [id, stats] of flakeById) {
+    flakeScores[id] = stats.flakeScore;
+  }
+
+  const deprioritizeFlakes = opts.deprioritizeFlakes === true;
   const corpusSize = rows.length;
-  const selectedTestIds = selectTests({
+  const selectOpts = {
     index,
     durations,
     diff: opts.diff,
-    budgetMs: opts.budgetMs,
     corpusSize,
+    flakeScores,
+    deprioritizeFlakes,
+  };
+  const selectedTestIds = selectTests({
+    ...selectOpts,
+    budgetMs: opts.budgetMs,
   });
   const packed = packShards(selectedTestIds, durations, shardCount);
 
@@ -167,14 +192,21 @@ export async function planDiffRun(
     testId: string,
     selected: boolean,
     shardIndex: number | null,
-  ): PlanTestRow => ({
-    testId,
-    source: sourceById[testId] ?? "",
-    titlePath: titlePathById[testId] ?? "",
-    durationMs: durations[testId] ?? 1,
-    shardIndex,
-    selected,
-  });
+  ): PlanTestRow => {
+    const flake = flakeById.get(testId);
+    return {
+      testId,
+      source: sourceById[testId] ?? "",
+      titlePath: titlePathById[testId] ?? "",
+      durationMs: durations[testId] ?? 1,
+      shardIndex,
+      selected,
+      flaky: flake?.flaky ?? false,
+      flakeScore: flake?.flakeScore ?? 0,
+      passes: flake?.passes ?? 0,
+      fails: flake?.fails ?? 0,
+    };
+  };
 
   const selectedSet = new Set(selectedTestIds);
   const selected: PlanTestRow[] = selectedTestIds.map((testId) =>
@@ -185,11 +217,8 @@ export async function planDiffRun(
   // flips `selected` / shardIndex — no unrelated corpus filler rows.
   const totalDur = rows.reduce((s, r) => s + (r.durationMs > 0 ? r.durationMs : 1), 0);
   const rankedRelevant = selectTests({
-    index,
-    durations,
-    diff: opts.diff,
+    ...selectOpts,
     budgetMs: Math.max(totalDur, opts.budgetMs) + 1,
-    corpusSize,
   });
   const tests: PlanTestRow[] = rankedRelevant.map((testId) => {
     const inBudget = selectedSet.has(testId);
@@ -207,5 +236,6 @@ export async function planDiffRun(
     selected,
     tests,
     shards,
+    deprioritizeFlakes,
   };
 }

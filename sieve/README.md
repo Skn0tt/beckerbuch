@@ -44,13 +44,18 @@ the SQL fixture for later `serve-ui` cold starts:
 
 ```bash
 cd sieve && npm run serve-ui   # in one shell (scheduler + workers)
-cd sieve && npm run run-full   # dumps fixtures/baseline.sql (gitignored)
+cd sieve && npm run run-full   # dumps ALL corpus runs → fixtures/baseline.sql
+                               # + ~/Documents/beckerbuch-sieve/corpus-*.sql
 # optional: SIEVE_PW_WORKERS=4 npm run run-full
 # optional: npm run run-full -- --dump /tmp/baseline.sql
 # optional: npm run run-full -- --no-wait
+# optional: npm run cli -- dump-corpus   # backup without running tests
 ```
 
 Uses `sieve/.database-url` written by `serve-ui` (or `SIEVE_DATABASE_URL`).
+Each `run-full` dumps **every** finished corpus run (`baseline_run_id IS NULL`),
+not just the latest — so flake history survives restore. Also writes a stamped
+copy under `~/Documents/beckerbuch-sieve/` (`corpus-latest.sql` + timestamped).
 Restart `serve-ui` after the dump to reload the corpus (or refresh —
 bootstrap picks the latest finished **corpus** run with results —
 `baseline_run_id IS NULL`, including `failed` full runs — not a prior
@@ -60,6 +65,9 @@ diff-aware UI subset).
 
 - **CPU time** → `selectTests` (diff-affected list; beyond-budget rows dimmed)
 - **Wall time** → shard count `N = ceil(selectedDuration / latencyMs)`
+- **Deprioritize flakes** → density × `(1 - 0.9 × failShare)` for tests that
+  both passed and failed on **corpus** runs (`baseline_run_id IS NULL` —
+  not UI shards). 👻 badge; hover for pass/fail stats
 - **Run** → diff-aware `POST /runs`; icons + worker cards update over WebSocket
 - Empty / uncovered diffs → empty list (no unrelated corpus filler)
 
@@ -142,9 +150,10 @@ sieve/
     pack.ts
     workers.ts
     worker.ts
-    cli.ts             # run-full | create-run-diff | status
-    dump-baseline.ts
+    cli.ts             # run-full | dump-corpus | create-run-diff | status
+    dump-baseline.ts   # multi-run corpus SQL dump + Documents backup
     coverage-hits.ts   # inverted index write + diff-scoped load
+    flakiness.ts       # historical pass/fail → flakeScore
     commands.ts        # playwrightFullCommand + shard command
   scripts/
     serve-ui.ts        # demo boot (fixture → UI)
@@ -157,3 +166,13 @@ sieve/
 - Spawning workers from the UI
 - Auth / TLS / replacing GitHub Actions
 - Cross-run corpus merge or remapping `coverage_hits` across commits
+
+## Follow-ups
+
+- **Compress `coverage_hits`**: one row per `(run, test, file, line)` will
+  not scale (fixture ≈ 1.6M rows / hundreds of MB with indexes for a small
+  suite). Replace with int dictionaries + roaring (or plain RLE) bitmaps —
+  inverted `(file, line) → tests` for planning, optional forward
+  `(test, file) → lines`. Exact, OR-mergeable; keep sketches out of
+  selection. Cross-commit remap / statement-keyed ids stay a later step
+  (see Non-goals).

@@ -303,6 +303,39 @@ deleted file mode 100644
     }
   });
 
+  test("selectTests deprioritizeFlakes ranks stable coverage ahead of flaky", () => {
+    const index = buildIndexFromHitLines([
+      { testId: "stable", hitLines: ["app/x.ts:1"] },
+      { testId: "flaky", hitLines: ["app/x.ts:1"] },
+    ]);
+    const diff = `
+--- a/app/x.ts
++++ b/app/x.ts
+@@ -1 +1 @@
++line
+`.trim();
+    const durations = { stable: 10, flaky: 10 };
+    const without = selectTests({
+      index,
+      durations,
+      diff,
+      budgetMs: 10,
+      flakeScores: { flaky: 0.5, stable: 0 },
+    });
+    // Tie-break by id when densities equal — flaky sorts first alphabetically.
+    expect(without).toEqual(["flaky"]);
+
+    const withDep = selectTests({
+      index,
+      durations,
+      diff,
+      budgetMs: 10,
+      flakeScores: { flaky: 0.5, stable: 0 },
+      deprioritizeFlakes: true,
+    });
+    expect(withDep).toEqual(["stable"]);
+  });
+
   test("orderAndFilterTestIds keeps order and lists excludes", () => {
     const { keep, exclude } = orderAndFilterTestIds(
       ["c", "a", "b"],

@@ -6,7 +6,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SchedulerClient } from "./client.ts";
 import { playwrightFullCommand } from "./commands.ts";
-import { dumpBaselineSql, resolveDatabaseUrl } from "./dump-baseline.ts";
+import {
+  resolveDatabaseUrl,
+  writeCorpusBackups,
+} from "./dump-baseline.ts";
 import { loadGitDiff, repoRootFromEnv } from "./git.ts";
 
 const SIEVE_ROOT = path.resolve(
@@ -147,14 +150,34 @@ async function main() {
       return;
     }
     if (!dumpPath) return;
-    const { resultCount } = await dumpBaselineSql(
-      dbUrl,
-      created.runId,
-      dumpPath,
-    );
+    // Always dump the full corpus history (all mainline runs) so flake
+    // signal survives restore — not only this run's roster.
+    const backup = await writeCorpusBackups(dbUrl, {
+      fixturePath: dumpPath,
+    });
     console.log(
-      `[run-full] wrote ${dumpPath} (${resultCount} results from ${created.runId})`,
+      `[run-full] wrote corpus dump ${backup.fixturePath} (${backup.runCount} run(s), ${backup.resultCount} results)`,
     );
+    console.log(`[run-full] backup ${backup.stampedPath}`);
+    console.log(`[run-full] backup ${backup.latestPath}`);
+    return;
+  }
+
+  if (cmd === "dump-corpus") {
+    // usage: dump-corpus [out.sql]
+    const out =
+      args[0] ?? path.join(SIEVE_ROOT, "fixtures", "baseline.sql");
+    const dbUrl = await resolveDatabaseUrl();
+    if (!dbUrl) {
+      console.error("no SIEVE_DATABASE_URL / sieve/.database-url");
+      process.exit(1);
+    }
+    const backup = await writeCorpusBackups(dbUrl, { fixturePath: out });
+    console.log(
+      `[dump-corpus] ${backup.fixturePath} (${backup.runCount} run(s), ${backup.resultCount} results)`,
+    );
+    console.log(`[dump-corpus] ${backup.stampedPath}`);
+    console.log(`[dump-corpus] ${backup.latestPath}`);
     return;
   }
 
@@ -238,7 +261,7 @@ async function main() {
     return;
   }
 
-  console.error("usage: cli <run-full|create-run-diff|status> ...");
+  console.error("usage: cli <run-full|dump-corpus|create-run-diff|status> ...");
   process.exit(1);
 }
 
