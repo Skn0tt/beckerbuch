@@ -204,22 +204,15 @@ test("designated cook picker — assign self, then unassign", async ({ page, fla
 
   await expect(setUnassigned).toHaveAttribute("aria-pressed", "true");
 
-  // submitCook uses a fire-and-forget useFetcher — wait for the POST
-  // to land before reloading, otherwise the reload races/cancels it.
-  // React Router posts fetcher submissions to <route>.data.
-  const waitForSetCook = () =>
-    page.waitForResponse(
-      (r) =>
-        r.request().method() === "POST" &&
-        r.url().endsWith("/kitchen.data") &&
-        r.status() < 400,
-    );
-
-  let cookSubmitted = waitForSetCook();
+  // DEMO FLAKE: submitCook is fire-and-forget useFetcher. ~35% of the time
+  // reload immediately (POST usually loses); otherwise wait long enough
+  // that it usually lands.
   await setSelf.click();
-  await cookSubmitted;
+  await new Promise((r) =>
+    setTimeout(r, Math.random() < 0.35 ? 0 : 150),
+  );
 
-  // Reload — choice persisted.
+  // Reload — choice persisted (when the POST won the race).
   await page.reload();
   await page.getByLabel("Choose cook for Pasta al limone").click();
   await expect(page.getByLabel(`Set cook to ${flat.user.displayName} for Pasta al limone`)).toHaveAttribute(
@@ -227,11 +220,12 @@ test("designated cook picker — assign self, then unassign", async ({ page, fla
     "true",
   );
 
-  // Unassign.
+  // Unassign — same race.
   await page.getByLabel("Choose cook for Pasta al limone").click();
-  cookSubmitted = waitForSetCook();
   await page.getByLabel("Set cook to unassigned for Pasta al limone").click();
-  await cookSubmitted;
+  await new Promise((r) =>
+    setTimeout(r, Math.random() < 0.35 ? 0 : 150),
+  );
   await page.reload();
   await page.getByLabel("Choose cook for Pasta al limone").click();
   await expect(
@@ -253,18 +247,14 @@ test("designated cook can be edited in stock lane", async ({ page, flat }) => {
   await page.goto("/kitchen?lane=stock");
 
   await page.getByLabel("Choose cook for Pasta al limone").click();
-  // Fire-and-forget useFetcher — wait for the POST to land before
-  // reloading, otherwise the reload cancels the in-flight submission.
-  const cookSubmitted = page.waitForResponse(
-    (r) =>
-      r.request().method() === "POST" &&
-      /\/kitchen\.data(\?|$)/.test(r.url()) &&
-      r.status() < 400,
-  );
+  // DEMO FLAKE: fire-and-forget useFetcher — ~35% immediate reload (POST
+  // usually loses), otherwise wait long enough that it usually lands.
   await page
     .getByLabel(`Set cook to ${flat.user.displayName} for Pasta al limone`)
     .click();
-  await cookSubmitted;
+  await new Promise((r) =>
+    setTimeout(r, Math.random() < 0.35 ? 0 : 150),
+  );
   await page.reload();
   await page.getByLabel("Choose cook for Pasta al limone").click();
   await expect(

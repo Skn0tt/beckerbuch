@@ -188,14 +188,12 @@ test("note: mobile keeps + Note with controls when empty, moves note below once 
 
   await addNote.click();
   await page.getByTestId("note-input").fill("cook first");
-  const waitForSetNote = page.waitForResponse(
-    (r) =>
-      r.request().method() === "POST" &&
-      r.url().endsWith("/kitchen.data") &&
-      r.status() < 400,
-  );
+  // DEMO FLAKE: note submit is fire-and-forget; ~35% immediate reload
+  // (POST usually loses), otherwise wait long enough that it usually lands.
   await page.getByTestId("note-input").press("Enter");
-  await waitForSetNote;
+  await new Promise((r) =>
+    setTimeout(r, Math.random() < 0.35 ? 0 : 150),
+  );
   await page.reload();
   await expect(page).toHaveURL("/kitchen");
 
