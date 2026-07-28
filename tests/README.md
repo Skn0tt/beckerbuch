@@ -10,17 +10,18 @@ cookies. See [TECH.md §10](../TECH.md) for the full testing model.
 | `global-setup.ts`       | Boots a `postgres:16` Testcontainer, enables extensions, runs `drizzle-kit push`, builds the app with test-only sourcemaps (`--sourcemapClient inline --sourcemapServer`), and writes `DATABASE_URL` into `process.env` so worker fixtures inherit it. |
 | `fixtures.ts`           | Playwright `test` extended with worker fixtures (`workerProxy`, `server`, `baseURL` override) and test fixtures (`flat`, opt-in `mocks`, always-on `_coverage`). Also exports `generateInvite(page, user)` for tests that need an invite URL — it logs the user in, drives the `/flat/settings` UI, and returns the freshly minted link. The `flat` fixture provisions a flat via the admin endpoint, then redeems the bootstrap invite via the public form to mint a real first user. |
 | `server-coverage-preload.mjs` | Test-only Node preload: on `SIGUSR2`, `v8.takeCoverage()` + ack line for per-test backend coverage dumps. |
-| `coverage-remap.ts`     | Remaps Playwright JSCoverage + Node V8 coverage through source maps into Istanbul-style maps keyed by original `app/` paths; zeroes v8-to-istanbul's default-covered lines before apply so load ≠ hit; writes per-test JSON under `.playwright-data/coverage/` (durable; outside wiped `test-results/`). |
-| `coverage-remap.unit.spec.ts` | Pure unit tests for remap helpers (default-count reset, import/404 dumps must not paint unrelated bodies). |
+| `coverage-remap.ts`     | Remaps Playwright JSCoverage + Node V8 coverage through source maps into Istanbul-style maps keyed by original `app/` paths; zeroes v8-to-istanbul's default-covered lines before apply so load ≠ hit; also remaps worker inspector precise coverage for in-process `app/` unit tests; writes per-test JSON under `.playwright-data/coverage/` (durable; outside wiped `test-results/`). |
+| `coverage-remap.unit.spec.ts` | Pure unit tests for remap helpers (default-count reset, import/404 dumps must not paint unrelated bodies, worker precise coverage → `app/` hits). |
 | `coverage-select.ts`    | Library: `buildIndex` over per-test Istanbul maps + `selectTests` (diminishing-returns greedy under a duration budget). Used by `sort-reporter`. |
 | `coverage-select.unit.spec.ts` | Pure unit tests for the coverage-select helpers (imports `@playwright/test` directly — no app server). |
+| `unit-fixtures.ts`      | Lightweight `test`/`expect` for pure unit specs that import `app/` into the Playwright worker. Auto `_workerCoverage` collects inspector precise coverage (no browser / no server) and writes the same per-test Istanbul artifacts as E2E `_coverage`. |
 | `login.ts`              | Thin `login(page, user)` helper that fills the real form.     |
 | `playwright-mocks/`     | Vendored library: Playwright-shaped `Route`/`ProxyRequest`/`ProxyResponse` facade on top of [`mockttp`](https://github.com/httptoolkit/mockttp), plus the `workerProxy` + `mocks` fixtures consumed via `mergeTests`. See [`playwright-mocks/README.md`](./playwright-mocks/README.md) for the full API. |
 | `mockttp-fixture/`      | Sibling library: the bare-minimum mockttp + Playwright integration (`workerProxy` + raw `Mockttp` as `mocks`). Reference artifact for comparison — not consumed by this repo's tests. See [`mockttp-fixture/README.md`](./mockttp-fixture/README.md). |
 | `mock-handlers.ts`      | Closure-factory helpers that build reusable `route` handlers (kptncook share/search/images, OpenAI dedup) without registering them — specs hand the returned handler to `mocks.route(...)` themselves. |
 | `mock-data.ts`          | Shared test payloads (cinnamon-buns recipe, tiny 1×1 JPEG, kptncook API key). |
 | `sort-reporter.ts`      | Custom reporter: always writes `.playwright-data/duration.json` (`testId → ms`). Default `preprocess()` sorts by `test.id`. With `PLAYWRIGHT_DIFF_FILE` + `PLAYWRIGHT_DURATION_BUDGET_MS`, builds a coverage index and excludes/reorders to a budgeted subset. |
-| `*.spec.ts`             | Specs. Import `test`/`expect` from `./fixtures`.              |
+| `*.spec.ts`             | Specs. E2E imports `test`/`expect` from `./fixtures`; pure `app/` unit specs use `./unit-fixtures`; tooling-only `*.unit.spec.ts` use `@playwright/test` directly. |
 
 The app's HTTP boundary is the only seam tests use — there's no direct
 DB access from the test process. `globalSetup` owns the Postgres
@@ -45,6 +46,14 @@ paint whole sourcemapped modules as covered on load. No env flag, no extra
 npm script. Artifacts live under `.playwright-data/` (not `test-results/`)
 so they survive Playwright's outputDir wipe at the start of the next run —
 required for diff-aware selection in `preprocess`.
+
+Pure unit specs that import `app/` into the Playwright worker (e.g.
+`units.spec.ts`) cannot use the E2E `_coverage` fixture — that only sees
+browser + `react-router-serve`. Those specs import `test`/`expect` from
+`unit-fixtures.ts` instead, which collects **inspector precise coverage**
+in the worker and remaps the same way. Tooling-only `*.unit.spec.ts`
+files (coverage-select / coverage-remap helpers) stay on raw
+`@playwright/test` — they don't hit `app/` and must not boot the server.
 
 The `sort-reporter` also writes `.playwright-data/duration.json` mapping each
 `test.id` to its last-run duration in ms.
