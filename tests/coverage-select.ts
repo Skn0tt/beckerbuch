@@ -261,7 +261,7 @@ export function lineIdf(opts: {
  *
  * When `deprioritizeFlakes` is set, density is multiplied by
  * `1 - 0.9 * flakeScore` (see sieve flakiness helpers) so intermittent
- * tests rank below equally covering stable ones.
+ * tests rank below equally covering stable ones. `flakeScore` is flip rate.
  *
  * When `preferPopular` is set, density for popular tests is multiplied by
  * `popularBoost` (default 10).

@@ -20,6 +20,14 @@ const testList = document.getElementById("testList");
 const workerGrid = document.getElementById("workerGrid");
 const runBtn = document.getElementById("runBtn");
 const repoLabel = document.getElementById("repoLabel");
+const tabPlan = document.getElementById("tabPlan");
+const tabSignals = document.getElementById("tabSignals");
+const planShell = document.getElementById("planShell");
+const signalsShell = document.getElementById("signalsShell");
+const popularList = document.getElementById("popularList");
+const flakyList = document.getElementById("flakyList");
+const popularCount = document.getElementById("popularCount");
+const flakyCount = document.getElementById("flakyCount");
 
 /** @type {null | {
  *   diffText: string,
@@ -51,6 +59,11 @@ let activeRunId = null;
 let running = false;
 let planTimer = null;
 let ws = null;
+/** @type {"plan" | "signals"} */
+let activeTab = "plan";
+/** @type {null | { popular: any[], flaky: any[] }} */
+let signals = null;
+let signalsLoaded = false;
 
 function iconClass(st) {
   return "icon " + st;
@@ -81,9 +94,9 @@ function syncTestRow(li, t) {
   const flaky = t.flaky === true;
   const showGhost = flaky;
   const showPopular = t.popular === true;
-  const failRate =
-    typeof t.failRate === "number"
-      ? t.failRate
+  const flipRate =
+    typeof t.flipRate === "number"
+      ? t.flipRate
       : typeof t.flakeScore === "number"
         ? t.flakeScore
         : 0;
@@ -91,14 +104,15 @@ function syncTestRow(li, t) {
     ? [
         "Flaky",
         `${t.passes ?? 0} passed · ${t.fails ?? 0} failed`,
-        failRate > 0 ? `fail share ${(failRate * 100).toFixed(0)}%` : null,
+        typeof t.flips === "number" ? `${t.flips} flip${t.flips === 1 ? "" : "s"}` : null,
+        flipRate > 0 ? `flip rate ${(flipRate * 100).toFixed(0)}%` : null,
       ]
         .filter(Boolean)
         .join(" — ")
     : "";
   const popularFails = Number(t.popularFails ?? t.fails ?? 0);
   const popularTitle = showPopular
-    ? `Popular — failed ${popularFails} time${popularFails === 1 ? "" : "s"} in DB history`
+    ? `Popular failure — failed ${popularFails} time${popularFails === 1 ? "" : "s"} in DB history`
     : "";
 
   const badgeClass = [
@@ -169,7 +183,7 @@ function ensureRowDom(li) {
     <span></span>
     <span class="dur"></span>
     <span class="flake is-empty" aria-hidden="true" aria-label="flaky">👻</span>
-    <span class="popular-badge is-empty" aria-hidden="true" aria-label="popular">★</span>`;
+    <span class="popular-badge is-empty" aria-hidden="true" aria-label="popular failure">★</span>`;
 }
 
 function renderList() {
@@ -508,6 +522,8 @@ async function main() {
   deprioritizeFlakes.addEventListener("change", schedulePlan);
   preferPopular.addEventListener("change", schedulePlan);
   runBtn.addEventListener("click", () => void onRun());
+  tabPlan.addEventListener("click", () => setTab("plan"));
+  tabSignals.addEventListener("click", () => setTab("signals"));
 
   boot = await fetchJson("/api/bootstrap");
   repoLabel.textContent = `${boot.repoLabel} · ${boot.refLabel}`;
@@ -515,6 +531,90 @@ async function main() {
   connectWs();
   await refreshPlan();
   setInterval(renderWorkers, 1000);
+}
+
+function setTab(tab) {
+  activeTab = tab === "signals" ? "signals" : "plan";
+  const onPlan = activeTab === "plan";
+  tabPlan.setAttribute("aria-selected", onPlan ? "true" : "false");
+  tabSignals.setAttribute("aria-selected", onPlan ? "false" : "true");
+  planShell.hidden = !onPlan;
+  signalsShell.hidden = onPlan;
+  if (!onPlan) void refreshSignals();
+}
+
+async function refreshSignals() {
+  try {
+    signals = await fetchJson("/api/signals");
+    signalsLoaded = true;
+    renderSignals();
+  } catch (err) {
+    console.error(err);
+    signalsLoaded = false;
+    popularCount.textContent = "";
+    flakyCount.textContent = "";
+    popularList.innerHTML = `<li class="empty">${escapeHtml(String(err.message || err))}</li>`;
+    flakyList.innerHTML = `<li class="empty">${escapeHtml(String(err.message || err))}</li>`;
+  }
+}
+
+function renderSignals() {
+  const popular = signals?.popular ?? [];
+  const flaky = signals?.flaky ?? [];
+  popularCount.textContent = signalsLoaded ? `(${popular.length})` : "";
+  flakyCount.textContent = signalsLoaded ? `(${flaky.length})` : "";
+
+  if (popular.length === 0) {
+    popularList.innerHTML =
+      '<li class="empty">No popular failures in DB history</li>';
+  } else {
+    popularList.innerHTML = popular
+      .map((t) => {
+        const fails = Number(t.popularFails ?? 0);
+        const dur =
+          Number(t.durationMs) > 0
+            ? `${Number(t.durationMs).toFixed(0)}ms`
+            : "";
+        const meta = [`${fails} fail${fails === 1 ? "" : "s"}`, dur]
+          .filter(Boolean)
+          .join(" · ");
+        return `<li><span class="label">${escapeHtml(labelFor(t))}</span><span class="meta">${escapeHtml(meta)}</span></li>`;
+      })
+      .join("");
+  }
+
+  if (flaky.length === 0) {
+    flakyList.innerHTML = '<li class="empty">No flaky tests in corpus history</li>';
+  } else {
+    flakyList.innerHTML = flaky
+      .map((t) => {
+        const passes = Number(t.passes ?? 0);
+        const fails = Number(t.fails ?? 0);
+        const flips = Number(t.flips ?? 0);
+        const flipRate =
+          typeof t.flipRate === "number"
+            ? t.flipRate
+            : typeof t.flakeScore === "number"
+              ? t.flakeScore
+              : 0;
+        const share =
+          flipRate > 0 ? `flip rate ${(flipRate * 100).toFixed(0)}%` : "";
+        const dur =
+          Number(t.durationMs) > 0
+            ? `${Number(t.durationMs).toFixed(0)}ms`
+            : "";
+        const meta = [
+          `${passes} passed · ${fails} failed`,
+          `${flips} flip${flips === 1 ? "" : "s"}`,
+          share,
+          dur,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        return `<li><span class="label">${escapeHtml(labelFor(t))}</span><span class="meta">${escapeHtml(meta)}</span></li>`;
+      })
+      .join("");
+  }
 }
 
 void main().catch((err) => {

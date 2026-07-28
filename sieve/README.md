@@ -63,13 +63,17 @@ diff-aware UI subset).
 
 ### Dashboard knobs
 
+- **Plan / Signals tabs** → Plan is the diff-aware runner; Signals lists
+  all **Popular failures** (red ★, any DB fail) and **Flaky** (👻, corpus
+  pass+fail) tests from full history via `GET /api/signals`
 - **CPU time** → `selectTests` (diff-affected list; beyond-budget rows dimmed)
 - **Wall time** → shard count `N = ceil(selectedDuration / latencyMs)`
-- **Deprioritize flakes** → density × `(1 - 0.9 × failShare)` for tests that
-  both passed and failed on **corpus** runs (`baseline_run_id IS NULL`). 👻
-  badge; hover for pass/fail stats
-- **Prefer popular** → density × `10` for tests that failed anywhere in the
-  sieve DB (corpus + diff-aware). ★ badge; hover for fail counts
+- **Deprioritize flakes** → density × `(1 - 0.9 × flipRate)` for tests that
+  both passed and failed on **corpus** runs (`baseline_run_id IS NULL`).
+  Flip rate = status changes between consecutive corpus outcomes /
+  transitions. 👻 badge; hover for pass/fail + flip rate
+- **Prefer popular failures** → density × `10` for tests that failed anywhere
+  in the sieve DB (corpus + diff-aware). Red ★ badge; hover for fail counts
 - **Run** → diff-aware `POST /runs`; icons + worker cards update over WebSocket
 - Empty / uncovered diffs → empty list (no unrelated corpus filler)
 
@@ -155,8 +159,9 @@ sieve/
     cli.ts             # run-full | dump-corpus | create-run-diff | status
     dump-baseline.ts   # multi-run corpus SQL dump + Documents backup
     coverage-hits.ts   # inverted index write + diff-scoped load
-    flakiness.ts       # corpus pass+fail → flaky / flakeScore
+    flakiness.ts       # corpus pass+fail → flaky / flipRate flakeScore
     popular.ts         # any DB fail → popular (+ Prefer popular boost)
+    signals.ts         # GET /api/signals popular + flaky inventory
     commands.ts        # playwrightFullCommand + shard command
   scripts/
     serve-ui.ts        # demo boot (fixture → UI)

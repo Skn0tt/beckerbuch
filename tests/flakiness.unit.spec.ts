@@ -10,31 +10,49 @@ import {
 
 test.describe("flakiness", () => {
   test("stable all-pass is not flaky", () => {
-    const s = flakeScoreFromCounts({ passes: 5, fails: 0 });
+    const s = flakeScoreFromCounts({ passes: 5, fails: 0, flips: 0 });
     expect(s.flaky).toBe(false);
     expect(s.flakeScore).toBe(0);
-    expect(s.failRate).toBe(0);
+    expect(s.flipRate).toBe(0);
   });
 
-  test("single failure among passes is flaky and scores fail share", () => {
-    const s = flakeScoreFromCounts({ passes: 9, fails: 1 });
+  test("single failure among passes scores flip rate not fail share", () => {
+    // 10 outcomes, 1 status change → flipRate 1/9
+    const s = flakeScoreFromCounts({
+      passes: 9,
+      fails: 1,
+      flips: 1,
+      attempts: 10,
+    });
     expect(s.flaky).toBe(true);
     expect(s.failRate).toBeCloseTo(0.1);
-    expect(s.flakeScore).toBeCloseTo(0.1);
+    expect(s.flipRate).toBeCloseTo(1 / 9);
+    expect(s.flakeScore).toBeCloseTo(1 / 9);
   });
 
-  test("balanced flips score mid fail rate", () => {
-    const s = flakeScoreFromCounts({ passes: 2, fails: 2 });
+  test("alternating outcomes score high flip rate", () => {
+    // P F P F → 3 flips over 3 transitions
+    const s = flakeScoreFromCounts({
+      passes: 2,
+      fails: 2,
+      flips: 3,
+      attempts: 4,
+    });
     expect(s.flaky).toBe(true);
-    expect(s.failRate).toBeCloseTo(0.5);
-    expect(s.flakeScore).toBeCloseTo(0.5);
+    expect(s.flipRate).toBe(1);
+    expect(s.flakeScore).toBe(1);
   });
 
   test("always-red (no passes) is not flaky", () => {
-    const s = flakeScoreFromCounts({ passes: 0, fails: 3 });
+    const s = flakeScoreFromCounts({
+      passes: 0,
+      fails: 3,
+      flips: 0,
+      attempts: 3,
+    });
     expect(s.flaky).toBe(false);
     expect(s.flakeScore).toBe(0);
-    expect(s.failRate).toBe(1);
+    expect(s.flipRate).toBe(0);
   });
 
   test("flakeDensityWeight leaves residual at max flake", () => {

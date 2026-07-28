@@ -66,16 +66,130 @@
         font-weight: 600;
       }
 
+      header .tabs {
+        display: flex;
+        gap: 0.15rem;
+        margin-left: 0.35rem;
+      }
+
+      header .tabs button {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-size: 0.82rem;
+        font-weight: 500;
+        padding: 0.2rem 0.55rem;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+
+      header .tabs button[aria-selected="true"] {
+        color: var(--text);
+        background: rgba(0, 0, 0, 0.05);
+      }
+
+      header .tabs button:hover {
+        color: var(--text);
+      }
+
       header .repo {
         color: var(--muted);
         font-family: var(--mono);
         font-size: 0.78rem;
+        margin-left: auto;
       }
 
       .shell {
         display: grid;
         grid-template-columns: 1fr 240px;
         min-height: 0;
+      }
+
+      .shell[hidden],
+      .signals-shell[hidden] {
+        display: none !important;
+      }
+
+      .signals-shell {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+        min-height: 0;
+        padding: 0.75rem 1rem 1rem;
+      }
+
+      .signals-col {
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      .signals-col h2 {
+        margin: 0;
+        padding: 0.65rem 0.85rem;
+        font-size: 0.82rem;
+        font-weight: 600;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+      }
+
+      .signals-col h2 .count {
+        color: var(--muted);
+        font-family: var(--mono);
+        font-weight: 500;
+        font-size: 0.75rem;
+      }
+
+      .signals-col h2 .popular-star,
+      .test-list .popular-badge {
+        color: #c44b4b;
+      }
+
+      .signals-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        overflow: auto;
+        flex: 1;
+        font-family: var(--mono);
+        font-size: 0.78rem;
+      }
+
+      .signals-list li {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+        padding: 0.45rem 0.85rem;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+        align-items: stretch;
+      }
+
+      .signals-list li:last-child {
+        border-bottom: 0;
+      }
+
+      .signals-list .label {
+        line-height: 1.35;
+        word-break: break-word;
+      }
+
+      .signals-list .meta {
+        color: var(--muted);
+        font-size: 0.72rem;
+        line-height: 1.3;
+      }
+
+      .signals-list .empty {
+        opacity: 0.55;
+        padding: 0.85rem;
       }
 
       main {
@@ -394,6 +508,10 @@
           grid-template-columns: 1fr;
         }
 
+        .signals-shell {
+          grid-template-columns: 1fr;
+        }
+
         main {
           border-right: 0;
         }
@@ -407,10 +525,18 @@
   <body>
     <header>
       <h1>Sieve</h1>
+      <nav class="tabs" role="tablist" aria-label="Views">
+        <button type="button" role="tab" id="tabPlan" aria-selected="true" aria-controls="planShell">
+          Plan
+        </button>
+        <button type="button" role="tab" id="tabSignals" aria-selected="false" aria-controls="signalsShell">
+          Signals
+        </button>
+      </nav>
       <div class="repo" id="repoLabel">…</div>
     </header>
 
-    <div class="shell">
+    <div class="shell" id="planShell" role="tabpanel" aria-labelledby="tabPlan">
       <main>
         <div class="controls">
           <div class="knob">
@@ -433,7 +559,7 @@
           </label>
           <label class="toggle" title="Strongly boost tests that failed anywhere in the sieve DB (×10 density)">
             <input id="preferPopular" type="checkbox" />
-            <span>Prefer popular</span>
+            <span>Prefer popular failures</span>
           </label>
           <button class="run" id="runBtn" type="button">Run</button>
         </div>
@@ -448,6 +574,23 @@
       </aside>
     </div>
 
-    <script src="/app.js?v=flakes-popular1" type="module"></script>
+    <div class="signals-shell" id="signalsShell" role="tabpanel" aria-labelledby="tabSignals" hidden>
+      <section class="signals-col" aria-labelledby="popularHeading">
+        <h2 id="popularHeading">
+          <span class="popular-star" aria-hidden="true">★</span> Popular failures
+          <span class="count" id="popularCount"></span>
+        </h2>
+        <ul class="signals-list" id="popularList"></ul>
+      </section>
+      <section class="signals-col" aria-labelledby="flakyHeading">
+        <h2 id="flakyHeading">
+          <span aria-hidden="true">👻</span> Flaky
+          <span class="count" id="flakyCount"></span>
+        </h2>
+        <ul class="signals-list" id="flakyList"></ul>
+      </section>
+    </div>
+
+    <script src="/app.js?v=popular-failures1" type="module"></script>
   </body>
 </html>

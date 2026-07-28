@@ -18,6 +18,7 @@ import { loadGitDiff, repoLabel, repoRootFromEnv } from "./git.ts";
 import { attachHub, type EventHub } from "./hub.ts";
 import { watchRepo } from "./watch-repo.ts";
 import { planDiffRun, resolveBaselineRunId } from "./plan.ts";
+import { loadSignals } from "./signals.ts";
 import type {
   ClaimBody,
   ClaimedJob,
@@ -595,6 +596,20 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
           staleAfterMs: 2 * LEASE_SECONDS * 1000,
           pruneAfterMs: 4 * LEASE_SECONDS * 1000,
         });
+        return;
+      }
+
+      if (method === "GET" && pathOnly === "/api/signals") {
+        try {
+          const signals = await withClient(pool, (client) => loadSignals(client));
+          send(res, 200, signals);
+        } catch (err) {
+          if (err instanceof SchedulerRequestError) {
+            send(res, err.status, { error: err.code });
+            return;
+          }
+          throw err;
+        }
         return;
       }
 

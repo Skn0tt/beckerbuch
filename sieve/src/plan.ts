@@ -39,9 +39,11 @@ export type PlanTestRow = {
   selected: boolean;
   /** Observed pass+fail across finished corpus runs. */
   flaky: boolean;
-  /** Fail share among corpus outcomes; drives deprioritize when flaky. */
+  /** Flip rate among corpus outcomes; drives deprioritize when flaky. */
   flakeScore: number;
   failRate: number;
+  flipRate: number;
+  flips: number;
   passes: number;
   fails: number;
   attempts: number;
@@ -223,6 +225,8 @@ export async function planDiffRun(
       flaky: flake?.flaky ?? false,
       flakeScore: flake?.flakeScore ?? 0,
       failRate: flake?.failRate ?? 0,
+      flipRate: flake?.flipRate ?? 0,
+      flips: flake?.flips ?? 0,
       passes: flake?.passes ?? 0,
       fails: flake?.fails ?? 0,
       attempts: flake?.attempts ?? 0,

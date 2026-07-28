@@ -6,8 +6,8 @@
  * would paint every re-selected failure as flaky.
  *
  * A test is **flaky** when it both passed and failed in that history.
- * `flakeScore` is the fail share (0..1) among resolved outcomes, used to
- * deprioritize when the toggle is on.
+ * `flakeScore` is the **flip rate** (status changes between consecutive
+ * corpus outcomes / transitions), used to deprioritize when the toggle is on.
  */
 
 import type pg from "pg";
@@ -19,10 +19,15 @@ export type FlakeStats = {
   flips: number;
   /** True when both pass and fail were observed. */
   flaky: boolean;
-  /** Fail share fails/(passes+fails); 0 when never failed. */
+  /** Fail share fails/(passes+fails); informational. */
   failRate: number;
   /**
-   * Score used for density deprioritization: failRate when flaky, else 0.
+   * flips / max(attempts - 1, 1) — share of consecutive outcome pairs that
+   * changed status.
+   */
+  flipRate: number;
+  /**
+   * Score used for density deprioritization: flipRate when flaky, else 0.
    */
   flakeScore: number;
 };
@@ -39,11 +44,13 @@ export function flakeScoreFromCounts(opts: {
   const passes = Math.max(0, opts.passes);
   const fails = Math.max(0, opts.fails);
   const attempts = opts.attempts ?? passes + fails;
-  const flips = opts.flips ?? 0;
+  const flips = Math.max(0, opts.flips ?? 0);
   const resolved = passes + fails;
   const flaky = passes > 0 && fails > 0;
   const failRate = resolved > 0 ? fails / resolved : 0;
-  const flakeScore = flaky ? failRate : 0;
+  const transitions = Math.max(attempts - 1, 0);
+  const flipRate = transitions > 0 ? Math.min(1, flips / transitions) : 0;
+  const flakeScore = flaky ? flipRate : 0;
   return {
     attempts,
     passes,
@@ -51,6 +58,7 @@ export function flakeScoreFromCounts(opts: {
     flips,
     flaky,
     failRate,
+    flipRate,
     flakeScore,
   };
 }
