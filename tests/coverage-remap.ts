@@ -133,13 +133,61 @@ export async function remapFrontendCoverage(
   return merged;
 }
 
-type V8CoverageFile = {
-  result?: Array<{
-    scriptId?: string;
-    url: string;
-    functions: PlaywrightJSCoverageEntry["functions"];
-  }>;
+/** One script entry from NODE_V8_COVERAGE JSON or Profiler.takePreciseCoverage. */
+export type V8ScriptCoverage = {
+  scriptId?: string;
+  url: string;
+  functions: PlaywrightJSCoverageEntry["functions"];
 };
+
+type V8CoverageFile = {
+  result?: V8ScriptCoverage[];
+};
+
+function resolveScriptPath(url: string): string | null {
+  if (!url || url.startsWith("node:")) return null;
+  if (url.includes("node_modules")) return null;
+  let scriptPath = url;
+  if (scriptPath.startsWith("file://")) {
+    try {
+      scriptPath = fileURLToPath(scriptPath);
+    } catch {
+      return null;
+    }
+  }
+  // Playwright / Vite may append query or hash to the URL.
+  scriptPath = scriptPath.split("?")[0].split("#")[0];
+  return scriptPath;
+}
+
+async function remapV8Script(
+  into: CoverageMap,
+  script: V8ScriptCoverage,
+  kind: "backend" | "worker",
+): Promise<void> {
+  const scriptPath = resolveScriptPath(script.url);
+  if (!scriptPath) return;
+
+  if (kind === "backend") {
+    // Server dumps: only the sourcemapped production bundle.
+    if (!scriptPath.includes(`${path.sep}build${path.sep}server${path.sep}`)) {
+      return;
+    }
+  } else {
+    // Worker precise coverage: only in-process `app/` sources.
+    if (!toAppRelativeKey(scriptPath)) return;
+  }
+
+  try {
+    const converter = v8toIstanbul(scriptPath) as unknown as V8ToIstanbulConverter;
+    await converter.load();
+    resetCoverageLineCounts(converter);
+    converter.applyCoverage(script.functions);
+    mergeFiltered(into, converter.toIstanbul());
+  } catch (err) {
+    console.error(`[coverage] ${kind} remap failed for ${script.url}:`, err);
+  }
+}
 
 export async function remapBackendCoverage(
   coverageFiles: string[],
@@ -154,33 +202,22 @@ export async function remapBackendCoverage(
       continue;
     }
     for (const script of parsed.result ?? []) {
-      if (!script.url || script.url.startsWith("node:")) continue;
-      if (script.url.includes("node_modules")) continue;
-      let scriptPath = script.url;
-      if (scriptPath.startsWith("file://")) {
-        try {
-          scriptPath = fileURLToPath(scriptPath);
-        } catch {
-          continue;
-        }
-      }
-      // Only attempt remap for our server build (maps live beside it).
-      if (!scriptPath.includes(`${path.sep}build${path.sep}server${path.sep}`)) {
-        continue;
-      }
-      try {
-        const converter = v8toIstanbul(scriptPath) as unknown as V8ToIstanbulConverter;
-        await converter.load();
-        resetCoverageLineCounts(converter);
-        converter.applyCoverage(script.functions);
-        mergeFiltered(merged, converter.toIstanbul());
-      } catch (err) {
-        console.error(
-          `[coverage] backend remap failed for ${script.url}:`,
-          err,
-        );
-      }
+      await remapV8Script(merged, script, "backend");
     }
+  }
+  return merged;
+}
+
+/**
+ * Remap inspector Profiler.takePreciseCoverage (or equivalent) results
+ * for scripts that ran in the Playwright worker under `app/`.
+ */
+export async function remapWorkerCoverage(
+  scripts: V8ScriptCoverage[],
+): Promise<CoverageMap> {
+  const merged = createCoverageMap({});
+  for (const script of scripts) {
+    await remapV8Script(merged, script, "worker");
   }
   return merged;
 }
@@ -200,15 +237,24 @@ export function coverageArtifactDir(testInfo: TestInfo): string {
 
 export async function writeCoverageArtifacts(opts: {
   testInfo: TestInfo;
-  frontendEntries: PlaywrightJSCoverageEntry[];
-  backendFiles: string[];
+  frontendEntries?: PlaywrightJSCoverageEntry[];
+  backendFiles?: string[];
+  /** In-process worker coverage (Profiler.takePreciseCoverage result). */
+  workerScripts?: V8ScriptCoverage[];
 }): Promise<void> {
   const dir = coverageArtifactDir(opts.testInfo);
   await mkdir(dir, { recursive: true });
 
   const merged = createCoverageMap({});
-  merged.merge(await remapFrontendCoverage(opts.frontendEntries));
-  merged.merge(await remapBackendCoverage(opts.backendFiles));
+  if (opts.frontendEntries?.length) {
+    merged.merge(await remapFrontendCoverage(opts.frontendEntries));
+  }
+  if (opts.backendFiles?.length) {
+    merged.merge(await remapBackendCoverage(opts.backendFiles));
+  }
+  if (opts.workerScripts?.length) {
+    merged.merge(await remapWorkerCoverage(opts.workerScripts));
+  }
 
   const coveragePath = path.join(dir, "coverage.json");
   await writeFile(coveragePath, JSON.stringify(merged.toJSON(), null, 2));

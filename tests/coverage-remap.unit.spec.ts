@@ -13,8 +13,12 @@ import v8toIstanbul from "v8-to-istanbul";
 import {
   dropUntouchedFiles,
   remapBackendCoverage,
+  remapWorkerCoverage,
   resetCoverageLineCounts,
+  type V8ScriptCoverage,
 } from "./coverage-remap";
+import { Session } from "node:inspector/promises";
+import { normalizeUnit } from "../app/lib/units";
 
 async function spawnNode(opts: {
   args: string[];
@@ -194,6 +198,56 @@ test.describe("coverage-remap", () => {
       expect(appFiles.length).toBeLessThan(30);
     } finally {
       await rm(covDir, { recursive: true, force: true });
+    }
+  });
+
+  test("remapWorkerCoverage maps inspector hits on app/lib/units.ts", async () => {
+    const session = new Session();
+    session.connect();
+    let coverageStarted = false;
+    try {
+      await session.post("Profiler.enable");
+      await session.post("Profiler.startPreciseCoverage", {
+        callCount: true,
+        detailed: true,
+      });
+      coverageStarted = true;
+      // Discard baseline so only the call below counts.
+      await session.post("Profiler.takePreciseCoverage");
+
+      expect(normalizeUnit("grams")).toBe("g");
+
+      const taken = await session.post("Profiler.takePreciseCoverage");
+
+      const scripts = (
+        (taken as { result?: V8ScriptCoverage[] }).result ?? []
+      ).filter((s) => typeof s.url === "string" && s.url.length > 0);
+
+      const map = (await remapWorkerCoverage(scripts)).toJSON();
+      const units = map["app/lib/units.ts"];
+      expect(units, "app/lib/units.ts must appear after normalizeUnit()").toBeTruthy();
+      expect(Object.values(units.s).some((n) => n > 0)).toBe(true);
+
+      // Untouched app modules must not be painted by load alone.
+      for (const [file, cov] of Object.entries(map)) {
+        if (file === "app/lib/units.ts") continue;
+        if (!file.startsWith("app/")) continue;
+        // amount.ts may be hit via normalizeUnit → parseAmount; that's fine.
+        // Anything with zero hits should already have been dropped.
+        expect(
+          Object.values(cov.s).some((n) => n > 0),
+          `${file} should have been dropped if untouched`,
+        ).toBe(true);
+      }
+    } finally {
+      if (coverageStarted) {
+        try {
+          await session.post("Profiler.stopPreciseCoverage");
+        } catch {
+          // ignore — may already be stopped
+        }
+      }
+      session.disconnect();
     }
   });
 });
