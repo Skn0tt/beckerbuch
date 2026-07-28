@@ -36,9 +36,12 @@ function spawnTsx(
     cwd: REPO_ROOT,
     env: { ...baseEnv, ...env },
     stdio: ["ignore", "pipe", "pipe"],
+    // Survive parent exit / SIGHUP when the controlling shell goes away.
+    detached: true,
   });
   child.stdout?.on("data", (c: Buffer) => process.stdout.write(`[${name}] ${c}`));
   child.stderr?.on("data", (c: Buffer) => process.stderr.write(`[${name}] ${c}`));
+  child.unref();
   return child;
 }
 
@@ -63,31 +66,34 @@ async function main() {
     console.log(`[serve-ui] loading ${FIXTURE}`);
     const sql = await readFile(FIXTURE, "utf8");
     await pool.query(sql);
+    const baseline = await pool.query<{ id: string; n: string }>(
+      `SELECT r.id, count(tr.id)::text AS n
+       FROM runs r
+       JOIN test_results tr ON tr.run_id = r.id
+       WHERE r.status IN ('done', 'failed')
+       GROUP BY r.id
+       ORDER BY r.finished_at DESC NULLS LAST
+       LIMIT 1`,
+    );
+    if (baseline.rowCount) {
+      console.log(
+        `[serve-ui] baseline ${baseline.rows[0]!.id} (${baseline.rows[0]!.n} results)`,
+      );
+    } else {
+      console.warn(
+        "[serve-ui] fixture loaded but no done run with results — UI plan needs a run-full first",
+      );
+    }
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
-      throw new Error(
-        `missing ${FIXTURE} — run \`npm run run-full\` once (with serve-ui up) to dump a local corpus`,
+      console.warn(
+        `[serve-ui] no ${FIXTURE} — empty DB; run \`npm run run-full\` to build a corpus`,
       );
+    } else {
+      throw err;
     }
-    throw err;
   }
-
-  const baseline = await pool.query<{ id: string; n: string }>(
-    `SELECT r.id, count(tr.id)::text AS n
-     FROM runs r
-     JOIN test_results tr ON tr.run_id = r.id
-     WHERE r.status = 'done'
-     GROUP BY r.id
-     ORDER BY r.finished_at DESC NULLS LAST
-     LIMIT 1`,
-  );
-  if (!baseline.rowCount) {
-    throw new Error("fixture loaded but no done run with results");
-  }
-  console.log(
-    `[serve-ui] baseline ${baseline.rows[0]!.id} (${baseline.rows[0]!.n} results)`,
-  );
   await pool.end();
 
   const children: ChildProcess[] = [];
@@ -134,18 +140,29 @@ async function main() {
     REPO_ROOT,
   );
 
-  const shutdown = () => {
+  // Ctrl+C stops the stack. SIGTERM (agent/shell teardown) must NOT —
+  // children are detached so they keep serving after this parent exits.
+  const shutdownChildren = () => {
     for (const c of children) {
       try {
-        c.kill("SIGTERM");
+        if (c.pid) process.kill(-c.pid, "SIGTERM");
       } catch {
-        // ignore
+        try {
+          c.kill("SIGTERM");
+        } catch {
+          // ignore
+        }
       }
     }
     process.exit(0);
   };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdownChildren);
+  process.on("SIGTERM", () => {
+    console.log(
+      "[serve-ui] parent exiting; scheduler/workers stay up (detached). Ctrl+C to stop them via a fresh serve-ui, or pkill -f sieve/src/scheduler.ts",
+    );
+    process.exit(0);
+  });
 
   await new Promise(() => undefined);
 }

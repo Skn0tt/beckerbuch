@@ -1,5 +1,6 @@
 /**
- * Diff-aware plan: baseline corpus → selectTests → contiguous packShards.
+ * Diff-aware plan: latest-run test set + last-green coverage → selectTests
+ * → contiguous packShards.
  */
 
 import type pg from "pg";
@@ -63,10 +64,11 @@ export async function resolveBaselineRunId(
   const latest = await client.query<{ id: string }>(
     `SELECT r.id
      FROM runs r
-     WHERE r.status = 'done'
+     WHERE r.status IN ('done', 'failed')
        AND EXISTS (SELECT 1 FROM test_results tr WHERE tr.run_id = r.id)
      ORDER BY r.finished_at DESC NULLS LAST, r.created_at DESC
      LIMIT 1`,
+    [],
   );
   if (!latest.rowCount) {
     throw new SchedulerRequestError(400, "no_baseline_run");
@@ -119,8 +121,13 @@ export async function planDiffRun(
   }
 
   const baselineRunId = await resolveBaselineRunId(client, opts.baselineRunId);
+  // Test roster + durations from the baseline (latest) run; coverage lines
+  // come from each test's last green result across history.
   const { rows } = await loadBaselineCorpus(client, baselineRunId);
-  const index = await loadDiffCoverageIndex(client, baselineRunId, opts.diff);
+  const index = await loadDiffCoverageIndex(client, {
+    corpusTestIds: rows.map((r) => r.testId),
+    diff: opts.diff,
+  });
   const durations: Record<string, number> = {};
   const sourceById: Record<string, string> = {};
   const titlePathById: Record<string, string> = {};

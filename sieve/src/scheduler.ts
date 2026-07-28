@@ -936,6 +936,9 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
   server.listen(port, () => {
     console.log(`[scheduler] listening on http://127.0.0.1:${port}`);
   });
+  server.on("error", (err) => {
+    console.error("[scheduler] server error", err);
+  });
 
   return {
     server,
@@ -952,6 +955,13 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
 }
 
 async function main() {
+  process.on("uncaughtException", (err) => {
+    console.error("[scheduler] uncaughtException", err);
+  });
+  process.on("unhandledRejection", (err) => {
+    console.error("[scheduler] unhandledRejection", err);
+  });
+
   const databaseUrl = process.env.SIEVE_DATABASE_URL;
   if (!databaseUrl) {
     console.error("SIEVE_DATABASE_URL is required");

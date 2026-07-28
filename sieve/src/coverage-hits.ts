@@ -56,16 +56,20 @@ export async function replaceCoverageHits(
 }
 
 /**
- * Sparse coverage index: only lines present in `diff` (and the tests that
- * hit them). Pass `corpusSize` into `selectTests` separately.
+ * Sparse coverage index for a corpus of test ids: only lines present in
+ * `diff`, sourced from each test's **last passed** run (falls back to the
+ * latest finished attempt if a test has never passed).
+ *
+ * Pass `corpusSize` into `selectTests` separately (typically
+ * `corpusTestIds.length`).
  */
 export async function loadDiffCoverageIndex(
   client: pg.PoolClient,
-  runId: string,
-  diff: string,
+  opts: { corpusTestIds: string[]; diff: string },
 ): Promise<CoverageIndex> {
+  const { corpusTestIds, diff } = opts;
   const diffLines = parseDiffLines(diff);
-  if (diffLines.size === 0) {
+  if (diffLines.size === 0 || corpusTestIds.length === 0) {
     return buildIndexFromHitLines([]);
   }
 
@@ -81,29 +85,53 @@ export async function loadDiffCoverageIndex(
     return buildIndexFromHitLines([]);
   }
 
+  // Per corpus test: prefer last passed run that still has coverage rows;
+  // else last finished attempt (may yield empty hits for brand-new failures).
   const hits = await client.query<{
     file_path: string;
     line: number;
     test_id: string;
   }>(
-    `SELECT ch.file_path, ch.line, ch.test_id
+    `WITH last_green AS (
+       SELECT DISTINCT ON (tr.test_id)
+         tr.test_id, tr.run_id
+       FROM test_results tr
+       JOIN job_attempts ja ON ja.id = tr.attempt_id
+         AND ja.status IN ('done', 'failed')
+       WHERE tr.test_id = ANY ($1::text[])
+         AND tr.status = 'passed'
+         AND EXISTS (
+           SELECT 1 FROM coverage_hits ch
+           WHERE ch.run_id = tr.run_id AND ch.test_id = tr.test_id
+         )
+       ORDER BY tr.test_id, tr.received_at DESC
+     ),
+     last_any AS (
+       SELECT DISTINCT ON (tr.test_id)
+         tr.test_id, tr.run_id
+       FROM test_results tr
+       JOIN job_attempts ja ON ja.id = tr.attempt_id
+         AND ja.status IN ('done', 'failed')
+       WHERE tr.test_id = ANY ($1::text[])
+         AND tr.status <> 'running'
+         AND NOT EXISTS (
+           SELECT 1 FROM last_green g WHERE g.test_id = tr.test_id
+         )
+       ORDER BY tr.test_id, tr.received_at DESC
+     ),
+     source AS (
+       SELECT test_id, run_id FROM last_green
+       UNION ALL
+       SELECT test_id, run_id FROM last_any
+     )
+     SELECT ch.file_path, ch.line, ch.test_id
      FROM coverage_hits ch
+     JOIN source s ON s.test_id = ch.test_id AND s.run_id = ch.run_id
      JOIN unnest($2::text[], $3::int[]) AS d(file_path, line)
-       ON ch.file_path = d.file_path AND ch.line = d.line
-     WHERE ch.run_id = $1::uuid
-       -- Only tests still represented by a done/failed attempt in this run
-       -- (ignore hits left behind by superseded attempts).
-       AND EXISTS (
-         SELECT 1
-         FROM test_results tr
-         JOIN job_attempts ja ON ja.id = tr.attempt_id
-           AND ja.status IN ('done', 'failed')
-         WHERE tr.run_id = ch.run_id AND tr.test_id = ch.test_id
-       )`,
-    [runId, files, lines],
+       ON ch.file_path = d.file_path AND ch.line = d.line`,
+    [corpusTestIds, files, lines],
   );
 
-  // Group by test → line keys (only diff-overlapping hits).
   const byTest = new Map<string, string[]>();
   for (const row of hits.rows) {
     const key = lineKey(row.file_path, row.line);

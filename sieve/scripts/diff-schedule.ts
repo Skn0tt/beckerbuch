@@ -137,8 +137,10 @@ async function main() {
     console.log("[diff-schedule] packShards two-equal ok", packed);
   }
 
+  // Separate DB from serve-ui's reused `sieve` so drills don't wipe the
+  // demo corpus (migrate() is drop-and-recreate).
   const container = await new PostgreSqlContainer("pgvector/pgvector:pg16")
-    .withDatabase("sieve")
+    .withDatabase("sieve_drill")
     .withUsername("sieve")
     .withPassword("sieve")
     .withReuse()
@@ -233,7 +235,7 @@ async function main() {
     console.log("[diff-schedule] missing baseline ok");
   }
 
-  // Default baseline = most recent done run with results.
+  // Default baseline = most recent finished run with results.
   const defaulted = await createDiffAwareRun(pool, {
     label: "diff-default-baseline",
     diff,

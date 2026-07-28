@@ -10,8 +10,9 @@ is one producer).
 - **Postgres** is the source of truth (queue, leases, results).
 - **One scheduler** HTTP frontend.
 - **N workers** claim jobs (`FOR UPDATE SKIP LOCKED`); each job is bash.
-- **Diff-aware scheduling**: budgeted `selectTests` from a single baseline
-  run’s coverage, packed into contiguous shard jobs.
+- **Diff-aware scheduling**: budgeted `selectTests` from the latest run’s
+  test roster, with per-test coverage taken from each test’s last green
+  result, packed into contiguous shard jobs.
 - **HTML UI**: `/` + bootstrap/plan HTTP; live workers/results over `/ws`.
 
 ## Demo UI (start here)
@@ -51,7 +52,8 @@ cd sieve && npm run run-full   # dumps fixtures/baseline.sql (gitignored)
 
 Uses `sieve/.database-url` written by `serve-ui` (or `SIEVE_DATABASE_URL`).
 Restart `serve-ui` after the dump to reload the corpus (or refresh —
-bootstrap picks the latest done run with results).
+bootstrap picks the latest finished run with results, including
+`failed` runs that still produced a corpus).
 
 ### Dashboard knobs
 
@@ -91,7 +93,7 @@ Uses the same uncommitted diff as the UI (`git diff HEAD` = staged + unstaged).
 | `--cpu-time <ms>` | CPU-time budget for `selectTests` (API: `budgetMs`) |
 | `--wall-time <ms>` | Target wall time per shard → derives shard count (API: `latencyMs`) |
 | `--shards N` | Explicit shard count (overrides `--wall-time`) |
-| `--baseline` | Corpus run; if omitted, most recent `done` run with results |
+| `--baseline` | Corpus run; if omitted, most recent finished run with results (`done` or `failed`) |
 | `SIEVE_PW_WORKERS` | Optional Playwright `--workers` per shard |
 
 Packing drill (synthetic DB, no UI):
@@ -118,9 +120,10 @@ append one JSON object per line:
 ```
 
 See [`src/protocol.ts`](src/protocol.ts). Coverage hits are written into
-`coverage_hits (run_id, test_id, file_path, line)`; diff-aware planning
-queries only the lines in the diff instead of loading full per-test
-arrays.
+`coverage_hits (run_id, test_id, file_path, line)`. Diff-aware planning
+uses the latest finished run for the test roster, then for each test id
+loads hit lines from that test’s last `passed` result (so a flaky red
+latest run still has green coverage to select against).
 
 ## Layout
 
