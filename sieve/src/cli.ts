@@ -4,30 +4,23 @@
  */
 
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SchedulerClient } from "./client.ts";
+import { playwrightCommand } from "./commands.ts";
+
+export {
+  playwrightCommand,
+  playwrightShardCommand,
+  shellQuote,
+} from "./commands.ts";
 
 const SIEVE_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
 const REPO_ROOT = path.resolve(SIEVE_ROOT, "..");
-const REPORTER_PATH = path.join(SIEVE_ROOT, "src/reporter.ts");
-
-export function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-/** Bash command that runs one Playwright file and emits protocol NDJSON. */
-export function playwrightCommand(specFile: string): string {
-  return [
-    "npx playwright test",
-    shellQuote(specFile),
-    "--workers=1",
-    `--reporter=${shellQuote(REPORTER_PATH)}`,
-  ].join(" ");
-}
 
 export async function listSpecFiles(filter?: string[]): Promise<string[]> {
   if (filter && filter.length > 0) {
@@ -95,6 +88,27 @@ async function listViaPlaywright(): Promise<string[]> {
   return [...files].sort();
 }
 
+function parseFlag(
+  args: string[],
+  name: string,
+): { value: string | undefined; rest: string[] } {
+  const out: string[] = [];
+  let value: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a === name) {
+      value = args[++i];
+      continue;
+    }
+    if (a.startsWith(`${name}=`)) {
+      value = a.slice(name.length + 1);
+      continue;
+    }
+    out.push(a);
+  }
+  return { value, rest: out };
+}
+
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
   const schedulerUrl =
@@ -108,8 +122,6 @@ async function main() {
   }
 
   if (cmd === "create-run") {
-    // create-run <label> -- <command> [<command>...]
-    // create-run-playwright <label> [spec...]  (see below)
     const dash = args.indexOf("--");
     if (dash < 0) {
       console.error(
@@ -141,6 +153,59 @@ async function main() {
     return;
   }
 
+  if (cmd === "create-run-diff") {
+    let rest = args;
+    const diffParsed = parseFlag(rest, "--diff");
+    rest = diffParsed.rest;
+    const budgetParsed = parseFlag(rest, "--budget");
+    rest = budgetParsed.rest;
+    const baselineParsed = parseFlag(rest, "--baseline");
+    rest = baselineParsed.rest;
+    const shardsParsed = parseFlag(rest, "--shards");
+    rest = shardsParsed.rest;
+
+    const label = rest[0] ?? `run-${new Date().toISOString()}`;
+    if (!diffParsed.value || !budgetParsed.value) {
+      console.error(
+        "usage: cli create-run-diff <label> --diff <path> --budget <ms> [--baseline <runId>] [--shards N]",
+      );
+      process.exit(1);
+    }
+    const budgetMs = Number(budgetParsed.value);
+    if (!Number.isFinite(budgetMs) || budgetMs <= 0) {
+      console.error("budget must be a positive number");
+      process.exit(1);
+    }
+    const shardCount = shardsParsed.value
+      ? Number(shardsParsed.value)
+      : undefined;
+    if (
+      shardCount !== undefined &&
+      (!Number.isFinite(shardCount) || shardCount < 1)
+    ) {
+      console.error("shards must be a positive integer");
+      process.exit(1);
+    }
+
+    const diff = await readFile(diffParsed.value, "utf8");
+    const pwWorkersRaw = process.env.SIEVE_PW_WORKERS;
+    const pwWorkers =
+      pwWorkersRaw && Number.isFinite(Number(pwWorkersRaw))
+        ? Number(pwWorkersRaw)
+        : undefined;
+
+    const created = await client.createDiffRun({
+      label,
+      diff,
+      budgetMs,
+      shardCount,
+      baselineRunId: baselineParsed.value,
+      pwWorkers,
+    });
+    console.log(JSON.stringify(created, null, 2));
+    return;
+  }
+
   if (cmd === "status") {
     const runId = args[0];
     if (!runId) {
@@ -153,7 +218,7 @@ async function main() {
   }
 
   console.error(
-    "usage: cli <list-specs|create-run|create-run-playwright|status> ...",
+    "usage: cli <list-specs|create-run|create-run-playwright|create-run-diff|status> ...",
   );
   process.exit(1);
 }

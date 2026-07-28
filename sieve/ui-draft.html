@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sieve — UI draft</title>
+    <style>
+      :root {
+        --bg: #f4f6f8;
+        --panel: #ffffff;
+        --border: #d8dee6;
+        --text: #1a2330;
+        --muted: #6b7788;
+        --accent: #1f7a5c;
+        --stale: #b33b3b;
+        --pending: #c5ced8;
+        --mono: "SF Mono", "Menlo", "Consolas", monospace;
+        --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+
+        /* shard palette — punchy apricot / amber (still light enough for text) */
+        --s0: #ffc98a;
+        --s0-edge: #c45a00;
+        --s1: #ffb347;
+        --s1-edge: #a84800;
+        --s2: #ffd166;
+        --s2-edge: #b07a00;
+        --s3: #ffa86b;
+        --s3-edge: #c44d00;
+        --s4: #ffcc66;
+        --s4-edge: #9a6b00;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+      }
+
+      body {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-height: 100%;
+      }
+
+      header {
+        display: flex;
+        align-items: baseline;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+      }
+
+      header .repo {
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 0.78rem;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 1fr 240px;
+        min-height: 0;
+      }
+
+      main {
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        min-height: 0;
+        border-right: 1px solid var(--border);
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 1rem;
+        align-items: end;
+        padding: 0.85rem 1rem;
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .knob label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.82rem;
+        margin-bottom: 0.3rem;
+      }
+
+      .knob label span:last-child {
+        font-family: var(--mono);
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      .knob input[type="range"] {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+
+      button.run {
+        appearance: none;
+        border: 0;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 650;
+        font-size: 0.9rem;
+        padding: 0.55rem 1rem;
+        border-radius: 7px;
+        cursor: pointer;
+        min-width: 88px;
+      }
+
+      button.run:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        align-items: center;
+        padding: 0.55rem 1rem;
+        font-size: 0.78rem;
+        color: var(--muted);
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+        font-family: var(--mono);
+      }
+
+      .meta strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      .shards {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin-left: auto;
+      }
+
+      .shard {
+        font-size: 0.72rem;
+        padding: 0.15rem 0.45rem;
+        border-radius: 4px;
+        border: 1px solid transparent;
+        color: var(--text);
+      }
+
+      .tests {
+        min-height: 0;
+        padding: 0.75rem 1rem 1rem;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .test-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        overflow: auto;
+        flex: 1;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-family: var(--mono);
+        font-size: 0.78rem;
+      }
+
+      .test-list li {
+        display: grid;
+        grid-template-columns: 18px 1fr auto;
+        gap: 0.55rem;
+        align-items: center;
+        padding: 0.4rem 0.7rem;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        border-left: 3px solid transparent;
+      }
+
+      .test-list li:last-child {
+        border-bottom: 0;
+      }
+
+      .test-list li.beyond {
+        opacity: 0.35;
+        background: transparent !important;
+        border-left-color: transparent !important;
+      }
+
+      .test-list .dur {
+        color: var(--muted);
+      }
+
+      .icon {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+        border: 2px solid var(--pending);
+        background: transparent;
+      }
+
+      .icon.queued {
+        border-color: var(--pending);
+      }
+
+      .icon.running {
+        border-color: var(--accent);
+        border-top-color: transparent;
+        animation: spin 0.7s linear infinite;
+      }
+
+      .icon.ok {
+        border-color: var(--accent);
+        background: var(--accent);
+        box-shadow: inset 0 0 0 2px #fff;
+      }
+
+      .icon.fail {
+        border-color: var(--stale);
+        background: var(--stale);
+        border-radius: 3px;
+      }
+
+      .icon.skipped {
+        border-color: var(--pending);
+        background: var(--pending);
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      aside.workers {
+        padding: 0.75rem;
+        background: var(--panel);
+        overflow: auto;
+      }
+
+      .worker-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .worker {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.55rem 0.6rem;
+        background: var(--bg);
+        box-shadow: inset 3px 0 0 transparent;
+      }
+
+      .worker.stale {
+        border-color: var(--border);
+        opacity: 0.65;
+        box-shadow: inset 3px 0 0 #9aa3ad;
+        background: var(--bg);
+      }
+
+      .worker.stale .state {
+        color: var(--muted);
+      }
+
+      .worker .top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.2rem;
+      }
+
+      .worker .id {
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        font-weight: 600;
+      }
+
+      .worker .state {
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+      }
+
+      .worker.stale .state {
+        color: var(--stale);
+      }
+
+      .worker .job {
+        font-size: 0.72rem;
+        color: var(--text);
+      }
+
+      .worker .seen {
+        font-size: 0.68rem;
+        color: var(--muted);
+        font-family: var(--mono);
+        margin-top: 0.15rem;
+      }
+
+      @media (max-width: 900px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        main {
+          border-right: 0;
+        }
+
+        .controls {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Sieve</h1>
+      <div class="repo">~/beckerbuch/qvtl · main…HEAD</div>
+    </header>
+
+    <div class="shell">
+      <main>
+        <div class="controls">
+          <div class="knob">
+            <label>
+              <span>Budget</span>
+              <span id="budgetVal">60s</span>
+            </label>
+            <input id="budget" type="range" min="5" max="180" value="60" step="5" />
+          </div>
+          <div class="knob">
+            <label>
+              <span>Latency</span>
+              <span id="latencyVal">30s</span>
+            </label>
+            <input
+              id="latency"
+              type="range"
+              min="5"
+              max="120"
+              value="30"
+              step="5"
+            />
+          </div>
+          <button class="run" id="runBtn" type="button">Run</button>
+        </div>
+
+        <div class="meta">
+          <span>diff <strong>24</strong> lines</span>
+          <span><strong id="selCount">7</strong> tests · <strong id="selDur">48s</strong></span>
+          <div class="shards" id="shards"></div>
+        </div>
+
+        <div class="tests">
+          <ul class="test-list" id="testList"></ul>
+        </div>
+      </main>
+
+      <aside class="workers">
+        <div class="worker-grid" id="workerGrid"></div>
+      </aside>
+    </div>
+
+    <script>
+      const SHARD_COLORS = [
+        { bg: "var(--s0)", edge: "var(--s0-edge)" },
+        { bg: "var(--s1)", edge: "var(--s1-edge)" },
+        { bg: "var(--s2)", edge: "var(--s2-edge)" },
+        { bg: "var(--s3)", edge: "var(--s3-edge)" },
+        { bg: "var(--s4)", edge: "var(--s4-edge)" },
+      ];
+
+      const budget = document.getElementById("budget");
+      const latency = document.getElementById("latency");
+      const budgetVal = document.getElementById("budgetVal");
+      const latencyVal = document.getElementById("latencyVal");
+      const selCount = document.getElementById("selCount");
+      const selDur = document.getElementById("selDur");
+      const shardsEl = document.getElementById("shards");
+      const testList = document.getElementById("testList");
+      const workerGrid = document.getElementById("workerGrid");
+      const runBtn = document.getElementById("runBtn");
+
+      const allTests = [
+        ["auth › login redirects when session expired", 8.2],
+        ["draft › scale ingredients when bumping quantity", 7.1],
+        ["import › kptncook URL prefills form", 9.4],
+        ["bring › export snapshot after finalise", 6.0],
+        ["search › FTS finds recipe by ingredient", 5.5],
+        ["stock › cook ticks off in-stock recipe", 7.8],
+        ["coverage-select › IDF prefers rare lines", 4.0],
+        ["invite › accept joins flat", 6.2],
+        ["smoke › health", 1.1],
+      ];
+
+      /** @type {Array<'queued'|'running'|'ok'|'fail'|'skipped'|'beyond'>} */
+      let statuses = allTests.map(() => "beyond");
+      /** @type {Array<number|null>} */
+      let shardOf = allTests.map(() => null);
+      let keepCount = 0;
+      let nShards = 1;
+      let running = false;
+
+      /** Mock workers: first N claim shards 0..N-1; extras idle/stale. */
+      const workers = [
+        { id: "w1", state: "running", shard: 0, progress: "2/4", seen: "1s ago" },
+        { id: "w2", state: "running", shard: 1, progress: "1/3", seen: "0s ago" },
+        { id: "w3", state: "idle", shard: null, progress: "—", seen: "2s ago" },
+        { id: "w4", state: "stale", shard: null, progress: "—", seen: "48s ago" },
+      ];
+
+      function color(i) {
+        return SHARD_COLORS[i % SHARD_COLORS.length];
+      }
+
+      function iconClass(status) {
+        if (status === "beyond") return "icon skipped";
+        return "icon " + status;
+      }
+
+      function renderList() {
+        testList.innerHTML = allTests
+          .map(([name, dur], i) => {
+            const selected = i < keepCount;
+            const st = selected ? statuses[i] : "beyond";
+            const sh = shardOf[i];
+            const tint =
+              selected && sh !== null
+                ? `background:${color(sh).bg};border-left-color:${color(sh).edge}`
+                : "";
+            const cls = selected ? "" : "beyond";
+            return `<li class="${cls}" style="${tint}" data-i="${i}">
+              <span class="${iconClass(st)}" title="${st}"></span>
+              <span>${name}</span>
+              <span class="dur">${dur.toFixed(1)}s</span>
+            </li>`;
+          })
+          .join("");
+      }
+
+      function renderWorkers() {
+        // Bind running workers to available shards for the demo.
+        let shardCursor = 0;
+        for (const w of workers) {
+          if (w.state === "running") {
+            w.shard = shardCursor < nShards ? shardCursor : null;
+            if (w.shard !== null) shardCursor += 1;
+            else w.state = "idle";
+          }
+        }
+        // Ensure at least w3 can pick up if we had more shards mid-run mock
+        workerGrid.innerHTML = workers
+          .map((w) => {
+            const sh = w.shard;
+            const tint =
+              w.state === "running" && sh !== null
+                ? `background:${color(sh).bg};box-shadow:inset 3px 0 0 ${color(sh).edge};border-color:${color(sh).edge}`
+                : "";
+            const job =
+              w.state === "running" && sh !== null
+                ? `shard #${sh} · ${w.progress}`
+                : "—";
+            const stateColor =
+              w.state === "running" && sh !== null
+                ? `color:${color(sh).edge}`
+                : "";
+            return `<div class="worker ${w.state}" style="${tint}">
+              <div class="top">
+                <span class="id">${w.id}</span>
+                <span class="state" style="${stateColor}">${w.state}</span>
+              </div>
+              <div class="job">${job}</div>
+              <div class="seen">${w.seen}</div>
+            </div>`;
+          })
+          .join("");
+      }
+
+      function render() {
+        if (running) return;
+        const b = Number(budget.value);
+        const lat = Number(latency.value);
+        budgetVal.textContent = b + "s";
+        latencyVal.textContent = lat + "s";
+
+        let used = 0;
+        let keep = 0;
+        for (const [, dur] of allTests) {
+          if (used + dur <= b) {
+            used += dur;
+            keep += 1;
+          } else break;
+        }
+        keepCount = keep;
+        statuses = allTests.map((_, i) => (i < keep ? "queued" : "beyond"));
+
+        const selectedDur = allTests
+          .slice(0, keep)
+          .reduce((s, t) => s + t[1], 0);
+        nShards = Math.max(1, Math.ceil(selectedDur / lat) || 1);
+
+        selCount.textContent = String(keep);
+        selDur.textContent = selectedDur.toFixed(0) + "s";
+
+        const selected = allTests.slice(0, keep).map((t, i) => ({
+          idx: i,
+          name: t[0],
+          dur: t[1],
+        }));
+
+        // Contiguous packs: cut the ordered list into N slices with
+        // roughly equal duration (keeps selection order + solid color bands).
+        const bags = Array.from({ length: nShards }, () => []);
+        const sums = Array.from({ length: nShards }, () => 0);
+        shardOf = allTests.map(() => null);
+
+        let cursor = 0;
+        for (let s = 0; s < nShards; s++) {
+          const left = selected.length - cursor;
+          const shardsLeft = nShards - s;
+          if (shardsLeft === 1) {
+            while (cursor < selected.length) {
+              const t = selected[cursor++];
+              bags[s].push(t);
+              sums[s] += t.dur;
+              shardOf[t.idx] = s;
+            }
+            break;
+          }
+          const remDur = selected
+            .slice(cursor)
+            .reduce((a, t) => a + t.dur, 0);
+          const target = remDur / shardsLeft;
+          // Take the shortest prefix whose sum is >= target (or one item).
+          let take = 0;
+          let acc = 0;
+          while (cursor + take < selected.length - (shardsLeft - 1)) {
+            acc += selected[cursor + take].dur;
+            take += 1;
+            if (acc >= target) break;
+          }
+          if (take === 0 && cursor < selected.length) take = 1;
+          for (let k = 0; k < take; k++) {
+            const t = selected[cursor++];
+            bags[s].push(t);
+            sums[s] += t.dur;
+            shardOf[t.idx] = s;
+          }
+        }
+
+        shardsEl.innerHTML = bags
+          .map((bag, i) => {
+            const c = color(i);
+            return `<span class="shard" style="background:${c.bg};border-color:${c.edge}"><strong>#${i}</strong> ${bag.length} · ${sums[i].toFixed(0)}s</span>`;
+          })
+          .join("");
+
+        // reset demo worker states for idle ones
+        workers[0].state = nShards > 0 ? "running" : "idle";
+        workers[1].state = nShards > 1 ? "running" : "idle";
+        workers[2].state = "idle";
+        workers[2].shard = null;
+        workers[3].state = "stale";
+        workers[3].shard = null;
+
+        renderList();
+        renderWorkers();
+      }
+
+      budget.addEventListener("input", render);
+      latency.addEventListener("input", render);
+      render();
+
+      runBtn.addEventListener("click", async () => {
+        if (running) return;
+        running = true;
+        runBtn.disabled = true;
+        budget.disabled = true;
+        latency.disabled = true;
+
+        // Assign idle w3 to a shard if we have 3+
+        if (nShards > 2) {
+          workers[2].state = "running";
+          workers[2].shard = 2;
+          workers[2].progress = "…";
+          renderWorkers();
+        }
+
+        for (let i = 0; i < keepCount; i++) {
+          statuses[i] = "running";
+          renderList();
+          await new Promise((r) => setTimeout(r, 280));
+          statuses[i] = i === 3 ? "fail" : "ok";
+          renderList();
+        }
+
+        for (const w of workers) {
+          if (w.state === "running") {
+            w.state = "idle";
+            w.shard = null;
+          }
+        }
+        workers[3].state = "stale";
+        renderWorkers();
+
+        running = false;
+        runBtn.disabled = false;
+        budget.disabled = false;
+        latency.disabled = false;
+      });
+    </script>
+  </body>
+</html>

@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   buildIndex,
+  buildIndexFromHitLines,
   hitLinesFromIstanbul,
   orderAndFilterTestIds,
   parseDiffLines,
@@ -252,5 +253,19 @@ diff --git a/README.md b/README.md
     );
     expect(keep).toEqual(["b", "a"]);
     expect(exclude.sort()).toEqual(["c"]);
+  });
+
+  test("buildIndexFromHitLines builds the same inverted index shape", () => {
+    const index = buildIndexFromHitLines([
+      { testId: "testA", hitLines: ["app/a.ts:1", "app/a.ts:2"] },
+      { testId: "testB", hitLines: ["app/a.ts:2"] },
+      // last writer wins
+      { testId: "testA", hitLines: ["app/a.ts:1"] },
+    ]);
+    expect(index.testLines.get("testA")?.has("app/a.ts:1")).toBe(true);
+    expect(index.testLines.get("testA")?.has("app/a.ts:2")).toBe(false);
+    expect(index.lineTests.get("app/a.ts:2")?.has("testB")).toBe(true);
+    expect(index.lineTests.get("app/a.ts:2")?.has("testA")).toBeFalsy();
+    expect(index.lineTests.get("app/a.ts:1")?.has("testA")).toBe(true);
   });
 });

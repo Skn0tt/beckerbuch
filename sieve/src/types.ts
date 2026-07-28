@@ -30,6 +30,7 @@ export type ResultBody = {
   attemptId: string;
   testId: string;
   source: string;
+  titlePath?: string;
   status: string;
   durationMs: number;
   hitLines: string[];

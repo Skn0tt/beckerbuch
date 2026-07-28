@@ -1,12 +1,21 @@
 /**
  * Scheduler HTTP frontend. All correctness lives in Postgres:
  * SKIP LOCKED claims, lease tokens, heartbeats, reaper.
+ * Also serves the HTML UI + WebSocket live hub.
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
+import { readFile, stat } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type pg from "pg";
+import { playwrightShardCommand } from "./commands.ts";
 import { createPool, migrate, withClient } from "./db.ts";
+import { SchedulerRequestError } from "./errors.ts";
+import { loadGitDiff, repoLabel, repoRootFromEnv } from "./git.ts";
+import { attachHub, type EventHub } from "./hub.ts";
+import { planDiffRun, resolveBaselineRunId } from "./plan.ts";
 import type {
   ClaimBody,
   ClaimedJob,
@@ -14,10 +23,17 @@ import type {
   HeartbeatBody,
   ResultBody,
 } from "./types.ts";
+import { listWorkers, pruneGoneWorkers, workerHello } from "./workers.ts";
+
+export { SchedulerRequestError } from "./errors.ts";
 
 const LEASE_SECONDS = Number(process.env.SIEVE_LEASE_SECONDS ?? 30);
 const REAPER_MS = Number(process.env.SIEVE_REAPER_MS ?? 5000);
 const MAX_ATTEMPTS = Number(process.env.SIEVE_MAX_ATTEMPTS ?? 5);
+const PUBLIC_DIR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../public",
+);
 
 type Json = Record<string, unknown> | unknown[] | string | number | boolean | null;
 
@@ -44,6 +60,40 @@ function notFound(res: ServerResponse): void {
   send(res, 404, { error: "not_found" });
 }
 
+const MIME: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".ico": "image/x-icon",
+};
+
+async function tryServeStatic(
+  res: ServerResponse,
+  urlPath: string,
+): Promise<boolean> {
+  let rel = decodeURIComponent(urlPath.split("?")[0] ?? "/");
+  if (rel === "/" || rel === "") rel = "/index.html";
+  if (rel.includes("..")) return false;
+  const filePath = path.join(PUBLIC_DIR, rel);
+  if (!filePath.startsWith(PUBLIC_DIR)) return false;
+  try {
+    const st = await stat(filePath);
+    if (!st.isFile()) return false;
+    const data = await readFile(filePath);
+    const ext = path.extname(filePath);
+    res.writeHead(200, {
+      "content-type": MIME[ext] ?? "application/octet-stream",
+      "content-length": data.length,
+    });
+    res.end(data);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function createRun(
   pool: pg.Pool,
   opts: { label: string; commands: string[] },
@@ -55,7 +105,7 @@ export async function createRun(
         `INSERT INTO runs (label, status) VALUES ($1, 'queued') RETURNING id`,
         [opts.label],
       );
-      const runId = run.rows[0].id;
+      const runId = run.rows[0]!.id;
       for (const command of opts.commands) {
         await client.query(
           `INSERT INTO jobs (run_id, command, status) VALUES ($1, $2, 'queued')`,
@@ -71,10 +121,80 @@ export async function createRun(
   });
 }
 
+export type CreateDiffRunOpts = {
+  label: string;
+  diff: string;
+  budgetMs: number;
+  shardCount?: number;
+  baselineRunId?: string;
+  pwWorkers?: number;
+};
+
+export type CreateDiffRunResult = {
+  runId: string;
+  jobCount: number;
+  baselineRunId: string;
+  selectedTestIds: string[];
+  shards: Array<{ shardIndex: number; testIds: string[] }>;
+};
+
+export async function createDiffAwareRun(
+  pool: pg.Pool,
+  opts: CreateDiffRunOpts,
+): Promise<CreateDiffRunResult> {
+  const shardCount =
+    opts.shardCount === undefined ? 2 : Math.floor(opts.shardCount);
+
+  return withClient(pool, async (client) => {
+    await client.query("BEGIN");
+    try {
+      const plan = await planDiffRun(client, {
+        diff: opts.diff,
+        budgetMs: opts.budgetMs,
+        shardCount,
+        baselineRunId: opts.baselineRunId,
+      });
+
+      const runStatus = plan.shards.length === 0 ? "done" : "queued";
+      const run = await client.query<{ id: string }>(
+        `INSERT INTO runs (label, status, baseline_run_id, finished_at)
+         VALUES ($1, $2, $3::uuid, CASE WHEN $2 = 'done' THEN now() ELSE NULL END)
+         RETURNING id`,
+        [opts.label, runStatus, plan.baselineRunId],
+      );
+      const runId = run.rows[0]!.id;
+
+      const shards: CreateDiffRunResult["shards"] = [];
+      for (const shard of plan.shards) {
+        const command = playwrightShardCommand(shard.testIds, opts.pwWorkers);
+        await client.query(
+          `INSERT INTO jobs
+             (run_id, command, status, shard_index, test_ids, priority)
+           VALUES ($1, $2, 'queued', $3, $4::text[], $3)`,
+          [runId, command, shard.shardIndex, shard.testIds],
+        );
+        shards.push({ shardIndex: shard.shardIndex, testIds: shard.testIds });
+      }
+
+      await client.query("COMMIT");
+      return {
+        runId,
+        jobCount: plan.shards.length,
+        baselineRunId: plan.baselineRunId,
+        selectedTestIds: plan.selectedTestIds,
+        shards,
+      };
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    }
+  });
+}
+
 export async function claimJob(
   pool: pg.Pool,
   opts: { workerId: string; runId?: string },
-): Promise<ClaimedJob | null> {
+): Promise<ClaimedJob & { shardIndex?: number | null; testIds?: string[] | null } | null> {
   return withClient(pool, async (client) => {
     await client.query("BEGIN");
     try {
@@ -92,6 +212,8 @@ export async function claimJob(
         command: string;
         attempt: number;
         lease_token: string;
+        shard_index: number | null;
+        test_ids: string[] | null;
       }>(
         `
         UPDATE jobs
@@ -105,11 +227,11 @@ export async function claimJob(
         WHERE id = (
           SELECT id FROM jobs
           WHERE status = 'queued' ${runFilter}
-          ORDER BY id
+          ORDER BY priority ASC, id
           FOR UPDATE SKIP LOCKED
           LIMIT 1
         )
-        RETURNING id, run_id, command, attempt, lease_token
+        RETURNING id, run_id, command, attempt, lease_token, shard_index, test_ids
         `,
         params,
       );
@@ -119,9 +241,8 @@ export async function claimJob(
         return null;
       }
 
-      const job = updated.rows[0];
+      const job = updated.rows[0]!;
 
-      // Supersede any prior running attempt for this job.
       await client.query(
         `UPDATE job_attempts
          SET status = 'superseded', finished_at = now()
@@ -151,11 +272,13 @@ export async function claimJob(
       await client.query("COMMIT");
       return {
         jobId: job.id,
-        attemptId: attempt.rows[0].id,
+        attemptId: attempt.rows[0]!.id,
         runId: job.run_id,
         command: job.command,
         leaseToken: job.lease_token,
         attempt: job.attempt,
+        shardIndex: job.shard_index,
+        testIds: job.test_ids,
       };
     } catch (err) {
       await client.query("ROLLBACK");
@@ -189,7 +312,7 @@ export async function heartbeat(
 export async function ingestResult(
   pool: pg.Pool,
   body: ResultBody,
-): Promise<"ok" | "lost_lease"> {
+): Promise<"ok" | "lost_lease" | { ok: true; runId: string }> {
   return withClient(pool, async (client) => {
     await client.query("BEGIN");
     try {
@@ -218,28 +341,31 @@ export async function ingestResult(
         return "lost_lease";
       }
 
+      const runId = job.rows[0]!.run_id;
       await client.query(
         `INSERT INTO test_results
-           (attempt_id, run_id, test_id, source, status, duration_ms, hit_lines)
-         VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7::text[])
+           (attempt_id, run_id, test_id, source, title_path, status, duration_ms, hit_lines)
+         VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8::text[])
          ON CONFLICT (attempt_id, test_id) DO UPDATE SET
            source = EXCLUDED.source,
+           title_path = EXCLUDED.title_path,
            status = EXCLUDED.status,
            duration_ms = EXCLUDED.duration_ms,
            hit_lines = EXCLUDED.hit_lines,
            received_at = now()`,
         [
           body.attemptId,
-          job.rows[0].run_id,
+          runId,
           body.testId,
           body.source,
+          body.titlePath ?? "",
           body.status,
           body.durationMs,
           body.hitLines,
         ],
       );
       await client.query("COMMIT");
-      return "ok";
+      return { ok: true, runId };
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
@@ -250,7 +376,7 @@ export async function ingestResult(
 export async function completeJob(
   pool: pg.Pool,
   body: CompleteBody,
-): Promise<"ok" | "lost_lease"> {
+): Promise<"ok" | "lost_lease" | { ok: true; runId: string; runStatus: string }> {
   return withClient(pool, async (client) => {
     await client.query("BEGIN");
     try {
@@ -278,9 +404,14 @@ export async function completeJob(
         [body.attemptId, status, body.leaseToken],
       );
 
-      await maybeFinishRun(client, job.rows[0].run_id);
+      const runId = job.rows[0]!.run_id;
+      await maybeFinishRun(client, runId);
+      const run = await client.query<{ status: string }>(
+        `SELECT status FROM runs WHERE id = $1::uuid`,
+        [runId],
+      );
       await client.query("COMMIT");
-      return "ok";
+      return { ok: true, runId, runStatus: run.rows[0]!.status };
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
@@ -312,7 +443,11 @@ export async function reapExpiredLeases(pool: pg.Pool): Promise<number> {
   return withClient(pool, async (client) => {
     await client.query("BEGIN");
     try {
-      const expired = await client.query<{ id: string; attempt: number; run_id: string }>(
+      const expired = await client.query<{
+        id: string;
+        attempt: number;
+        run_id: string;
+      }>(
         `SELECT id, attempt, run_id FROM jobs
          WHERE status = 'running'
            AND lease_expires_at IS NOT NULL
@@ -366,25 +501,28 @@ export async function reapExpiredLeases(pool: pg.Pool): Promise<number> {
 
 export async function getRunSummary(pool: pg.Pool, runId: string) {
   const run = await pool.query(
-    `SELECT id, label, status, created_at, finished_at FROM runs WHERE id = $1::uuid`,
+    `SELECT id, label, status, baseline_run_id, created_at, finished_at
+     FROM runs WHERE id = $1::uuid`,
     [runId],
   );
   if (run.rowCount === 0) return null;
 
   const jobs = await pool.query(
-    `SELECT id, command, status, attempt, worker_id, finished_at
-     FROM jobs WHERE run_id = $1::uuid ORDER BY id`,
+    `SELECT id, command, status, attempt, worker_id, finished_at,
+            shard_index, test_ids, priority
+     FROM jobs WHERE run_id = $1::uuid ORDER BY priority ASC, id`,
     [runId],
   );
 
+  // Include running attempts so the UI can update icons mid-job.
   const results = await pool.query(
-    `SELECT tr.test_id, tr.source, tr.status, tr.duration_ms,
+    `SELECT tr.test_id, tr.source, tr.title_path, tr.status, tr.duration_ms,
             cardinality(tr.hit_lines) AS hit_line_count,
             ja.attempt_no, ja.status AS attempt_status
      FROM test_results tr
      JOIN job_attempts ja ON ja.id = tr.attempt_id
      WHERE tr.run_id = $1::uuid
-       AND ja.status = 'done'
+       AND ja.status IN ('done', 'running')
      ORDER BY tr.source, tr.test_id`,
     [runId],
   );
@@ -405,25 +543,211 @@ function matchPath(
 }
 
 export function startSchedulerServer(pool: pg.Pool, port: number) {
+  let hub: EventHub | undefined;
+
   const server = createServer(async (req, res) => {
     try {
       const method = req.method ?? "GET";
       const url = req.url ?? "/";
+      const pathOnly = url.split("?")[0] ?? url;
 
-      if (method === "GET" && url === "/health") {
+      if (method === "GET" && pathOnly === "/health") {
         send(res, 200, { ok: true });
         return;
       }
 
-      if (method === "POST" && url === "/runs") {
-        const body = await readJson<{ label?: string; commands?: string[] }>(req);
-        if (!body.label || !Array.isArray(body.commands) || body.commands.length === 0) {
-          send(res, 400, { error: "label and non-empty commands required" });
+      if (method === "GET" && pathOnly === "/api/bootstrap") {
+        const root = repoRootFromEnv();
+        const diff = await loadGitDiff(root);
+        let baselineRunId: string | null = null;
+        try {
+          await withClient(pool, async (client) => {
+            baselineRunId = await resolveBaselineRunId(client, undefined);
+          });
+        } catch {
+          baselineRunId = null;
+        }
+        send(res, 200, {
+          repoLabel: repoLabel(root),
+          refLabel: diff.refLabel,
+          diffStat: { lineCount: diff.diffLineCount },
+          diffText: diff.diffText,
+          baselineRunId,
+          hasBaseline: baselineRunId !== null,
+          // Same policy as workers.ts: stale when age > 2 * lease.
+          leaseSeconds: LEASE_SECONDS,
+          staleAfterMs: 2 * LEASE_SECONDS * 1000,
+          pruneAfterMs: 4 * LEASE_SECONDS * 1000,
+        });
+        return;
+      }
+
+      if (method === "POST" && pathOnly === "/api/plan") {
+        const body = await readJson<{
+          budgetMs?: number;
+          latencyMs?: number;
+          baselineRunId?: string;
+          diff?: string;
+          shardCount?: number;
+        }>(req);
+        const budgetMs = Number(body.budgetMs);
+        if (!(budgetMs > 0)) {
+          send(res, 400, { error: "invalid_budget" });
           return;
         }
+        let diffText = body.diff;
+        if (!diffText) {
+          diffText = (await loadGitDiff(repoRootFromEnv())).diffText;
+        }
+        try {
+          const planned = await withClient(pool, async (client) => {
+            const latencyMs = Number(body.latencyMs ?? 30_000);
+            const explicitShards =
+              body.shardCount !== undefined
+                ? Math.floor(Number(body.shardCount))
+                : undefined;
+            // Plan once at shardCount=1 to learn selected duration, then pack.
+            const preliminary = await planDiffRun(client, {
+              diff: diffText!,
+              budgetMs,
+              shardCount: 1,
+              baselineRunId: body.baselineRunId,
+            });
+            const selectedDur = preliminary.selected.reduce(
+              (s, t) => s + t.durationMs,
+              0,
+            );
+            const n =
+              explicitShards !== undefined && explicitShards >= 1
+                ? explicitShards
+                : Math.max(1, Math.ceil(selectedDur / Math.max(latencyMs, 1)));
+            if (n === 1) return { ...preliminary, shardCount: 1 };
+            return {
+              ...(await planDiffRun(client, {
+                diff: diffText!,
+                budgetMs,
+                shardCount: n,
+                baselineRunId: body.baselineRunId,
+              })),
+              shardCount: n,
+            };
+          });
+          send(res, 200, planned);
+        } catch (err) {
+          if (err instanceof SchedulerRequestError) {
+            send(res, err.status, { error: err.code });
+            return;
+          }
+          throw err;
+        }
+        return;
+      }
+
+      if (method === "POST" && pathOnly === "/workers/hello") {
+        const body = await readJson<{ workerId?: string; hostname?: string }>(
+          req,
+        );
+        if (!body.workerId) {
+          send(res, 400, { error: "workerId required" });
+          return;
+        }
+        const worker = await workerHello(pool, {
+          workerId: body.workerId,
+          hostname: body.hostname,
+        });
+        hub?.emit({ type: "worker", worker });
+        send(res, 200, { worker });
+        return;
+      }
+
+      if (method === "POST" && url === "/runs") {
+        const body = await readJson<{
+          label?: string;
+          commands?: string[];
+          diff?: string;
+          budgetMs?: number;
+          shardCount?: number;
+          baselineRunId?: string;
+          pwWorkers?: number;
+          latencyMs?: number;
+        }>(req);
+
+        if (!body.label) {
+          send(res, 400, { error: "label required" });
+          return;
+        }
+
+        const isDiff =
+          typeof body.diff === "string" &&
+          body.budgetMs !== undefined &&
+          body.budgetMs !== null;
+        const isCommands =
+          Array.isArray(body.commands) && body.commands.length > 0;
+
+        if (isDiff && isCommands) {
+          send(res, 400, { error: "commands and diff are mutually exclusive" });
+          return;
+        }
+
+        if (isDiff) {
+          try {
+            let shardCount = body.shardCount;
+            if (shardCount === undefined && body.latencyMs !== undefined) {
+              const latencyMs = Number(body.latencyMs);
+              const prelim = await withClient(pool, (client) =>
+                planDiffRun(client, {
+                  diff: body.diff!,
+                  budgetMs: Number(body.budgetMs),
+                  shardCount: 1,
+                  baselineRunId: body.baselineRunId,
+                }),
+              );
+              const selectedDur = prelim.selected.reduce(
+                (s, t) => s + t.durationMs,
+                0,
+              );
+              shardCount = Math.max(
+                1,
+                Math.ceil(selectedDur / Math.max(latencyMs, 1)),
+              );
+            }
+            const created = await createDiffAwareRun(pool, {
+              label: body.label,
+              diff: body.diff!,
+              budgetMs: Number(body.budgetMs),
+              shardCount,
+              baselineRunId: body.baselineRunId,
+              pwWorkers: body.pwWorkers,
+            });
+            hub?.emit({
+              type: "run",
+              run: {
+                id: created.runId,
+                status: created.jobCount === 0 ? "done" : "queued",
+              },
+            });
+            send(res, 201, created);
+          } catch (err) {
+            if (err instanceof SchedulerRequestError) {
+              send(res, err.status, { error: err.code });
+              return;
+            }
+            throw err;
+          }
+          return;
+        }
+
+        if (!isCommands) {
+          send(res, 400, {
+            error:
+              "label and non-empty commands required, or diff + budgetMs",
+          });
+          return;
+        }
+
         const created = await createRun(pool, {
           label: body.label,
-          commands: body.commands,
+          commands: body.commands!,
         });
         send(res, 201, created);
         return;
@@ -431,7 +755,7 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
 
       const runMatch = matchPath(url, /^\/runs\/([^/]+)$/);
       if (method === "GET" && runMatch) {
-        const summary = await getRunSummary(pool, runMatch[1]);
+        const summary = await getRunSummary(pool, runMatch[1]!);
         if (!summary) {
           notFound(res);
           return;
@@ -450,6 +774,23 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
           workerId: body.workerId,
           runId: body.runId,
         });
+        if (job) {
+          const workers = await listWorkers(pool);
+          const worker = workers.find((w) => w.id === body.workerId);
+          if (worker) hub?.emit({ type: "worker", worker });
+          hub?.emit({
+            type: "job",
+            job: {
+              id: job.jobId,
+              runId: job.runId,
+              status: "running",
+              workerId: body.workerId,
+              shardIndex: job.shardIndex ?? null,
+              testIds: job.testIds ?? null,
+            },
+          });
+          hub?.emit({ type: "run", run: { id: job.runId, status: "running" } });
+        }
         send(res, 200, { job });
         return;
       }
@@ -464,6 +805,11 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
         if (result === "lost_lease") {
           send(res, 409, { error: "lost_lease" });
           return;
+        }
+        if (body.workerId) {
+          const workers = await listWorkers(pool);
+          const worker = workers.find((w) => w.id === body.workerId);
+          if (worker) hub?.emit({ type: "worker", worker });
         }
         send(res, 200, { ok: true });
         return;
@@ -486,10 +832,22 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
           durationMs: body.durationMs ?? 0,
           status: body.status ?? "unknown",
           source: body.source ?? "",
+          titlePath: body.titlePath ?? "",
         });
         if (result === "lost_lease") {
           send(res, 409, { error: "lost_lease" });
           return;
+        }
+        if (typeof result === "object" && result.ok) {
+          hub?.emit({
+            type: "result",
+            runId: result.runId,
+            testId: body.testId,
+            status: body.status ?? "unknown",
+            durationMs: body.durationMs ?? 0,
+            source: body.source,
+            titlePath: body.titlePath,
+          });
         }
         send(res, 200, { ok: true });
         return;
@@ -509,8 +867,28 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
           send(res, 409, { error: "lost_lease" });
           return;
         }
+        if (typeof result === "object" && result.ok) {
+          hub?.emit({
+            type: "job",
+            job: {
+              id: body.jobId,
+              runId: result.runId,
+              status: body.ok ? "done" : "failed",
+            },
+          });
+          hub?.emit({
+            type: "run",
+            run: { id: result.runId, status: result.runStatus },
+          });
+          const workers = await listWorkers(pool);
+          for (const w of workers) hub?.emit({ type: "worker", worker: w });
+        }
         send(res, 200, { ok: true });
         return;
+      }
+
+      if (method === "GET") {
+        if (await tryServeStatic(res, pathOnly)) return;
       }
 
       notFound(res);
@@ -520,12 +898,22 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
     }
   });
 
+  hub = attachHub(server, {
+    getSnapshot: async () => {
+      const workers = await listWorkers(pool);
+      return { workers };
+    },
+  });
+
   const reaper = setInterval(() => {
     void reapExpiredLeases(pool)
       .then((n) => {
         if (n > 0) console.log(`[scheduler] reaped ${n} expired lease(s)`);
       })
       .catch((err) => console.error("[scheduler] reaper error", err));
+    void pruneGoneWorkers(pool).catch((err) =>
+      console.error("[scheduler] worker prune error", err),
+    );
   }, REAPER_MS);
   reaper.unref();
 
@@ -535,8 +923,10 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
 
   return {
     server,
+    hub,
     close: async () => {
       clearInterval(reaper);
+      hub?.close();
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));
       });

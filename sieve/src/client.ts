@@ -44,13 +44,51 @@ export class SchedulerClient {
     return json;
   }
 
+  async createDiffRun(opts: {
+    label: string;
+    diff: string;
+    budgetMs: number;
+    shardCount?: number;
+    baselineRunId?: string;
+    pwWorkers?: number;
+  }): Promise<{
+    runId: string;
+    jobCount: number;
+    baselineRunId: string;
+    selectedTestIds: string[];
+    shards: Array<{ shardIndex: number; testIds: string[] }>;
+  }> {
+    const { status, json } = await this.request<{
+      runId: string;
+      jobCount: number;
+      baselineRunId: string;
+      selectedTestIds: string[];
+      shards: Array<{ shardIndex: number; testIds: string[] }>;
+      error?: string;
+    }>("POST", "/runs", opts);
+    if (status >= 400) {
+      throw new Error(json.error ?? `createDiffRun failed (${status})`);
+    }
+    return json;
+  }
+
   async getRun(runId: string): Promise<{
-    run: { id: string; label: string; status: string };
+    run: {
+      id: string;
+      label: string;
+      status: string;
+      baseline_run_id?: string | null;
+    };
     jobs: Array<Record<string, unknown>>;
     results: Array<Record<string, unknown>>;
   }> {
     const { status, json } = await this.request<{
-      run: { id: string; label: string; status: string };
+      run: {
+        id: string;
+        label: string;
+        status: string;
+        baseline_run_id?: string | null;
+      };
       jobs: Array<Record<string, unknown>>;
       results: Array<Record<string, unknown>>;
       error?: string;
@@ -59,6 +97,17 @@ export class SchedulerClient {
       throw new Error(json.error ?? `getRun failed (${status})`);
     }
     return json;
+  }
+
+  async hello(workerId: string, hostname?: string): Promise<void> {
+    const { status, json } = await this.request<{ error?: string }>(
+      "POST",
+      "/workers/hello",
+      { workerId, hostname },
+    );
+    if (status >= 400) {
+      throw new Error(json.error ?? `hello failed (${status})`);
+    }
   }
 
   async claim(workerId: string, runId?: string): Promise<ClaimedJob | null> {

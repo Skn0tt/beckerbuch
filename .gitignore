@@ -17,6 +17,7 @@
 
 # sieve local install
 /sieve/node_modules/
+/sieve/.bootstrap-diff.patch
 
 # Local Netlify folder
 .netlify

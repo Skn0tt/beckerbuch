@@ -111,7 +111,9 @@ async function main() {
     attemptId: second.attemptId,
     ok: true,
   });
-  if (fresh !== "ok") throw new Error(`expected fresh complete ok, got ${fresh}`);
+  if (!(typeof fresh === "object" && fresh.ok)) {
+    throw new Error(`expected fresh complete ok, got ${JSON.stringify(fresh)}`);
+  }
   console.log("[claim-race] fencing: stale complete rejected, fresh accepted");
 
   await close();
