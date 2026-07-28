@@ -20,6 +20,7 @@
 /sieve/.bootstrap-diff.patch
 /sieve/.database-url
 /sieve/fixtures/baseline.sql
+/sieve/.artifacts/
 
 # Local Netlify folder
 .netlify

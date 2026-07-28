@@ -1,6 +1,9 @@
 /**
  * Long-running local serve for the HTML UI:
- *   Postgres → load fixtures/baseline.sql → scheduler → idle workers.
+ *   Postgres → load fixtures/baseline.sql → scheduler.
+ *
+ * Does not start workers — prints copy-paste commands for separate
+ * terminals (SIEVE_WORKERS controls how many examples, default 2).
  *
  * Opens http://127.0.0.1:9101/. Plan/Run use uncommitted git changes
  * (`git diff HEAD`) from the repo root — no synthetic bootstrap diff.
@@ -118,21 +121,6 @@ async function main() {
   }
   if (!(await client.health())) throw new Error("scheduler not healthy");
 
-  for (let i = 1; i <= WORKERS; i++) {
-    children.push(
-      spawnTsx(
-        "src/worker.ts",
-        {
-          SIEVE_SCHEDULER_URL: `http://127.0.0.1:${PORT}`,
-          SIEVE_WORKER_ID: `w${i}`,
-          SIEVE_WORKDIR: REPO_ROOT,
-          PLAYWRIGHT_FORCE_ASYNC_LOADER: "1",
-        },
-        `worker-w${i}`,
-      ),
-    );
-  }
-
   console.log(
     `[serve-ui] open http://127.0.0.1:${PORT}/  (Ctrl+C to stop)`,
   );
@@ -140,9 +128,17 @@ async function main() {
     "[serve-ui] plan/Run use git diff HEAD (uncommitted) under",
     REPO_ROOT,
   );
+  console.log(
+    `[serve-ui] start ${WORKERS} worker(s) in separate terminal(s), from ${SIEVE_ROOT}:`,
+  );
+  for (let i = 1; i <= WORKERS; i++) {
+    console.log(
+      `  SIEVE_SCHEDULER_URL=http://127.0.0.1:${PORT} SIEVE_WORKER_ID=w${i} SIEVE_WORKDIR=${REPO_ROOT} npm run worker`,
+    );
+  }
 
-  // Ctrl+C stops the stack. SIGTERM (agent/shell teardown) must NOT —
-  // children are detached so they keep serving after this parent exits.
+  // Ctrl+C stops the scheduler. SIGTERM (agent/shell teardown) must NOT —
+  // the child is detached so it keeps serving after this parent exits.
   const shutdownChildren = () => {
     for (const c of children) {
       try {
@@ -160,7 +156,7 @@ async function main() {
   process.on("SIGINT", shutdownChildren);
   process.on("SIGTERM", () => {
     console.log(
-      "[serve-ui] parent exiting; scheduler/workers stay up (detached). Ctrl+C to stop them via a fresh serve-ui, or pkill -f sieve/src/scheduler.ts",
+      "[serve-ui] parent exiting; scheduler stays up (detached). Ctrl+C in this terminal to stop it, or pkill -f sieve/src/scheduler.ts",
     );
     process.exit(0);
   });

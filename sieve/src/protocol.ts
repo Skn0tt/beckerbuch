@@ -27,6 +27,15 @@ export const RESULTS_FILE_ENV = "SIEVE_RESULTS_FILE";
 /** JSON array of Playwright test.id values this shard should keep. */
 export const TEST_IDS_ENV = "SIEVE_TEST_IDS";
 
+/** Path to planner shard spec JSON (`{ testIds, files? }`). */
+export const SHARD_SPEC_ENV = "SIEVE_SHARD_SPEC";
+
+/** Writable artifact directory for this job. */
+export const JOB_DIR_ENV = "SIEVE_JOB_DIR";
+
+/** JSON array of `{ name, jobId, path }` for direct dependency job dirs. */
+export const DEP_DIRS_ENV = "SIEVE_DEP_DIRS";
+
 export const TEST_RESULT_TYPE = "test_result" as const;
 
 export type TestResultEvent = {

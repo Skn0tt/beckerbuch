@@ -9,7 +9,8 @@
     "run-full": "tsx src/cli.ts run-full",
     "serve-ui": "tsx scripts/serve-ui.ts",
     "demo": "tsx scripts/demo.ts",
-    "diff-schedule": "tsx scripts/diff-schedule.ts"
+    "diff-schedule": "tsx scripts/diff-schedule.ts",
+    "schedule-apply": "tsx scripts/schedule-apply.ts"
   },
   "dependencies": {
     "@testcontainers/postgresql": "^12.0.1",

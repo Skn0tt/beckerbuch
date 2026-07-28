@@ -7,6 +7,7 @@
 DROP TABLE IF EXISTS coverage_hits CASCADE;
 DROP TABLE IF EXISTS test_results CASCADE;
 DROP TABLE IF EXISTS job_attempts CASCADE;
+DROP TABLE IF EXISTS job_deps CASCADE;
 DROP TABLE IF EXISTS jobs CASCADE;
 DROP TABLE IF EXISTS workers CASCADE;
 DROP TABLE IF EXISTS runs CASCADE;
@@ -28,7 +29,7 @@ CREATE TABLE jobs (
   run_id            uuid NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
   command           text NOT NULL,
   status            text NOT NULL DEFAULT 'queued'
-                      CHECK (status IN ('queued', 'running', 'done', 'failed')),
+                      CHECK (status IN ('queued', 'running', 'done', 'failed', 'blocked', 'skipped')),
   worker_id         text,
   lease_token       uuid,
   lease_expires_at  timestamptz,
@@ -37,13 +38,25 @@ CREATE TABLE jobs (
   finished_at       timestamptz,
   shard_index       int,
   test_ids          text[],
-  priority          int NOT NULL DEFAULT 0
+  priority          int NOT NULL DEFAULT 0,
+  name              text,
+  kind              text,
+  UNIQUE (run_id, name)
 );
 
 CREATE INDEX jobs_run_status_idx ON jobs (run_id, status);
 CREATE INDEX jobs_lease_expiry_idx
   ON jobs (lease_expires_at)
   WHERE status = 'running';
+
+CREATE TABLE job_deps (
+  job_id uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  depends_on_job_id uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  PRIMARY KEY (job_id, depends_on_job_id),
+  CHECK (job_id <> depends_on_job_id)
+);
+
+CREATE INDEX job_deps_depends_on_idx ON job_deps (depends_on_job_id);
 
 CREATE TABLE job_attempts (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),

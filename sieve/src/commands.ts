@@ -4,13 +4,16 @@
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { TEST_IDS_ENV } from "./protocol.ts";
+import { SHARD_SPEC_ENV, TEST_IDS_ENV } from "./protocol.ts";
 
 const SIEVE_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
 export const REPORTER_PATH = path.join(SIEVE_ROOT, "src/reporter.ts");
+const PLANNER_PATH = path.join(SIEVE_ROOT, "src/planner.ts");
+const FLAKE_RERUN_PATH = path.join(SIEVE_ROOT, "src/flake-rerun.ts");
+const RUN_SHARD_PATH = path.join(SIEVE_ROOT, "src/run-shard.ts");
 
 export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -55,4 +58,29 @@ export function playwrightShardCommand(
   }
   parts.push(`--reporter=${shellQuote(REPORTER_PATH)}`);
   return parts.join(" ");
+}
+
+/**
+ * Shard that loads `{ testIds, files? }` from a planner artifact path.
+ */
+export function playwrightShardFromSpecCommand(
+  specPath: string,
+  pwWorkers?: number,
+): string {
+  const parts = [
+    `${SHARD_SPEC_ENV}=${shellQuote(specPath)}`,
+    `npx tsx ${shellQuote(RUN_SHARD_PATH)}`,
+  ];
+  if (typeof pwWorkers === "number" && pwWorkers > 0) {
+    parts.push(`--workers=${pwWorkers}`);
+  }
+  return parts.join(" ");
+}
+
+export function plannerCommand(): string {
+  return `npx tsx ${shellQuote(PLANNER_PATH)}`;
+}
+
+export function flakeRerunCommand(): string {
+  return `npx tsx ${shellQuote(FLAKE_RERUN_PATH)}`;
 }

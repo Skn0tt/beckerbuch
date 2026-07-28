@@ -328,8 +328,11 @@ function renderWorkers() {
     stateEl.style.color =
       runningShard && fresh ? color(sh).edge : "";
 
-    el.querySelector(".job").textContent = runningShard
-      ? `shard #${sh}${w.testIds ? ` · ${w.testIds.length}` : ""}`
+    el.querySelector(".job").textContent = w.jobId
+      ? w.jobName ||
+        (runningShard
+          ? `shard #${sh}${w.testIds ? ` · ${w.testIds.length}` : ""}`
+          : w.jobKind || w.jobId.slice(0, 8))
       : "—";
 
     const hb = el.querySelector(".hb");

@@ -5,6 +5,10 @@
 //
 // With `withReuse()`, the container survives across `playwright test`
 // invocations on a developer machine; CI cold-starts.
+//
+// Sieve shards each run this file in a separate process. The build sets
+// `VITE_EMPTY_OUT_DIR=0` so Vite skips rmdir of `build/` (avoids
+// ENOTEMPTY races when two builds overlap).
 
 import { execSync } from "node:child_process";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
@@ -59,9 +63,15 @@ export default async function globalSetup() {
   // Pass `--sourcemapServer` with no value so the CLI parses a real
   // boolean `true`. `--sourcemapServer true` becomes the string
   // `"true"`, which Vite 8 / Rolldown rejects.
+  //
+  // VITE_EMPTY_OUT_DIR=0 → vite.config build.emptyOutDir=false so
+  // concurrent sieve shard globalSetups don't race on rmdir(build/…).
   execSync(
     "npx react-router build --sourcemapClient inline --sourcemapServer",
-    { stdio: "inherit" },
+    {
+      stdio: "inherit",
+      env: { ...process.env, VITE_EMPTY_OUT_DIR: "0" },
+    },
   );
 
   process.env.DATABASE_URL = databaseUrl;

@@ -19,6 +19,8 @@ export type WorkerView = {
   runId?: string;
   shardIndex?: number | null;
   testIds?: string[] | null;
+  jobName?: string | null;
+  jobKind?: string | null;
 };
 
 export async function pruneGoneWorkers(pool: pg.Pool): Promise<number> {
@@ -71,12 +73,15 @@ export async function listWorkers(pool: pg.Pool): Promise<WorkerView[]> {
     run_id: string | null;
     shard_index: number | null;
     test_ids: string[] | null;
+    job_name: string | null;
+    job_kind: string | null;
   }>(
     `SELECT w.id, w.hostname, w.last_seen_at,
-            j.id AS job_id, j.run_id, j.shard_index, j.test_ids
+            j.id AS job_id, j.run_id, j.shard_index, j.test_ids,
+            j.name AS job_name, j.kind AS job_kind
      FROM workers w
      LEFT JOIN LATERAL (
-       SELECT id, run_id, shard_index, test_ids
+       SELECT id, run_id, shard_index, test_ids, name, kind
        FROM jobs
        WHERE worker_id = w.id AND status = 'running'
        ORDER BY claimed_at DESC NULLS LAST
@@ -106,6 +111,8 @@ export async function listWorkers(pool: pg.Pool): Promise<WorkerView[]> {
       runId: r.run_id ?? undefined,
       shardIndex: r.shard_index,
       testIds: r.test_ids,
+      jobName: r.job_name,
+      jobKind: r.job_kind,
     };
   });
 }

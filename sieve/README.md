@@ -10,9 +10,15 @@ is one producer).
 - **Postgres** is the source of truth (queue, leases, results).
 - **One scheduler** HTTP frontend.
 - **N workers** claim jobs (`FOR UPDATE SKIP LOCKED`); each job is bash.
-- **Diff-aware scheduling**: budgeted `selectTests` from the latest run’s
-  test roster, with per-test coverage taken from each test’s last green
-  result, packed into file-aware (LPT) shard jobs.
+- **Per-job artifact dirs** under `SIEVE_ARTIFACTS_DIR` (default
+  `sieve/.artifacts/{runId}/{jobId}/`) — shared disk now, S3 prefix later.
+- **Diff-aware runs** enqueue a **planner** job only. The planner calls
+  `/api/plan`, writes `shard-N.json` specs + `schedule.json`, and exits.
+  On planner `complete(ok)`, the scheduler parses `schedule.json` and
+  inserts shard jobs plus a blocked **flake-rerun** that `needs` all shards.
+- **Flake-rerun** unlocks when every shard is terminal, merges each shard’s
+  `failures.json`, reruns failures, and decides the run status (shard exit
+  codes alone do not fail the run when a flake job exists).
 - **HTML UI**: `/` + bootstrap/plan HTTP; live workers/results over `/ws`.
 
 ## Demo UI (start here)
@@ -28,11 +34,13 @@ npm run serve-ui
 
 | Env | Default | Meaning |
 |-----|---------|---------|
-| `SIEVE_WORKERS` | `2` | Idle workers for the sidebar |
+| `SIEVE_WORKERS` | `2` | How many worker commands `serve-ui` prints |
 | `SIEVE_PORT` | `9101` | Scheduler listen port |
+| `SIEVE_ARTIFACTS_DIR` | `sieve/.artifacts` | Shared job artifact root |
 
 `serve-ui` boots Postgres (Testcontainers), applies [`src/schema.sql`](src/schema.sql),
-loads `fixtures/baseline.sql`, then opens the dashboard.
+loads `fixtures/baseline.sql`, starts the scheduler, then prints copy-paste
+`npm run worker` commands (it does **not** start workers itself).
 Plan/Run read **uncommitted** changes via `git diff HEAD` (staged + unstaged).
 Override with `SIEVE_BOOTSTRAP_DIFF_FILE` / `SIEVE_BOOTSTRAP_DIFF` if needed.
 
@@ -78,10 +86,15 @@ picks the latest finished **corpus** run with results —
 - **Prefer popular failures** → density × `10` for tests that failed in the
   sieve DB but are **not** corpus flakes (flakes stay on the flaky signal).
   Red ★ badge; hover for fail counts
-- **Run** → diff-aware `POST /runs`; icons + worker cards update over WebSocket
-- Empty / uncovered diffs → empty list (no unrelated corpus filler)
+- **Run** → enqueues a planner job (`POST /runs`); shards + flake-rerun appear
+  after the planner completes (`schedule.json`); icons + worker cards update
+  over WebSocket (job cards show name/kind; per-shard `test_ids` live in
+  planner artifact files, not the jobs row)
+- Empty / uncovered diffs → Plan tab empty list; Run still starts a planner
+  that writes no `schedule.json` and the run finishes clean
 
-Workers are started by `serve-ui` (or manually with `npm run worker`).
+Start workers in other terminals with the commands `serve-ui` prints (or
+`npm run worker` with `SIEVE_SCHEDULER_URL` / `SIEVE_WORKER_ID`).
 `PLAYWRIGHT_BROWSERS_PATH` is cleared automatically (Cursor sandbox cache
 breaks Chromium); you do not need to unset it by hand.
 
@@ -152,9 +165,16 @@ UI runs are not used as the roster (they point at a corpus via
 sieve/
   public/              # HTML dashboard (served at /)
   fixtures/            # local baseline.sql (gitignored; from run-full)
+  .artifacts/          # per-job dirs (gitignored; SIEVE_ARTIFACTS_DIR)
   src/
     schema.sql
     scheduler.ts
+    artifacts.ts       # job dir helpers + schedule/failures filenames
+    schedule.ts        # parse + apply schedule.json on complete
+    unlock.ts          # blocked → queued/skipped/failed
+    planner.ts         # planner job: plan → specs + schedule.json
+    run-shard.ts       # shard from SIEVE_SHARD_SPEC
+    flake-rerun.ts     # merge failures.json + rerun
     hub.ts
     plan.ts
     pack.ts            # file-group LPT shard packing
@@ -166,11 +186,12 @@ sieve/
     flakiness.ts       # corpus pass+fail → flaky / flipRate flakeScore
     popular.ts         # DB fail − corpus flakes → popular (+ Prefer popular boost)
     signals.ts         # GET /api/signals popular + flaky inventory
-    commands.ts        # playwrightFullCommand + shard command
+    commands.ts        # playwright + planner/flake command builders
   scripts/
     serve-ui.ts        # demo boot (fixture → UI)
     demo.ts            # opaque Playwright bash demo
     diff-schedule.ts
+    schedule-apply.ts  # schedule.json + unlock drill
 ```
 
 ## Non-goals

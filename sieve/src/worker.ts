@@ -4,12 +4,15 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { open, rm, mkdir, stat } from "node:fs/promises";
+import { open, rm, mkdir, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { FAILURES_FILENAME } from "./artifacts.ts";
 import { LostLeaseError, SchedulerClient } from "./client.ts";
 import {
+  DEP_DIRS_ENV,
+  JOB_DIR_ENV,
   parseResultLine,
   RESULTS_FILE_ENV,
   type TestResultEvent,
@@ -222,7 +225,16 @@ async function runBashJob(
     env: (() => {
       // Cursor (and some CI) sets this to a sandbox cache without browsers.
       const { PLAYWRIGHT_BROWSERS_PATH: _drop, ...rest } = process.env;
-      return { ...rest, [RESULTS_FILE_ENV]: resultsFile };
+      const env: Record<string, string | undefined> = {
+        ...rest,
+        [RESULTS_FILE_ENV]: resultsFile,
+        SIEVE_SCHEDULER_URL: client.baseUrl,
+        SIEVE_RUN_ID: job.runId,
+        SIEVE_JOB_ID: job.jobId,
+      };
+      if (job.jobDir) env[JOB_DIR_ENV] = job.jobDir;
+      if (job.depDirs) env[DEP_DIRS_ENV] = JSON.stringify(job.depDirs);
+      return env;
     })(),
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
@@ -265,6 +277,18 @@ async function runBashJob(
 
   if (forwardFailed) {
     return abandonWithoutComplete("incomplete result forward");
+  }
+
+  // On clean exit, ensure failures.json exists (`[]`) so unlock can treat
+  // done+missing as empty. Failed jobs leave the file absent unless the
+  // reporter wrote it — unlock then fails flake_rerun for incomplete output.
+  if (job.jobDir && exitCode === 0) {
+    const failuresPath = path.join(job.jobDir, FAILURES_FILENAME);
+    try {
+      await stat(failuresPath);
+    } catch {
+      await writeFile(failuresPath, "[]\n", "utf8").catch(() => undefined);
+    }
   }
 
   try {

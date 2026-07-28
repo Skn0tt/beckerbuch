@@ -13,7 +13,7 @@ export class LostLeaseError extends Error {
 }
 
 export class SchedulerClient {
-  constructor(private readonly baseUrl: string) {}
+  constructor(readonly baseUrl: string) {}
 
   private async request<T>(
     method: string,
@@ -57,15 +57,11 @@ export class SchedulerClient {
     runId: string;
     jobCount: number;
     baselineRunId: string;
-    selectedTestIds: string[];
-    shards: Array<{ shardIndex: number; testIds: string[] }>;
   }> {
     const { status, json } = await this.request<{
       runId: string;
       jobCount: number;
       baselineRunId: string;
-      selectedTestIds: string[];
-      shards: Array<{ shardIndex: number; testIds: string[] }>;
       error?: string;
     }>("POST", "/runs", opts);
     if (status >= 400) {

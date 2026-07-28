@@ -6,12 +6,17 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type pg from "pg";
-import { playwrightShardCommand } from "./commands.ts";
-import { shardSourceFiles } from "./pack.ts";
+import {
+  ensureJobDir,
+  jobDir,
+  PLAN_REQUEST_FILENAME,
+  type DepDir,
+} from "./artifacts.ts";
+import { plannerCommand } from "./commands.ts";
 import { parseHitLines, replaceCoverageHits } from "./coverage-hits.ts";
 import { createPool, migrate, withClient } from "./db.ts";
 import { SchedulerRequestError } from "./errors.ts";
@@ -19,6 +24,8 @@ import { loadGitDiff, repoLabel, repoRootFromEnv } from "./git.ts";
 import { attachHub, type EventHub } from "./hub.ts";
 import { watchRepo } from "./watch-repo.ts";
 import { planDiffRun, resolveBaselineRunId } from "./plan.ts";
+import type { PlanRequest } from "./planner.ts";
+import { applyScheduleFromJobDir } from "./schedule.ts";
 import { loadSignals } from "./signals.ts";
 import type {
   ClaimBody,
@@ -27,6 +34,7 @@ import type {
   HeartbeatBody,
   ResultBody,
 } from "./types.ts";
+import { unlockDependents } from "./unlock.ts";
 import { listWorkers, pruneGoneWorkers, workerHello } from "./workers.ts";
 
 export { SchedulerRequestError } from "./errors.ts";
@@ -130,6 +138,8 @@ export type CreateDiffRunOpts = {
   diff: string;
   budgetMs: number;
   shardCount?: number;
+  /** Target wall-clock per shard; planner derives shard count when set. */
+  latencyMs?: number;
   baselineRunId?: string;
   pwWorkers?: number;
   deprioritizeFlakes?: boolean;
@@ -140,66 +150,60 @@ export type CreateDiffRunResult = {
   runId: string;
   jobCount: number;
   baselineRunId: string;
-  selectedTestIds: string[];
-  shards: Array<{ shardIndex: number; testIds: string[] }>;
 };
 
+/**
+ * Enqueue a single planner job. The planner writes shard specs +
+ * schedule.json; the scheduler applies that manifest on planner complete.
+ */
 export async function createDiffAwareRun(
   pool: pg.Pool,
   opts: CreateDiffRunOpts,
 ): Promise<CreateDiffRunResult> {
-  const shardCount =
-    opts.shardCount === undefined ? 2 : Math.floor(opts.shardCount);
-
   return withClient(pool, async (client) => {
     await client.query("BEGIN");
     try {
-      const plan = await planDiffRun(client, {
-        diff: opts.diff,
-        budgetMs: opts.budgetMs,
-        shardCount,
-        baselineRunId: opts.baselineRunId,
-        deprioritizeFlakes: opts.deprioritizeFlakes,
-        preferPopular: opts.preferPopular,
-      });
+      const baselineRunId = await resolveBaselineRunId(
+        client,
+        opts.baselineRunId,
+      );
 
-      const runStatus = plan.shards.length === 0 ? "done" : "queued";
       const run = await client.query<{ id: string }>(
-        `INSERT INTO runs (label, status, baseline_run_id, finished_at)
-         VALUES ($1, $2, $3::uuid, CASE WHEN $2 = 'done' THEN now() ELSE NULL END)
+        `INSERT INTO runs (label, status, baseline_run_id)
+         VALUES ($1, 'queued', $2::uuid)
          RETURNING id`,
-        [opts.label, runStatus, plan.baselineRunId],
+        [opts.label, baselineRunId],
       );
       const runId = run.rows[0]!.id;
 
-      const sourceById: Record<string, string> = {};
-      for (const t of plan.selected) sourceById[t.testId] = t.source;
+      const job = await client.query<{ id: string }>(
+        `INSERT INTO jobs
+           (run_id, command, status, name, kind, priority)
+         VALUES ($1::uuid, $2, 'queued', 'planner', 'planner', 0)
+         RETURNING id`,
+        [runId, plannerCommand()],
+      );
+      const jobId = job.rows[0]!.id;
 
-      const shards: CreateDiffRunResult["shards"] = [];
-      for (const shard of plan.shards) {
-        const files = shardSourceFiles(shard.testIds, sourceById);
-        const command = playwrightShardCommand(
-          shard.testIds,
-          opts.pwWorkers,
-          files,
-        );
-        await client.query(
-          `INSERT INTO jobs
-             (run_id, command, status, shard_index, test_ids, priority)
-           VALUES ($1, $2, 'queued', $3, $4::text[], $3)`,
-          [runId, command, shard.shardIndex, shard.testIds],
-        );
-        shards.push({ shardIndex: shard.shardIndex, testIds: shard.testIds });
-      }
+      const dir = await ensureJobDir(runId, jobId);
+      const planRequest: PlanRequest = {
+        diff: opts.diff,
+        budgetMs: opts.budgetMs,
+        shardCount: opts.shardCount,
+        latencyMs: opts.latencyMs,
+        baselineRunId,
+        pwWorkers: opts.pwWorkers,
+        deprioritizeFlakes: opts.deprioritizeFlakes,
+        preferPopular: opts.preferPopular,
+      };
+      await writeFile(
+        path.join(dir, PLAN_REQUEST_FILENAME),
+        JSON.stringify(planRequest, null, 2),
+        "utf8",
+      );
 
       await client.query("COMMIT");
-      return {
-        runId,
-        jobCount: plan.shards.length,
-        baselineRunId: plan.baselineRunId,
-        selectedTestIds: plan.selectedTestIds,
-        shards,
-      };
+      return { runId, jobCount: 1, baselineRunId };
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
@@ -210,7 +214,7 @@ export async function createDiffAwareRun(
 export async function claimJob(
   pool: pg.Pool,
   opts: { workerId: string; runId?: string },
-): Promise<ClaimedJob & { shardIndex?: number | null; testIds?: string[] | null } | null> {
+): Promise<ClaimedJob | null> {
   return withClient(pool, async (client) => {
     await client.query("BEGIN");
     try {
@@ -230,6 +234,8 @@ export async function claimJob(
         lease_token: string;
         shard_index: number | null;
         test_ids: string[] | null;
+        name: string | null;
+        kind: string | null;
       }>(
         `
         UPDATE jobs
@@ -247,7 +253,8 @@ export async function claimJob(
           FOR UPDATE SKIP LOCKED
           LIMIT 1
         )
-        RETURNING id, run_id, command, attempt, lease_token, shard_index, test_ids
+        RETURNING id, run_id, command, attempt, lease_token,
+                  shard_index, test_ids, name, kind
         `,
         params,
       );
@@ -285,6 +292,24 @@ export async function claimJob(
         [opts.workerId, process.env.HOSTNAME ?? "unknown"],
       );
 
+      const deps = await client.query<{
+        id: string;
+        name: string | null;
+      }>(
+        `SELECT dep.id, dep.name
+         FROM job_deps d
+         JOIN jobs dep ON dep.id = d.depends_on_job_id
+         WHERE d.job_id = $1::uuid
+         ORDER BY dep.name NULLS LAST, dep.id`,
+        [job.id],
+      );
+      const depDirs: DepDir[] = deps.rows.map((d) => ({
+        name: d.name ?? d.id,
+        jobId: d.id,
+        path: jobDir(job.run_id, d.id),
+      }));
+      const claimedJobDir = await ensureJobDir(job.run_id, job.id);
+
       await client.query("COMMIT");
       return {
         jobId: job.id,
@@ -295,6 +320,10 @@ export async function claimJob(
         attempt: job.attempt,
         shardIndex: job.shard_index,
         testIds: job.test_ids,
+        name: job.name,
+        kind: job.kind,
+        jobDir: claimedJobDir,
+        depDirs,
       };
     } catch (err) {
       await client.query("ROLLBACK");
@@ -399,11 +428,45 @@ export async function ingestResult(
 export async function completeJob(
   pool: pg.Pool,
   body: CompleteBody,
-): Promise<"ok" | "lost_lease" | { ok: true; runId: string; runStatus: string }> {
+): Promise<
+  | "ok"
+  | "lost_lease"
+  | { ok: true; runId: string; runStatus: string; jobStatus: string }
+> {
   return withClient(pool, async (client) => {
     await client.query("BEGIN");
     try {
-      const status = body.ok ? "done" : "failed";
+      const running = await client.query<{ run_id: string }>(
+        `SELECT run_id FROM jobs
+         WHERE id = $1::uuid
+           AND lease_token = $2::uuid
+           AND status = 'running'
+         FOR UPDATE`,
+        [body.jobId, body.leaseToken],
+      );
+      if (running.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return "lost_lease";
+      }
+      const runId = running.rows[0]!.run_id;
+
+      let jobStatus: string = body.ok ? "done" : "failed";
+
+      if (body.ok) {
+        await client.query("SAVEPOINT schedule_apply");
+        try {
+          await applyScheduleFromJobDir(client, {
+            runId,
+            jobId: body.jobId,
+          });
+          await client.query("RELEASE SAVEPOINT schedule_apply");
+        } catch (err) {
+          console.error("[scheduler] schedule apply failed", err);
+          await client.query("ROLLBACK TO SAVEPOINT schedule_apply");
+          jobStatus = "failed";
+        }
+      }
+
       const job = await client.query<{ run_id: string }>(
         `UPDATE jobs
          SET status = $3,
@@ -413,7 +476,7 @@ export async function completeJob(
            AND lease_token = $2::uuid
            AND status = 'running'
          RETURNING run_id`,
-        [body.jobId, body.leaseToken, status],
+        [body.jobId, body.leaseToken, jobStatus],
       );
       if (job.rowCount === 0) {
         await client.query("ROLLBACK");
@@ -424,17 +487,22 @@ export async function completeJob(
         `UPDATE job_attempts
          SET status = $2, finished_at = now()
          WHERE id = $1::uuid AND lease_token = $3::uuid AND status = 'running'`,
-        [body.attemptId, status, body.leaseToken],
+        [body.attemptId, jobStatus === "done" ? "done" : "failed", body.leaseToken],
       );
 
-      const runId = job.rows[0]!.run_id;
+      await unlockDependents(client, runId);
       await maybeFinishRun(client, runId);
       const run = await client.query<{ status: string }>(
         `SELECT status FROM runs WHERE id = $1::uuid`,
         [runId],
       );
       await client.query("COMMIT");
-      return { ok: true, runId, runStatus: run.rows[0]!.status };
+      return {
+        ok: true,
+        runId,
+        runStatus: run.rows[0]!.status,
+        jobStatus,
+      };
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
@@ -445,17 +513,30 @@ export async function completeJob(
 async function maybeFinishRun(client: pg.PoolClient, runId: string): Promise<void> {
   const open = await client.query(
     `SELECT 1 FROM jobs
-     WHERE run_id = $1::uuid AND status IN ('queued', 'running')
+     WHERE run_id = $1::uuid AND status IN ('queued', 'running', 'blocked')
      LIMIT 1`,
     [runId],
   );
   if (open.rowCount && open.rowCount > 0) return;
 
-  const failed = await client.query(
-    `SELECT 1 FROM jobs WHERE run_id = $1::uuid AND status = 'failed' LIMIT 1`,
+  const flake = await client.query<{ status: string }>(
+    `SELECT status FROM jobs
+     WHERE run_id = $1::uuid AND kind = 'flake_rerun'
+     ORDER BY id
+     LIMIT 1`,
     [runId],
   );
-  const status = failed.rowCount && failed.rowCount > 0 ? "failed" : "done";
+  let status: string;
+  if (flake.rowCount && flake.rowCount > 0) {
+    const fs = flake.rows[0]!.status;
+    status = fs === "failed" ? "failed" : "done";
+  } else {
+    const failed = await client.query(
+      `SELECT 1 FROM jobs WHERE run_id = $1::uuid AND status = 'failed' LIMIT 1`,
+      [runId],
+    );
+    status = failed.rowCount && failed.rowCount > 0 ? "failed" : "done";
+  }
   await client.query(
     `UPDATE runs SET status = $2, finished_at = now() WHERE id = $1::uuid`,
     [runId, status],
@@ -498,6 +579,7 @@ export async function reapExpiredLeases(pool: pg.Pool): Promise<number> {
              WHERE id = $1`,
             [job.id],
           );
+          await unlockDependents(client, job.run_id);
           await maybeFinishRun(client, job.run_id);
         } else {
           await client.query(
@@ -532,7 +614,7 @@ export async function getRunSummary(pool: pg.Pool, runId: string) {
 
   const jobs = await pool.query(
     `SELECT id, command, status, attempt, worker_id, finished_at,
-            shard_index, test_ids, priority
+            shard_index, test_ids, priority, name, kind
      FROM jobs WHERE run_id = $1::uuid ORDER BY priority ASC, id`,
     [runId],
   );
@@ -741,33 +823,18 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
 
         if (isDiff) {
           try {
-            let shardCount = body.shardCount;
-            if (shardCount === undefined && body.latencyMs !== undefined) {
-              const latencyMs = Number(body.latencyMs);
-              const prelim = await withClient(pool, (client) =>
-                planDiffRun(client, {
-                  diff: body.diff!,
-                  budgetMs: Number(body.budgetMs),
-                  shardCount: 1,
-                  baselineRunId: body.baselineRunId,
-                  deprioritizeFlakes: body.deprioritizeFlakes === true,
-                  preferPopular: body.preferPopular === true,
-                }),
-              );
-              const selectedDur = prelim.selected.reduce(
-                (s, t) => s + t.durationMs,
-                0,
-              );
-              shardCount = Math.max(
-                1,
-                Math.ceil(selectedDur / Math.max(latencyMs, 1)),
-              );
-            }
             const created = await createDiffAwareRun(pool, {
               label: body.label,
               diff: body.diff!,
               budgetMs: Number(body.budgetMs),
-              shardCount,
+              shardCount:
+                body.shardCount !== undefined
+                  ? Math.floor(Number(body.shardCount))
+                  : undefined,
+              latencyMs:
+                body.latencyMs !== undefined
+                  ? Number(body.latencyMs)
+                  : undefined,
               baselineRunId: body.baselineRunId,
               pwWorkers: body.pwWorkers,
               deprioritizeFlakes: body.deprioritizeFlakes === true,
@@ -775,10 +842,7 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
             });
             hub?.emit({
               type: "run",
-              run: {
-                id: created.runId,
-                status: created.jobCount === 0 ? "done" : "queued",
-              },
+              run: { id: created.runId, status: "queued" },
             });
             send(res, 201, created);
           } catch (err) {
@@ -927,7 +991,7 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
             job: {
               id: body.jobId,
               runId: result.runId,
-              status: body.ok ? "done" : "failed",
+              status: result.jobStatus,
             },
           });
           hub?.emit({
@@ -936,6 +1000,10 @@ export function startSchedulerServer(pool: pg.Pool, port: number) {
           });
           const workers = await listWorkers(pool);
           for (const w of workers) hub?.emit({ type: "worker", worker: w });
+          if (result.jobStatus === "failed" && body.ok) {
+            send(res, 500, { error: "schedule_apply_failed", ok: false });
+            return;
+          }
         }
         send(res, 200, { ok: true });
         return;

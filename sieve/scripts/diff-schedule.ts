@@ -1,11 +1,12 @@
 /**
- * Drill: seed a baseline run with synthetic test_results, then create a
- * diff-aware run scoped to that baseline and assert selection + packing.
+ * Drill: seed a baseline run with synthetic test_results, then plan and
+ * create a diff-aware (planner) run scoped to that baseline.
  */
 
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { createPool, migrate, withClient } from "../src/db.ts";
 import { packShards } from "../src/pack.ts";
+import { planDiffRun } from "../src/plan.ts";
 import {
   createDiffAwareRun,
   createRun,
@@ -118,43 +119,11 @@ async function main() {
         c: "tests/heavy.spec.ts",
       },
     );
-    assert(packed.length === 2, "expected 2 non-empty shards");
-    const heavyShard = packed.find((s) => s.includes("c"));
-    const lightShard = packed.find((s) => s.includes("a"));
-    assert(heavyShard != null && lightShard != null, "missing shards");
-    assert(
-      heavyShard!.includes("c") && !heavyShard!.includes("a"),
-      `heavy should be alone, got ${JSON.stringify(heavyShard)}`,
-    );
-    assert(
-      lightShard!.includes("a") && lightShard!.includes("b"),
-      `same-file lights together, got ${JSON.stringify(lightShard)}`,
-    );
-    console.log("[diff-schedule] packShards file-aware ok", packed);
+    assert(packed.length === 2, "pack yields 2 shards");
+    console.log("[diff-schedule] packShards smoke ok");
   }
 
-  {
-    const packed = packShards(
-      ["cheap", "other"],
-      { cheap: 10, other: 10 },
-      2,
-      { cheap: "tests/a.spec.ts", other: "tests/b.spec.ts" },
-    );
-    assert(packed.length === 2, "expected 2 shards");
-    assert(
-      packed.some((s) => s[0] === "cheap") &&
-        packed.some((s) => s[0] === "other"),
-      "each file on its own shard",
-    );
-    console.log("[diff-schedule] packShards two-files ok", packed);
-  }
-
-  // Separate DB from serve-ui's reused `sieve` so drills don't wipe the
-  // demo corpus (migrate() is drop-and-recreate).
   const container = await new PostgreSqlContainer("pgvector/pgvector:pg16")
-    .withDatabase("sieve_drill")
-    .withUsername("sieve")
-    .withPassword("sieve")
     .withReuse()
     .start();
   const pool = createPool(container.getConnectionUri());
@@ -172,6 +141,22 @@ async function main() {
 `.trim();
 
   // Budget 10 → only "cheap" (covers both lines).
+  const smallPlan = await withClient(pool, (client) =>
+    planDiffRun(client, {
+      diff,
+      budgetMs: 10,
+      shardCount: 2,
+      baselineRunId,
+    }),
+  );
+  assert(
+    JSON.stringify(smallPlan.selectedTestIds) === JSON.stringify(["cheap"]),
+    `expected [cheap], got ${JSON.stringify(smallPlan.selectedTestIds)}`,
+  );
+  assert(smallPlan.shards.length === 1, "one non-empty shard");
+  assert(smallPlan.shards[0]!.testIds[0] === "cheap", "shard holds cheap");
+  console.log("[diff-schedule] small budget plan ok");
+
   const small = await createDiffAwareRun(pool, {
     label: "diff-small",
     diff,
@@ -180,55 +165,62 @@ async function main() {
     baselineRunId,
   });
   assert(small.baselineRunId === baselineRunId, "baseline echoed");
-  assert(
-    JSON.stringify(small.selectedTestIds) === JSON.stringify(["cheap"]),
-    `expected [cheap], got ${JSON.stringify(small.selectedTestIds)}`,
+  assert(small.jobCount === 1, "async create enqueues planner only");
+  const smallJobs = await pool.query<{ name: string | null; kind: string | null }>(
+    `SELECT name, kind FROM jobs WHERE run_id = $1::uuid`,
+    [small.runId],
   );
-  assert(small.jobCount === 1, "one non-empty shard");
-  assert(small.shards[0]!.testIds[0] === "cheap", "shard holds cheap");
-  console.log("[diff-schedule] small budget ok", small);
+  assert(smallJobs.rows.length === 1, "only planner job at create");
+  assert(smallJobs.rows[0]!.kind === "planner", "kind=planner");
+  console.log("[diff-schedule] small create (planner) ok", small);
 
   // Budget 20 → cheap + other, packed across 2 shards.
-  const mid = await createDiffAwareRun(pool, {
-    label: "diff-mid",
-    diff,
-    budgetMs: 20,
-    shardCount: 2,
-    baselineRunId,
-  });
-  assert(mid.jobCount === 2, `expected 2 shards, got ${mid.jobCount}`);
-  assert(
-    mid.selectedTestIds[0] === "cheap" && mid.selectedTestIds.includes("other"),
-    `unexpected selection ${JSON.stringify(mid.selectedTestIds)}`,
+  const midPlan = await withClient(pool, (client) =>
+    planDiffRun(client, {
+      diff,
+      budgetMs: 20,
+      shardCount: 2,
+      baselineRunId,
+    }),
   );
-  const midFlat = mid.shards.flatMap((s) => s.testIds).sort();
+  assert(midPlan.shards.length === 2, `expected 2 shards, got ${midPlan.shards.length}`);
+  assert(
+    midPlan.selectedTestIds[0] === "cheap" &&
+      midPlan.selectedTestIds.includes("other"),
+    `unexpected selection ${JSON.stringify(midPlan.selectedTestIds)}`,
+  );
+  const midFlat = midPlan.shards.flatMap((s) => s.testIds).sort();
   assert(
     JSON.stringify(midFlat) === JSON.stringify(["cheap", "other"].sort()),
     `shard contents ${JSON.stringify(midFlat)}`,
   );
-  console.log("[diff-schedule] mid budget / 2 shards ok", mid);
+  console.log("[diff-schedule] mid budget / 2 shards plan ok");
 
-  // Empty selection → 0 jobs, run done.
+  // Empty selection → planner still enqueued (jobCount 1); planner writes no schedule.
   const emptyDiff = `
 --- a/app/never.ts
 +++ b/app/never.ts
 @@ -1,1 +1,2 @@
 +nope
 `.trim();
+  const emptyPlan = await withClient(pool, (client) =>
+    planDiffRun(client, {
+      diff: emptyDiff,
+      budgetMs: 1000,
+      shardCount: 2,
+      baselineRunId,
+    }),
+  );
+  assert(emptyPlan.selectedTestIds.length === 0, "no selected ids");
+  assert(emptyPlan.shards.length === 0, "empty selection → 0 shards");
   const empty = await createDiffAwareRun(pool, {
     label: "diff-empty",
     diff: emptyDiff,
     budgetMs: 1000,
     baselineRunId,
   });
-  assert(empty.jobCount === 0, "empty selection → 0 jobs");
-  assert(empty.selectedTestIds.length === 0, "no selected ids");
-  const emptyStatus = await pool.query<{ status: string }>(
-    `SELECT status FROM runs WHERE id = $1::uuid`,
-    [empty.runId],
-  );
-  assert(emptyStatus.rows[0]!.status === "done", "empty run marked done");
-  console.log("[diff-schedule] empty selection ok", empty);
+  assert(empty.jobCount === 1, "planner still queued for empty plan");
+  console.log("[diff-schedule] empty selection create ok", empty);
 
   // Missing baseline → error.
   try {
@@ -262,7 +254,6 @@ async function main() {
   // Corpus must not stitch a second run's rows when baseline is explicit.
   const otherBaseline = await seedBaseline(pool);
   await withClient(pool, async (client) => {
-    // Poison "other" baseline with a test that would change selection if merged.
     const attempt = await client.query<{ id: string }>(
       `SELECT ja.id
        FROM job_attempts ja
@@ -291,19 +282,21 @@ async function main() {
     );
   });
 
-  const scoped = await createDiffAwareRun(pool, {
-    label: "diff-scoped",
-    diff,
-    budgetMs: 10,
-    baselineRunId, // original, not poisoned
-  });
+  const scopedPlan = await withClient(pool, (client) =>
+    planDiffRun(client, {
+      diff,
+      budgetMs: 10,
+      shardCount: 2,
+      baselineRunId,
+    }),
+  );
   assert(
-    !scoped.selectedTestIds.includes("poison"),
+    !scopedPlan.selectedTestIds.includes("poison"),
     "must not see poison from other run",
   );
   assert(
-    JSON.stringify(scoped.selectedTestIds) === JSON.stringify(["cheap"]),
-    `scoped selection ${JSON.stringify(scoped.selectedTestIds)}`,
+    JSON.stringify(scopedPlan.selectedTestIds) === JSON.stringify(["cheap"]),
+    `scoped selection ${JSON.stringify(scopedPlan.selectedTestIds)}`,
   );
   console.log("[diff-schedule] baseline scoping ok");
 

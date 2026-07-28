@@ -1,5 +1,11 @@
 export type RunStatus = "queued" | "running" | "done" | "failed";
-export type JobStatus = "queued" | "running" | "done" | "failed";
+export type JobStatus =
+  | "queued"
+  | "running"
+  | "done"
+  | "failed"
+  | "blocked"
+  | "skipped";
 export type AttemptStatus = "running" | "done" | "failed" | "superseded";
 
 export type ClaimedJob = {
@@ -9,6 +15,12 @@ export type ClaimedJob = {
   command: string;
   leaseToken: string;
   attempt: number;
+  jobDir?: string;
+  depDirs?: Array<{ name: string; jobId: string; path: string }>;
+  name?: string | null;
+  kind?: string | null;
+  shardIndex?: number | null;
+  testIds?: string[] | null;
 };
 
 export type { TestResultEvent } from "./protocol.ts";
