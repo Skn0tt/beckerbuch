@@ -66,8 +66,10 @@ diff-aware UI subset).
 - **CPU time** → `selectTests` (diff-affected list; beyond-budget rows dimmed)
 - **Wall time** → shard count `N = ceil(selectedDuration / latencyMs)`
 - **Deprioritize flakes** → density × `(1 - 0.9 × failShare)` for tests that
-  both passed and failed on **corpus** runs (`baseline_run_id IS NULL` —
-  not UI shards). 👻 badge; hover for pass/fail stats
+  both passed and failed on **corpus** runs (`baseline_run_id IS NULL`). 👻
+  badge; hover for pass/fail stats
+- **Prefer popular** → density × `10` for tests that failed anywhere in the
+  sieve DB (corpus + diff-aware). ★ badge; hover for fail counts
 - **Run** → diff-aware `POST /runs`; icons + worker cards update over WebSocket
 - Empty / uncovered diffs → empty list (no unrelated corpus filler)
 
@@ -153,7 +155,8 @@ sieve/
     cli.ts             # run-full | dump-corpus | create-run-diff | status
     dump-baseline.ts   # multi-run corpus SQL dump + Documents backup
     coverage-hits.ts   # inverted index write + diff-scoped load
-    flakiness.ts       # historical pass/fail → flakeScore
+    flakiness.ts       # corpus pass+fail → flaky / flakeScore
+    popular.ts         # any DB fail → popular (+ Prefer popular boost)
     commands.ts        # playwrightFullCommand + shard command
   scripts/
     serve-ui.ts        # demo boot (fixture → UI)

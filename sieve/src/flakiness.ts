@@ -1,13 +1,13 @@
 /**
- * Per-test flakiness from historical **corpus** result outcomes.
+ * Per-test flakiness from **corpus** result outcomes.
  *
  * Only runs with `baseline_run_id IS NULL` count (full `run-full` / corpus
- * jobs). Diff-aware UI shards are a selected subset — mixing them in marks
- * every re-run failure as a "flake" and clusters ghosts at the top of the
- * plan list.
+ * jobs). Diff-aware UI shards are omitted — they are a selected subset and
+ * would paint every re-selected failure as flaky.
  *
- * A test is flaky when it has both passed and failed (incl. timedOut) across
- * those corpus runs. Score is the fail share among those outcomes (0..1).
+ * A test is **flaky** when it both passed and failed in that history.
+ * `flakeScore` is the fail share (0..1) among resolved outcomes, used to
+ * deprioritize when the toggle is on.
  */
 
 import type pg from "pg";
@@ -19,7 +19,11 @@ export type FlakeStats = {
   flips: number;
   /** True when both pass and fail were observed. */
   flaky: boolean;
-  /** 0 when not flaky; otherwise fails / (passes + fails). */
+  /** Fail share fails/(passes+fails); 0 when never failed. */
+  failRate: number;
+  /**
+   * Score used for density deprioritization: failRate when flaky, else 0.
+   */
   flakeScore: number;
 };
 
@@ -36,9 +40,19 @@ export function flakeScoreFromCounts(opts: {
   const fails = Math.max(0, opts.fails);
   const attempts = opts.attempts ?? passes + fails;
   const flips = opts.flips ?? 0;
+  const resolved = passes + fails;
   const flaky = passes > 0 && fails > 0;
-  const flakeScore = flaky ? fails / (passes + fails) : 0;
-  return { attempts, passes, fails, flips, flaky, flakeScore };
+  const failRate = resolved > 0 ? fails / resolved : 0;
+  const flakeScore = flaky ? failRate : 0;
+  return {
+    attempts,
+    passes,
+    fails,
+    flips,
+    flaky,
+    failRate,
+    flakeScore,
+  };
 }
 
 /** Density weight in (1 - FLAKE_PENALTY) .. 1 when deprioritizing. */
@@ -48,7 +62,7 @@ export function flakeDensityWeight(flakeScore: number): number {
 }
 
 /**
- * Load flake stats from finished corpus runs only.
+ * Load historical flake stats from finished corpus runs only.
  */
 export async function loadFlakeStats(
   client: pg.PoolClient,

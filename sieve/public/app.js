@@ -15,6 +15,7 @@ const latency = document.getElementById("latency");
 const budgetVal = document.getElementById("budgetVal");
 const latencyVal = document.getElementById("latencyVal");
 const deprioritizeFlakes = document.getElementById("deprioritizeFlakes");
+const preferPopular = document.getElementById("preferPopular");
 const testList = document.getElementById("testList");
 const workerGrid = document.getElementById("workerGrid");
 const runBtn = document.getElementById("runBtn");
@@ -32,8 +33,8 @@ const repoLabel = document.getElementById("repoLabel");
 let boot = null;
 
 /** @type {null | {
- *   selected: Array<{testId:string,source:string,durationMs:number,shardIndex:number|null,selected?:boolean,titlePath?:string,flaky?:boolean,flakeScore?:number,passes?:number,fails?:number}>,
- *   tests?: Array<{testId:string,source:string,durationMs:number,shardIndex:number|null,selected:boolean,titlePath?:string,flaky?:boolean,flakeScore?:number,passes?:number,fails?:number}>,
+ *   selected: Array<{testId:string,source:string,durationMs:number,shardIndex:number|null,selected?:boolean,titlePath?:string,flaky?:boolean,flakeScore?:number,failRate?:number,passes?:number,fails?:number,attempts?:number,popular?:boolean,popularFails?:number}>,
+ *   tests?: Array<{testId:string,source:string,durationMs:number,shardIndex:number|null,selected:boolean,titlePath?:string,flaky?:boolean,flakeScore?:number,failRate?:number,passes?:number,fails?:number,attempts?:number,popular?:boolean,popularFails?:number}>,
  *   shards: Array<{shardIndex:number,testIds:string[],durationMs:number}>,
  *   shardCount: number,
  *   baselineRunId: string,
@@ -78,20 +79,38 @@ function syncTestRow(li, t) {
   const label = labelFor(t);
   const dur = `${Number(t.durationMs).toFixed(0)}ms`;
   const flaky = t.flaky === true;
-  const flakeTitle = flaky
+  const showGhost = flaky;
+  const showPopular = t.popular === true;
+  const failRate =
+    typeof t.failRate === "number"
+      ? t.failRate
+      : typeof t.flakeScore === "number"
+        ? t.flakeScore
+        : 0;
+  const flakeTitle = showGhost
     ? [
         "Flaky",
         `${t.passes ?? 0} passed · ${t.fails ?? 0} failed`,
-        typeof t.flakeScore === "number"
-          ? `fail share ${(t.flakeScore * 100).toFixed(0)}%`
-          : null,
+        failRate > 0 ? `fail share ${(failRate * 100).toFixed(0)}%` : null,
       ]
         .filter(Boolean)
         .join(" — ")
     : "";
+  const popularFails = Number(t.popularFails ?? t.fails ?? 0);
+  const popularTitle = showPopular
+    ? `Popular — failed ${popularFails} time${popularFails === 1 ? "" : "s"} in DB history`
+    : "";
+
+  const badgeClass = [
+    !inBudget ? "beyond" : "",
+    showGhost ? "is-flaky" : "",
+    showPopular ? "is-popular" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   if (!inBudget) {
-    li.className = flaky ? "beyond flaky" : "beyond";
+    li.className = badgeClass || "beyond";
     li.removeAttribute("style");
     ensureRowDom(li);
     const icon = li.children[0];
@@ -100,15 +119,19 @@ function syncTestRow(li, t) {
     li.children[1].textContent = label;
     li.children[2].textContent = dur;
     const flake = li.children[3];
-    flake.classList.toggle("is-empty", !flaky);
+    flake.classList.toggle("is-empty", !showGhost);
     flake.title = flakeTitle;
-    flake.setAttribute("aria-hidden", flaky ? "false" : "true");
+    flake.setAttribute("aria-hidden", showGhost ? "false" : "true");
+    const popular = li.children[4];
+    popular.classList.toggle("is-empty", !showPopular);
+    popular.title = popularTitle;
+    popular.setAttribute("aria-hidden", showPopular ? "false" : "true");
     return;
   }
 
   const st = statuses[t.testId] ?? "queued";
   const c = color(t.shardIndex);
-  li.className = flaky ? "flaky" : "";
+  li.className = badgeClass;
   li.style.background = c.bg;
   li.style.borderLeftColor = c.edge;
   ensureRowDom(li);
@@ -122,17 +145,22 @@ function syncTestRow(li, t) {
   li.children[1].textContent = label;
   li.children[2].textContent = dur;
   const flake = li.children[3];
-  flake.classList.toggle("is-empty", !flaky);
+  flake.classList.toggle("is-empty", !showGhost);
   flake.title = flakeTitle;
-  flake.setAttribute("aria-hidden", flaky ? "false" : "true");
+  flake.setAttribute("aria-hidden", showGhost ? "false" : "true");
+  const popular = li.children[4];
+  popular.classList.toggle("is-empty", !showPopular);
+  popular.title = popularTitle;
+  popular.setAttribute("aria-hidden", showPopular ? "false" : "true");
 }
 
 function ensureRowDom(li) {
   if (
-    li.children.length === 4 &&
+    li.children.length === 5 &&
     li.children[0].classList.contains("icon") &&
     li.children[2].classList.contains("dur") &&
-    li.children[3].classList.contains("flake")
+    li.children[3].classList.contains("flake") &&
+    li.children[4].classList.contains("popular-badge")
   ) {
     return;
   }
@@ -140,7 +168,8 @@ function ensureRowDom(li) {
     <span class="icon"></span>
     <span></span>
     <span class="dur"></span>
-    <span class="flake is-empty" aria-hidden="true" aria-label="flaky">👻</span>`;
+    <span class="flake is-empty" aria-hidden="true" aria-label="flaky">👻</span>
+    <span class="popular-badge is-empty" aria-hidden="true" aria-label="popular">★</span>`;
 }
 
 function renderList() {
@@ -338,6 +367,7 @@ async function refreshPlan() {
       baselineRunId: boot.baselineRunId ?? undefined,
       diff: boot.diffText,
       deprioritizeFlakes: deprioritizeFlakes.checked,
+      preferPopular: preferPopular.checked,
     };
     plan = await fetchJson("/api/plan", {
       method: "POST",
@@ -402,6 +432,7 @@ function connectWs() {
         budget.disabled = false;
         latency.disabled = false;
         deprioritizeFlakes.disabled = false;
+        preferPopular.disabled = false;
       }
     }
   });
@@ -429,6 +460,7 @@ async function onRun() {
   budget.disabled = true;
   latency.disabled = true;
   deprioritizeFlakes.disabled = true;
+  preferPopular.disabled = true;
   statuses = Object.fromEntries(plan.selected.map((t) => [t.testId, "queued"]));
   renderList();
 
@@ -443,6 +475,7 @@ async function onRun() {
         shardCount: plan.shardCount ?? plan.shards.length,
         baselineRunId: plan.baselineRunId,
         deprioritizeFlakes: deprioritizeFlakes.checked,
+        preferPopular: preferPopular.checked,
       }),
     });
     activeRunId = created.runId;
@@ -455,6 +488,7 @@ async function onRun() {
       budget.disabled = false;
       latency.disabled = false;
       deprioritizeFlakes.disabled = false;
+      preferPopular.disabled = false;
     }
   } catch (err) {
     console.error(err);
@@ -463,6 +497,7 @@ async function onRun() {
     budget.disabled = false;
     latency.disabled = false;
     deprioritizeFlakes.disabled = false;
+    preferPopular.disabled = false;
     alert(String(err.message || err));
   }
 }
@@ -471,6 +506,7 @@ async function main() {
   budget.addEventListener("input", schedulePlan);
   latency.addEventListener("input", schedulePlan);
   deprioritizeFlakes.addEventListener("change", schedulePlan);
+  preferPopular.addEventListener("change", schedulePlan);
   runBtn.addEventListener("click", () => void onRun());
 
   boot = await fetchJson("/api/bootstrap");

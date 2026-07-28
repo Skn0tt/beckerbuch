@@ -9,20 +9,32 @@ import {
 } from "../sieve/src/flakiness.ts";
 
 test.describe("flakiness", () => {
-  test("flakeScoreFromCounts is 0 unless both pass and fail exist", () => {
-    expect(flakeScoreFromCounts({ passes: 5, fails: 0 }).flaky).toBe(false);
-    expect(flakeScoreFromCounts({ passes: 5, fails: 0 }).flakeScore).toBe(0);
-    expect(flakeScoreFromCounts({ passes: 0, fails: 3 }).flaky).toBe(false);
-    expect(flakeScoreFromCounts({ passes: 0, fails: 3 }).flakeScore).toBe(0);
+  test("stable all-pass is not flaky", () => {
+    const s = flakeScoreFromCounts({ passes: 5, fails: 0 });
+    expect(s.flaky).toBe(false);
+    expect(s.flakeScore).toBe(0);
+    expect(s.failRate).toBe(0);
   });
 
-  test("flakeScoreFromCounts is fail share when mixed", () => {
-    const s = flakeScoreFromCounts({ passes: 1, fails: 1, flips: 1 });
+  test("single failure among passes is flaky and scores fail share", () => {
+    const s = flakeScoreFromCounts({ passes: 9, fails: 1 });
     expect(s.flaky).toBe(true);
-    expect(s.flakeScore).toBe(0.5);
-    expect(
-      flakeScoreFromCounts({ passes: 9, fails: 1 }).flakeScore,
-    ).toBeCloseTo(0.1);
+    expect(s.failRate).toBeCloseTo(0.1);
+    expect(s.flakeScore).toBeCloseTo(0.1);
+  });
+
+  test("balanced flips score mid fail rate", () => {
+    const s = flakeScoreFromCounts({ passes: 2, fails: 2 });
+    expect(s.flaky).toBe(true);
+    expect(s.failRate).toBeCloseTo(0.5);
+    expect(s.flakeScore).toBeCloseTo(0.5);
+  });
+
+  test("always-red (no passes) is not flaky", () => {
+    const s = flakeScoreFromCounts({ passes: 0, fails: 3 });
+    expect(s.flaky).toBe(false);
+    expect(s.flakeScore).toBe(0);
+    expect(s.failRate).toBe(1);
   });
 
   test("flakeDensityWeight leaves residual at max flake", () => {

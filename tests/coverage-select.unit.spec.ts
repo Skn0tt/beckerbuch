@@ -336,6 +336,39 @@ deleted file mode 100644
     expect(withDep).toEqual(["stable"]);
   });
 
+  test("selectTests preferPopular ranks popular coverage ahead of peers", () => {
+    const index = buildIndexFromHitLines([
+      { testId: "alpha", hitLines: ["app/x.ts:1"] },
+      { testId: "zeta", hitLines: ["app/x.ts:1"] },
+    ]);
+    const diff = `
+--- a/app/x.ts
++++ b/app/x.ts
+@@ -1 +1 @@
++line
+`.trim();
+    const durations = { alpha: 10, zeta: 10 };
+    const without = selectTests({
+      index,
+      durations,
+      diff,
+      budgetMs: 10,
+      popularTestIds: new Set(["zeta"]),
+    });
+    // Tie-break by id when densities equal — alpha sorts first alphabetically.
+    expect(without).toEqual(["alpha"]);
+
+    const withPref = selectTests({
+      index,
+      durations,
+      diff,
+      budgetMs: 10,
+      popularTestIds: new Set(["zeta"]),
+      preferPopular: true,
+    });
+    expect(withPref).toEqual(["zeta"]);
+  });
+
   test("orderAndFilterTestIds keeps order and lists excludes", () => {
     const { keep, exclude } = orderAndFilterTestIds(
       ["c", "a", "b"],

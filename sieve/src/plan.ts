@@ -7,6 +7,7 @@ import type pg from "pg";
 import { parseDiffLines, selectTests } from "../../tests/coverage-select.ts";
 import { loadDiffCoverageIndex } from "./coverage-hits.ts";
 import { loadFlakeStats } from "./flakiness.ts";
+import { loadPopularStats, POPULAR_BOOST } from "./popular.ts";
 import { packShards } from "./pack.ts";
 import { SchedulerRequestError } from "./errors.ts";
 
@@ -24,6 +25,8 @@ export type PlanDiffOpts = {
   baselineRunId?: string;
   /** When true, lower selection density for historically flaky tests. */
   deprioritizeFlakes?: boolean;
+  /** When true, strongly boost tests that failed anywhere in the DB. */
+  preferPopular?: boolean;
 };
 
 export type PlanTestRow = {
@@ -34,12 +37,18 @@ export type PlanTestRow = {
   /** Set when included in the budgeted selection; null when greyed out. */
   shardIndex: number | null;
   selected: boolean;
-  /** Observed pass+fail across finished runs. */
+  /** Observed pass+fail across finished corpus runs. */
   flaky: boolean;
-  /** Fail share among outcomes when flaky; else 0. */
+  /** Fail share among corpus outcomes; drives deprioritize when flaky. */
   flakeScore: number;
+  failRate: number;
   passes: number;
   fails: number;
+  attempts: number;
+  /** Failed at least once in any finished run in the DB. */
+  popular: boolean;
+  /** Fail count across the whole DB (popular window). */
+  popularFails: number;
 };
 
 export type PlanDiffResult = {
@@ -55,6 +64,7 @@ export type PlanDiffResult = {
   tests: PlanTestRow[];
   shards: Array<{ shardIndex: number; testIds: string[]; durationMs: number }>;
   deprioritizeFlakes: boolean;
+  preferPopular: boolean;
 };
 
 export async function resolveBaselineRunId(
@@ -151,16 +161,21 @@ export async function planDiffRun(
     titlePathById[r.testId] = r.titlePath;
   }
 
-  const flakeById = await loadFlakeStats(
-    client,
-    rows.map((r) => r.testId),
-  );
+  const testIds = rows.map((r) => r.testId);
+  const flakeById = await loadFlakeStats(client, testIds);
   const flakeScores: Record<string, number> = {};
   for (const [id, stats] of flakeById) {
     flakeScores[id] = stats.flakeScore;
   }
 
+  const popularById = await loadPopularStats(client, testIds);
+  const popularTestIds = new Set<string>();
+  for (const [id, stats] of popularById) {
+    if (stats.popular) popularTestIds.add(id);
+  }
+
   const deprioritizeFlakes = opts.deprioritizeFlakes === true;
+  const preferPopular = opts.preferPopular === true;
   const corpusSize = rows.length;
   const selectOpts = {
     index,
@@ -169,6 +184,9 @@ export async function planDiffRun(
     corpusSize,
     flakeScores,
     deprioritizeFlakes,
+    popularTestIds,
+    preferPopular,
+    popularBoost: POPULAR_BOOST,
   };
   const selectedTestIds = selectTests({
     ...selectOpts,
@@ -179,13 +197,13 @@ export async function planDiffRun(
   const shardOf = new Map<string, number>();
   const shards: PlanDiffResult["shards"] = [];
   for (let i = 0; i < packed.length; i++) {
-    const testIds = packed[i]!;
+    const testIdsShard = packed[i]!;
     let durationMs = 0;
-    for (const id of testIds) {
+    for (const id of testIdsShard) {
       shardOf.set(id, i);
       durationMs += durations[id] ?? 1;
     }
-    shards.push({ shardIndex: i, testIds, durationMs });
+    shards.push({ shardIndex: i, testIds: testIdsShard, durationMs });
   }
 
   const rowFor = (
@@ -194,6 +212,7 @@ export async function planDiffRun(
     shardIndex: number | null,
   ): PlanTestRow => {
     const flake = flakeById.get(testId);
+    const popular = popularById.get(testId);
     return {
       testId,
       source: sourceById[testId] ?? "",
@@ -203,8 +222,12 @@ export async function planDiffRun(
       selected,
       flaky: flake?.flaky ?? false,
       flakeScore: flake?.flakeScore ?? 0,
+      failRate: flake?.failRate ?? 0,
       passes: flake?.passes ?? 0,
       fails: flake?.fails ?? 0,
+      attempts: flake?.attempts ?? 0,
+      popular: popular?.popular ?? false,
+      popularFails: popular?.fails ?? 0,
     };
   };
 
@@ -237,5 +260,6 @@ export async function planDiffRun(
     tests,
     shards,
     deprioritizeFlakes,
+    preferPopular,
   };
 }

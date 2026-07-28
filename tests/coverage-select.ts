@@ -262,6 +262,9 @@ export function lineIdf(opts: {
  * When `deprioritizeFlakes` is set, density is multiplied by
  * `1 - 0.9 * flakeScore` (see sieve flakiness helpers) so intermittent
  * tests rank below equally covering stable ones.
+ *
+ * When `preferPopular` is set, density for popular tests is multiplied by
+ * `popularBoost` (default 10).
  */
 export function selectTests(opts: {
   index: CoverageIndex;
@@ -277,6 +280,12 @@ export function selectTests(opts: {
   flakeScores?: Record<string, number>;
   /** Apply flakeScores as a density penalty. */
   deprioritizeFlakes?: boolean;
+  /** Test ids that failed somewhere in DB history (popular). */
+  popularTestIds?: Set<string> | ReadonlySet<string>;
+  /** Multiply density by popularBoost for popular tests. */
+  preferPopular?: boolean;
+  /** Density multiplier for popular tests when preferPopular is on. */
+  popularBoost?: number;
 }): string[] {
   const { index, durations, budgetMs } = opts;
   if (!(budgetMs > 0)) return [];
@@ -317,6 +326,12 @@ export function selectTests(opts: {
   let remaining = budgetMs;
   const flakeScores = opts.flakeScores;
   const deprioritize = opts.deprioritizeFlakes === true && !!flakeScores;
+  const popularIds = opts.popularTestIds;
+  const preferPopular = opts.preferPopular === true && !!popularIds;
+  const popularBoost =
+    typeof opts.popularBoost === "number" && opts.popularBoost > 0
+      ? opts.popularBoost
+      : 10;
 
   while (pool.size > 0) {
     let bestId: string | null = null;
@@ -343,6 +358,9 @@ export function selectTests(opts: {
         const score = flakeScores![testId] ?? 0;
         // Keep a residual so flaky tests are last, not impossible.
         density *= 1 - 0.9 * Math.min(1, Math.max(0, score));
+      }
+      if (preferPopular && popularIds!.has(testId)) {
+        density *= popularBoost;
       }
       if (
         density > bestDensity ||
