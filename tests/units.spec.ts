@@ -26,6 +26,10 @@ test.describe("normalizeUnit", () => {
     ["lbs", "lb"],
     ["pinches", "pinch"],
     ["millilitres", "ml"],
+    ["Stück", "stück"],
+    ["stk", "stück"],
+    ["piece", "stück"],
+    ["pieces", "stück"],
     ["bunch", "bunch"], // unknown — unchanged
   ];
   for (const [input, expected] of cases) {
@@ -60,6 +64,13 @@ test.describe("unitFamily — never cross", () => {
   test("count for empty", () => {
     expect(unitFamily(null)).toBe("count");
     expect(unitFamily("")).toBe("count");
+  });
+  test("Stück / piece share count with empty", () => {
+    expect(unitFamily("Stück")).toBe("count");
+    expect(unitFamily("stk")).toBe("count");
+    expect(unitFamily("piece")).toBe("count");
+    expect(unitFamily("pieces")).toBe("count");
+    expect(unitFamily("Stück")).toBe(unitFamily(null));
   });
 });
 
@@ -161,6 +172,24 @@ test.describe("sumCompatibleAmounts", () => {
         { amount: "3", unit: "" },
       ]),
     ).toEqual({ amount: "5", unit: null });
+  });
+
+  test("unitless + Stück sums as count", () => {
+    expect(
+      sumCompatibleAmounts([
+        { amount: "3", unit: null },
+        { amount: "1", unit: "Stück" },
+      ]),
+    ).toEqual({ amount: "4", unit: null });
+  });
+
+  test("Stück + piece sums as count", () => {
+    expect(
+      sumCompatibleAmounts([
+        { amount: "2", unit: "Stück" },
+        { amount: "1", unit: "piece" },
+      ]),
+    ).toEqual({ amount: "3", unit: null });
   });
 
   test("German el + tl → tsp family", () => {
@@ -313,5 +342,31 @@ test.describe("postProcess family split", () => {
     const groups = postProcess(input, { merges: [{ ids: ["a", "b"] }] });
     expect(groups).toHaveLength(1);
     expect(groups[0].displayText).toBe("5 tsp oil");
+  });
+
+  test("3 Peperoni + 1 Stück Peperoni → 4 Peperoni", () => {
+    const input: DedupInput = {
+      items: [
+        {
+          id: "a",
+          amount: "3",
+          unit: null,
+          item: "Peperoni",
+          recipeName: "A",
+        },
+        {
+          id: "b",
+          amount: "1",
+          unit: "Stück",
+          item: "Peperoni",
+          recipeName: "B",
+        },
+      ],
+    };
+    const groups = postProcess(input, { merges: [{ ids: ["a", "b"] }] });
+    expect(groups).toHaveLength(1);
+    expect(groups[0].amount).toBe("4");
+    expect(groups[0].unit).toBeNull();
+    expect(groups[0].displayText).toBe("4 Peperoni");
   });
 });

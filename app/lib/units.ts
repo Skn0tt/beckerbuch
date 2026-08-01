@@ -96,8 +96,13 @@ const UNIT_ALIASES: Record<string, string> = {
   packungen: "package",
   packung: "package",
   pkg: "package",
+  // Count / pieces — same family as empty unit (see COUNT_UNITS).
   stück: "stück",
   stk: "stück",
+  piece: "stück",
+  pieces: "stück",
+  pc: "stück",
+  pcs: "stück",
 };
 
 /**
@@ -138,8 +143,13 @@ const QUALITATIVE = new Set([
   "stick",
   "package",
   "bund",
-  "stück",
 ]);
+
+/**
+ * Count-like units — identical to an empty/null unit for merging.
+ * "3 Peperoni" and "1 Stück Peperoni" should sum to 4, not stay split.
+ */
+const COUNT_UNITS = new Set(["stück"]);
 
 const METRIC_VOLUME = new Set(["ml", "cl", "dl", "l"]);
 const US_VOLUME = new Set(["cup", "pint", "quart", "gallon"]);
@@ -160,7 +170,8 @@ export function normalizeUnit(raw: string | null): string | null {
  */
 export function unitInfo(unit: string | null): UnitInfo {
   const key = normalizeUnit(unit);
-  if (key === null) {
+  // Empty and Stück/piece are the same "how many" count family.
+  if (key === null || COUNT_UNITS.has(key)) {
     return { family: "count", toBase: 1, display: "" };
   }
   const found = UNIT_TABLE[key];
