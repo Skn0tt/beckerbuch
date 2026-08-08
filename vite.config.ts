@@ -8,11 +8,4 @@ export default defineConfig({
   resolve: {
     tsconfigPaths: true,
   },
-  build: {
-    // Playwright/sieve can run multiple `react-router build` processes in
-    // parallel (one globalSetup per shard). Default emptyOutDir races on
-    // rmdir(build/client/assets). Test builds set VITE_EMPTY_OUT_DIR=0.
-    emptyOutDir: process.env.VITE_EMPTY_OUT_DIR !== "0",
-  },
 });
-

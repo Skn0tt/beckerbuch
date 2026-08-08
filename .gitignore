@@ -13,14 +13,6 @@
 /playwright-report/
 /test-results/
 /.playwright-cli/
-/.playwright-data/
-
-# sieve local install
-/sieve/node_modules/
-/sieve/.bootstrap-diff.patch
-/sieve/.database-url
-/sieve/fixtures/baseline.sql
-/sieve/.artifacts/
 
 # Local Netlify folder
 .netlify

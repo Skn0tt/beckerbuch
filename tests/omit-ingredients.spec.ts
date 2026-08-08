@@ -193,14 +193,22 @@ test("omission survives an unrelated edit (stable ingredient ids)", async ({
   await createPasta(page);
   await addToDraft(page);
 
-  // DEMO FLAKE: intentionally race the optimistic omit toggle against
-  // navigating to Edit. The "Include lemons" label flips immediately while
-  // the POST + loader revalidation are still in flight; clicking Edit during
-  // that window makes React Router occasionally drop the navigation (~20%).
+  // The omit toggle is an optimistic-UI fetcher: the "Include lemons"
+  // label flips immediately while the POST and its loader revalidation
+  // are still in flight. Clicking the "Edit recipe" <Link> during that
+  // revalidation makes React Router occasionally drop the navigation
+  // (~20% flake). Await the revalidation GET so the router has left its
+  // loading state before we navigate away.
+  const revalidated = page.waitForResponse(
+    (res) =>
+      res.request().method() === "GET" &&
+      /\/recipes\/[0-9a-f-]{36}\.data/.test(res.url()),
+  );
   await page.getByRole("button", { name: "Omit lemons" }).click();
   await expect(
     page.getByRole("button", { name: "Include lemons" }),
   ).toBeVisible();
+  await revalidated;
 
   // Edit an unrelated field (the name) and save.
   await page.getByRole("link", { name: "Edit recipe" }).click();
