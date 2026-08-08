@@ -1,9 +1,8 @@
 /**
  * Direct logic tests for unit summing / postProcess family splits.
- * No browser — imports app/lib pure helpers. Uses unit-fixtures so
- * worker-side hits land in .playwright-data/coverage/ for diff selection.
+ * No browser — imports app/lib pure helpers.
  */
-import { expect, test } from "./unit-fixtures";
+import { expect, test } from "@playwright/test";
 import {
   normalizeUnit,
   unitFamily,

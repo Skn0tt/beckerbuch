@@ -15,7 +15,6 @@ export default tseslint.config(
       "drizzle/**",
       "playwright-report/**",
       "test-results/**",
-      "sieve/**",
       "*.cjs",
       "postcss.config.*",
     ],

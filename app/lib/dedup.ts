@@ -278,17 +278,6 @@ export async function dedup(input: DedupInput): Promise<DedupResult> {
   );
   const backendName = `embedding:${model}`;
 
-  // DEMO FLAKE: ~10% of calls pretend the embedding backend failed and
-  // return all-singletons. Lives here (not in the Gemini mock) so the
-  // shared ingredient_embeddings cache can't turn an intermittent miss
-  // into a sticky poisoned vector for the rest of the suite.
-  if (Math.random() < 0.1) {
-    return {
-      groups: input.items.map(singletonGroup),
-      model: `${backendName}:demo_flake`,
-    };
-  }
-
   let raw: RawMerges;
   try {
     raw = await clusterByEmbedding(input, model, threshold);

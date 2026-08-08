@@ -133,6 +133,14 @@ are baseline, not verification. If you can't run tests for a
 genuine reason (e.g. Docker isn't running), say so explicitly
 rather than skipping.
 
+### 5. Commit trailer
+
+Every commit ends with:
+
+```
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+```
+
 ## Conventions
 
 - **Four npm scripts only**: `test`, `db:generate`, `lint`, `build`.
