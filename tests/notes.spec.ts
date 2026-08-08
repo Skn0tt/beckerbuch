@@ -43,7 +43,16 @@ test("note: add to draft item, persists across reload", async ({ page, flat }) =
     .click();
   const input = page.getByTestId("note-input");
   await input.fill("cook this on Friday");
+  // set-note is fire-and-forget useFetcher — wait for the POST before
+  // reload so persistence isn't racing an in-flight write.
+  const waitForSetNote = page.waitForResponse(
+    (r) =>
+      r.request().method() === "POST" &&
+      r.url().endsWith("/kitchen.data") &&
+      r.status() < 400,
+  );
   await input.press("Enter");
+  await waitForSetNote;
 
   await expect(page.getByTestId("note-text")).toHaveText(
     /cook this on Friday/,
@@ -97,7 +106,17 @@ test("note: clearing an existing note returns the + Note button", async ({
     .click();
   const input = page.getByTestId("note-input");
   await input.fill("");
+  // set-note is fire-and-forget useFetcher — wait for the POST before
+  // reload, otherwise the optimistic clear can pass while the DB write
+  // is still in flight and the note comes back after reload.
+  const waitForClearNote = page.waitForResponse(
+    (r) =>
+      r.request().method() === "POST" &&
+      r.url().endsWith("/kitchen.data") &&
+      r.status() < 400,
+  );
   await input.press("Enter");
+  await waitForClearNote;
 
   await expect(page.getByTestId("note-text")).toHaveCount(0);
   await expect(
