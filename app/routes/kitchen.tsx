@@ -20,11 +20,20 @@ import type { Route } from "./+types/kitchen";
 import type { loader as combinedLoader } from "./kitchen.combined";
 import type { loader as combinedSearchLoader } from "./kitchen.combined.search";
 import { db } from "../db/client";
-import { recipeInstances, flatMembers } from "../db/schema";
+import { recipeInstances } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
 import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { isSameOrigin } from "../auth/origin";
 import { loadKitchen } from "../lib/kitchen-data";
+import {
+  markCooked,
+  moveInstance,
+  removeFromDraft,
+  reorderLane,
+  setCook,
+  setNote,
+  setPortions,
+} from "../lib/kitchen";
 import { snapshotDedupForFlat } from "../lib/dedup-snapshot";
 import {
   FinaliseButton,
@@ -120,114 +129,48 @@ export async function action({ request }: Route.ActionArgs) {
   const action = parsed.data;
 
   if (action.intent === "remove-from-draft") {
-    await db()
-      .delete(recipeInstances)
-      .where(
-        and(
-          eq(recipeInstances.id, action.instanceId),
-          eq(recipeInstances.flatId, ctx.flat.id),
-          isNull(recipeInstances.finalisedAt),
-        ),
-      );
+    await removeFromDraft({
+      flatId: ctx.flat.id,
+      instanceId: action.instanceId,
+    });
     return { ok: true };
   }
 
   if (action.intent === "update-quantity") {
-    await db()
-      .update(recipeInstances)
-      .set({ targetQuantity: action.targetQuantity })
-      .where(
-        and(
-          eq(recipeInstances.id, action.instanceId),
-          eq(recipeInstances.flatId, ctx.flat.id),
-          isNull(recipeInstances.finalisedAt),
-        ),
-      );
+    await setPortions({
+      flatId: ctx.flat.id,
+      instanceId: action.instanceId,
+      portions: action.targetQuantity,
+    });
     return { ok: true };
   }
 
   if (action.intent === "set-cook") {
     const cookId: string | null = action.cookId === "" ? null : action.cookId;
-    if (cookId !== null) {
-      const member = await db()
-        .select({ userId: flatMembers.userId })
-        .from(flatMembers)
-        .where(
-          and(eq(flatMembers.flatId, ctx.flat.id), eq(flatMembers.userId, cookId)),
-        )
-        .limit(1);
-      if (member.length === 0) return { error: "Cook is not in this flat." };
-    }
-    await db()
-      .update(recipeInstances)
-      .set({ designatedCookId: cookId })
-      .where(
-        and(
-          eq(recipeInstances.id, action.instanceId),
-          eq(recipeInstances.flatId, ctx.flat.id),
-          isNull(recipeInstances.cookedAt),
-        ),
-      );
+    const result = await setCook({
+      flatId: ctx.flat.id,
+      instanceId: action.instanceId,
+      cookId,
+    });
+    if (!result.ok) return { error: result.error };
     return { ok: true };
   }
 
   if (action.intent === "set-note") {
-    const trimmed = action.note.trim();
-    const value: string | null = trimmed.length === 0 ? null : trimmed;
-    // Notes are editable in BOTH draft and in-stock (not after cooking).
-    await db()
-      .update(recipeInstances)
-      .set({ note: value })
-      .where(
-        and(
-          eq(recipeInstances.id, action.instanceId),
-          eq(recipeInstances.flatId, ctx.flat.id),
-          isNull(recipeInstances.cookedAt),
-        ),
-      );
+    await setNote({
+      flatId: ctx.flat.id,
+      instanceId: action.instanceId,
+      note: action.note,
+    });
     return { ok: true };
   }
 
   if (action.intent === "reorder") {
-    const { lane, instanceIds: ids } = action;
-    const laneCond =
-      lane === "draft"
-        ? isNull(recipeInstances.finalisedAt)
-        : and(
-            isNotNull(recipeInstances.finalisedAt),
-            isNull(recipeInstances.cookedAt),
-          );
-
-    await db().transaction(async (tx) => {
-      const rows = await tx
-        .select({
-          id: recipeInstances.id,
-          position: recipeInstances.position,
-        })
-        .from(recipeInstances)
-        .where(and(eq(recipeInstances.flatId, ctx.flat.id), laneCond));
-      const existing = new Map(rows.map((r) => [r.id, r.position]));
-      if (rows.length !== ids.length || !ids.every((id) => existing.has(id))) {
-        // Lane changed under us — bail without writing.
-        return;
-      }
-      const sorted = [...existing.values()].sort((a, b) => a - b);
-
-      // 2-phase: park everything in negative space, then assign the
-      // new positions. Dodges the partial unique on (flat_id, position).
-      for (const id of ids) {
-        const cur = existing.get(id)!;
-        await tx
-          .update(recipeInstances)
-          .set({ position: -1 - cur })
-          .where(eq(recipeInstances.id, id));
-      }
-      for (let i = 0; i < ids.length; i++) {
-        await tx
-          .update(recipeInstances)
-          .set({ position: sorted[i] })
-          .where(eq(recipeInstances.id, ids[i]));
-      }
+    // Soft: lane races bail without writing (ignore mismatch error).
+    await reorderLane({
+      flatId: ctx.flat.id,
+      lane: action.lane,
+      instanceIds: action.instanceIds,
     });
     return { ok: true };
   }
@@ -286,84 +229,21 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (action.intent === "mark-cooked") {
-    const updated = await db()
-      .update(recipeInstances)
-      .set({ cookedAt: new Date(), cookedBy: ctx.user.id })
-      .where(
-        and(
-          eq(recipeInstances.id, action.instanceId),
-          eq(recipeInstances.flatId, ctx.flat.id),
-          isNotNull(recipeInstances.finalisedAt),
-          isNull(recipeInstances.cookedAt),
-        ),
-      )
-      .returning({ id: recipeInstances.id });
-    if (updated.length === 0) {
-      return { error: "Already cooked or not in stock." };
-    }
+    const result = await markCooked({
+      flatId: ctx.flat.id,
+      userId: ctx.user.id,
+      instanceId: action.instanceId,
+    });
+    if (!result.ok) return { error: result.error };
     return { ok: true };
   }
 
-  // move
-  const { instanceId, direction } = action;
-  const rows = await db()
-    .select({
-      id: recipeInstances.id,
-      position: recipeInstances.position,
-      finalisedAt: recipeInstances.finalisedAt,
-      cookedAt: recipeInstances.cookedAt,
-    })
-    .from(recipeInstances)
-    .where(
-      and(
-        eq(recipeInstances.id, instanceId),
-        eq(recipeInstances.flatId, ctx.flat.id),
-      ),
-    )
-    .limit(1);
-  if (rows.length === 0) return { error: "Not found." };
-  const row = rows[0];
-  if (row.cookedAt !== null) return { error: "Cooked entries can't move." };
-  const inDraft = row.finalisedAt === null;
-  const laneCond = inDraft
-    ? isNull(recipeInstances.finalisedAt)
-    : and(
-        isNotNull(recipeInstances.finalisedAt),
-        isNull(recipeInstances.cookedAt),
-      );
-
-  const neighbours = await db()
-    .select({ id: recipeInstances.id, position: recipeInstances.position })
-    .from(recipeInstances)
-    .where(
-      and(
-        eq(recipeInstances.flatId, ctx.flat.id),
-        laneCond,
-        direction === "up"
-          ? sql`${recipeInstances.position} < ${row.position}`
-          : sql`${recipeInstances.position} > ${row.position}`,
-      ),
-    )
-    .orderBy(direction === "up" ? sql`position desc` : sql`position asc`)
-    .limit(1);
-  if (neighbours.length === 0) return { ok: true }; // already at edge
-  const neighbour = neighbours[0];
-
-  // 2-phase swap to avoid violating partial unique on position.
-  await db().transaction(async (tx) => {
-    await tx
-      .update(recipeInstances)
-      .set({ position: -1 - row.position })
-      .where(eq(recipeInstances.id, row.id));
-    await tx
-      .update(recipeInstances)
-      .set({ position: row.position })
-      .where(eq(recipeInstances.id, neighbour.id));
-    await tx
-      .update(recipeInstances)
-      .set({ position: neighbour.position })
-      .where(eq(recipeInstances.id, row.id));
+  const result = await moveInstance({
+    flatId: ctx.flat.id,
+    instanceId: action.instanceId,
+    direction: action.direction,
   });
+  if (!result.ok) return { error: result.error };
   return { ok: true };
 }
 

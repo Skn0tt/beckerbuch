@@ -1243,4 +1243,313 @@ test.describe("MCP server", () => {
 
     await otherClient.close();
   });
+
+  type PlanEntry = {
+    id: string;
+    recipeId: string;
+    recipeName: string;
+    portions: number;
+    position: number;
+    cook: { id: string; displayName: string } | null;
+    note: string | null;
+  };
+  type PlanBody = {
+    draft: PlanEntry[];
+    stock: PlanEntry[];
+    members: Array<{ id: string; displayName: string }>;
+  };
+  type UpdatePlanBody = {
+    ok: true;
+    action: string;
+    instanceId?: string;
+    created?: boolean;
+    plan: PlanBody;
+  };
+
+  async function finaliseDraftOnly(page: Page, expectedStockCount: number) {
+    await page.goto("/kitchen");
+    await page.getByRole("button", { name: "Finalise draft" }).click();
+    await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+    await expect(page).toHaveURL(/\/h\/[0-9a-f-]{36}$/);
+    await page.goto("/kitchen");
+    await expect(
+      page.getByText(`In stock ${expectedStockCount}`, { exact: true }),
+    ).toBeVisible();
+  }
+
+  test("get_plan empty then add and edit draft", async ({ page, flat }) => {
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    const emptyResult = await client.callTool({ name: "kochbuch_get_plan" });
+    expect(emptyResult.isError).toBeFalsy();
+    const empty = jsonFromToolResult<PlanBody>(emptyResult);
+    expect(empty.draft).toEqual([]);
+    expect(empty.stock).toEqual([]);
+    expect(empty.members.map((m) => m.displayName)).toContain(flat.user.displayName);
+    const memberId = empty.members.find((m) => m.displayName === flat.user.displayName)!.id;
+
+    const pastaId = await addRecipeViaMcp(client, {
+      name: "Plan Pasta",
+      baseQuantity: 2,
+      ingredients: [{ amount: "200", unit: "g", item: "spaghetti" }],
+    });
+    const curryId = await addRecipeViaMcp(client, {
+      name: "Plan Curry",
+      baseQuantity: 4,
+      ingredients: [{ amount: "400", unit: "g", item: "chickpeas" }],
+    });
+
+    const addPasta = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: {
+        action: "add_to_draft",
+        recipeId: pastaId,
+        portions: 4,
+        note: "Thu",
+        cookId: memberId,
+      },
+    });
+    expect(addPasta.isError).toBeFalsy();
+    const pastaBody = jsonFromToolResult<UpdatePlanBody>(addPasta);
+    expect(pastaBody.created).toBe(true);
+    expect(pastaBody.plan.draft).toHaveLength(1);
+    expect(pastaBody.plan.draft[0]).toMatchObject({
+      recipeId: pastaId,
+      recipeName: "Plan Pasta",
+      portions: 4,
+      note: "Thu",
+      cook: { id: memberId, displayName: flat.user.displayName },
+    });
+
+    const addCurry = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: { action: "add_to_draft", recipeId: curryId },
+    });
+    expect(addCurry.isError).toBeFalsy();
+    let plan = jsonFromToolResult<UpdatePlanBody>(addCurry).plan;
+    expect(plan.draft.map((e) => e.recipeName)).toEqual(["Plan Pasta", "Plan Curry"]);
+    const curryInstanceId = plan.draft.find((e) => e.recipeId === curryId)!.id;
+    const pastaInstanceId = plan.draft.find((e) => e.recipeId === pastaId)!.id;
+
+    const setPortions = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: {
+        action: "set_portions",
+        instanceId: curryInstanceId,
+        portions: 6,
+      },
+    });
+    expect(setPortions.isError).toBeFalsy();
+
+    const setNote = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: {
+        action: "set_note",
+        instanceId: curryInstanceId,
+        note: "spicy",
+      },
+    });
+    expect(setNote.isError).toBeFalsy();
+
+    const setCook = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: {
+        action: "set_cook",
+        instanceId: curryInstanceId,
+        cookId: memberId,
+      },
+    });
+    expect(setCook.isError).toBeFalsy();
+
+    const reorder = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: {
+        action: "reorder",
+        list: "draft",
+        instanceIds: [curryInstanceId, pastaInstanceId],
+      },
+    });
+    expect(reorder.isError).toBeFalsy();
+    plan = jsonFromToolResult<UpdatePlanBody>(reorder).plan;
+    expect(plan.draft.map((e) => e.recipeId)).toEqual([curryId, pastaId]);
+    expect(plan.draft[0]).toMatchObject({
+      portions: 6,
+      note: "spicy",
+      cook: { id: memberId, displayName: flat.user.displayName },
+    });
+
+    const remove = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: { action: "remove_from_draft", instanceId: curryInstanceId },
+    });
+    expect(remove.isError).toBeFalsy();
+    plan = jsonFromToolResult<UpdatePlanBody>(remove).plan;
+    expect(plan.draft.map((e) => e.recipeId)).toEqual([pastaId]);
+
+    await client.close();
+  });
+
+  test("add_to_draft is idempotent but can enrich", async ({ page, flat }) => {
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    const recipeId = await addRecipeViaMcp(client, {
+      name: "Enrich Me",
+      ingredients: [{ item: "beans" }],
+    });
+    const first = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: { action: "add_to_draft", recipeId },
+    });
+    expect(first.isError).toBeFalsy();
+    const firstBody = jsonFromToolResult<UpdatePlanBody>(first);
+    expect(firstBody.created).toBe(true);
+    const instanceId = firstBody.instanceId!;
+
+    const second = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: {
+        action: "add_to_draft",
+        recipeId,
+        note: "leftovers",
+        portions: 3,
+      },
+    });
+    expect(second.isError).toBeFalsy();
+    const secondBody = jsonFromToolResult<UpdatePlanBody>(second);
+    expect(secondBody.created).toBe(false);
+    expect(secondBody.instanceId).toBe(instanceId);
+    expect(secondBody.plan.draft).toHaveLength(1);
+    expect(secondBody.plan.draft[0]).toMatchObject({
+      id: instanceId,
+      portions: 3,
+      note: "leftovers",
+    });
+
+    await client.close();
+  });
+
+  test("stock back_to_draft and mark_cooked", async ({ page, flat }) => {
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    const aId = await addRecipeViaMcp(client, {
+      name: "Stock A",
+      ingredients: [{ item: "a" }],
+    });
+    const bId = await addRecipeViaMcp(client, {
+      name: "Stock B",
+      ingredients: [{ item: "b" }],
+    });
+    for (const recipeId of [aId, bId]) {
+      const add = await client.callTool({
+        name: "kochbuch_update_plan",
+        arguments: { action: "add_to_draft", recipeId },
+      });
+      expect(add.isError).toBeFalsy();
+    }
+
+    await finaliseDraftOnly(page, 2);
+
+    const afterFinalise = await client.callTool({ name: "kochbuch_get_plan" });
+    expect(afterFinalise.isError).toBeFalsy();
+    let plan = jsonFromToolResult<PlanBody>(afterFinalise);
+    expect(plan.draft).toEqual([]);
+    expect(plan.stock.map((e) => e.recipeId).sort()).toEqual([aId, bId].sort());
+    const aInstance = plan.stock.find((e) => e.recipeId === aId)!;
+    const bInstance = plan.stock.find((e) => e.recipeId === bId)!;
+
+    const back = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: { action: "back_to_draft", instanceId: aInstance.id },
+    });
+    expect(back.isError).toBeFalsy();
+    plan = jsonFromToolResult<UpdatePlanBody>(back).plan;
+    expect(plan.draft.map((e) => e.recipeId)).toEqual([aId]);
+    expect(plan.stock.map((e) => e.recipeId)).toEqual([bId]);
+
+    const cooked = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: { action: "mark_cooked", instanceId: bInstance.id },
+    });
+    expect(cooked.isError).toBeFalsy();
+    plan = jsonFromToolResult<UpdatePlanBody>(cooked).plan;
+    expect(plan.stock).toEqual([]);
+    expect(plan.draft.map((e) => e.recipeId)).toEqual([aId]);
+
+    const exportResult = await client.callTool({
+      name: "kochbuch_export_analysis",
+      arguments: {},
+    });
+    expect(exportResult.isError).toBeFalsy();
+    const exported = jsonFromToolResult<AnalysisExportBody>(exportResult);
+    expect(exported.cooked.map((c) => c.recipeId)).toEqual([bId]);
+
+    await client.close();
+  });
+
+  test("plan validation and isolation", async ({ page, flat, request }) => {
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    const recipeId = await addRecipeViaMcp(client, {
+      name: "Validate Me",
+      ingredients: [{ item: "salt" }],
+    });
+    const add = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: { action: "add_to_draft", recipeId },
+    });
+    expect(add.isError).toBeFalsy();
+    await finaliseDraftOnly(page, 1);
+
+    const plan = jsonFromToolResult<PlanBody>(
+      await client.callTool({ name: "kochbuch_get_plan" }),
+    );
+    const stockId = plan.stock[0]!.id;
+
+    const portionsOnStock = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: { action: "set_portions", instanceId: stockId, portions: 2 },
+    });
+    expect(portionsOnStock.isError).toBeTruthy();
+    expect(textFromToolResult(portionsOnStock)).toMatch(/draft/i);
+
+    const badCook = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: {
+        action: "set_cook",
+        instanceId: stockId,
+        cookId: "00000000-0000-4000-8000-000000000099",
+      },
+    });
+    expect(badCook.isError).toBeTruthy();
+    expect(textFromToolResult(badCook)).toBe("Cook is not in this flat.");
+
+    const otherAccessToken = await createIsolatedFlatAccessToken(page, request);
+    const otherClient = await mcpClient(otherAccessToken);
+    const otherPlan = jsonFromToolResult<PlanBody>(
+      await otherClient.callTool({ name: "kochbuch_get_plan" }),
+    );
+    expect(otherPlan.draft).toEqual([]);
+    expect(otherPlan.stock).toEqual([]);
+
+    const otherMutate = await otherClient.callTool({
+      name: "kochbuch_update_plan",
+      arguments: { action: "mark_cooked", instanceId: stockId },
+    });
+    expect(otherMutate.isError).toBeTruthy();
+
+    await otherClient.close();
+    await client.close();
+  });
 });

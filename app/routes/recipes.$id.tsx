@@ -13,7 +13,7 @@ import {
   Title,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { and, eq, asc, isNotNull, isNull, max, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   data,
   Form,
@@ -36,6 +36,12 @@ import { isSameOrigin } from "../auth/origin";
 import { deletePhoto } from "../blobs";
 import { formatIngredient } from "../lib/scale";
 import { firstMessage, formDataToObject, parseParams } from "../lib/form";
+import {
+  addToDraft,
+  backToDraftForRecipe,
+  markCookedForRecipe,
+  setPortionsForRecipeDraft,
+} from "../lib/kitchen";
 import { RecipeSteps } from "../components/recipe-steps";
 
 const ParamsSchema = z.object({ id: z.guid() });
@@ -147,159 +153,40 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (parsed.data.intent === "add-to-draft") {
-    const flatId = ctx.flat.id;
-    // One draft instance per recipe — clicking add again is a no-op.
-    const existing = await db()
-      .select({ id: recipeInstances.id })
-      .from(recipeInstances)
-      .where(
-        and(
-          eq(recipeInstances.flatId, flatId),
-          eq(recipeInstances.recipeId, recipe.id),
-          isNull(recipeInstances.finalisedAt),
-        ),
-      )
-      .limit(1);
-    if (existing.length > 0) {
-      return { added: true as const };
-    }
-    // Retry on partial-unique-index collision (concurrent add).
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const [{ value: nextPos }] = await db()
-          .select({
-            value: sql<number>`coalesce(${max(recipeInstances.position)}, -1) + 1`,
-          })
-          .from(recipeInstances)
-          .where(
-            and(
-              eq(recipeInstances.flatId, flatId),
-              isNull(recipeInstances.finalisedAt),
-            ),
-          );
-        await db().insert(recipeInstances).values({
-          flatId,
-          recipeId: recipe.id,
-          targetQuantity: recipe.baseQuantity,
-          position: nextPos,
-        });
-        return { added: true as const };
-      } catch (err: unknown) {
-        const code = (err as { code?: string }).code;
-        if (code === "23505" && attempt < 2) continue; // unique_violation, retry
-        throw err;
-      }
-    }
-    return { error: "Couldn't add to draft. Please try again." };
+    const result = await addToDraft({
+      flatId: ctx.flat.id,
+      recipeId: recipe.id,
+    });
+    if (!result.ok) return { error: result.error };
+    return { added: true as const };
   }
 
   if (parsed.data.intent === "update-quantity") {
-    await db()
-      .update(recipeInstances)
-      .set({ targetQuantity: parsed.data.targetQuantity })
-      .where(
-        and(
-          eq(recipeInstances.flatId, ctx.flat.id),
-          eq(recipeInstances.recipeId, recipe.id),
-          isNull(recipeInstances.finalisedAt),
-        ),
-      );
+    await setPortionsForRecipeDraft({
+      flatId: ctx.flat.id,
+      recipeId: recipe.id,
+      portions: parsed.data.targetQuantity,
+    });
     return { ok: true as const };
   }
 
   if (parsed.data.intent === "mark-cooked") {
-    const updated = await db()
-      .update(recipeInstances)
-      .set({ cookedAt: new Date(), cookedBy: ctx.user.id })
-      .where(
-        and(
-          eq(recipeInstances.flatId, ctx.flat.id),
-          eq(recipeInstances.recipeId, recipe.id),
-          isNotNull(recipeInstances.finalisedAt),
-          isNull(recipeInstances.cookedAt),
-        ),
-      )
-      .returning({ id: recipeInstances.id });
-    if (updated.length === 0) {
-      return { error: "Already cooked or not in stock." };
-    }
+    const result = await markCookedForRecipe({
+      flatId: ctx.flat.id,
+      userId: ctx.user.id,
+      recipeId: recipe.id,
+    });
+    if (!result.ok) return { error: result.error };
     return { ok: true as const };
   }
 
   if (parsed.data.intent === "back-to-draft") {
-    const flatId = ctx.flat.id;
-    // Preserve the one-draft-per-recipe invariant: refuse if an open
-    // draft instance already exists for this recipe.
-    const existingDraft = await db()
-      .select({ id: recipeInstances.id })
-      .from(recipeInstances)
-      .where(
-        and(
-          eq(recipeInstances.flatId, flatId),
-          eq(recipeInstances.recipeId, recipe.id),
-          isNull(recipeInstances.finalisedAt),
-        ),
-      )
-      .limit(1);
-    if (existingDraft.length > 0) {
-      return { error: "This recipe is already in your draft." };
-    }
-    // Clear finalised_at on the in-stock instance and append it to the end
-    // of the draft. Appending dodges the partial unique index on
-    // (flat_id, position) WHERE finalised_at IS NULL. Retry on a
-    // concurrent-collision (someone else drafting/demoting at once).
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const demoted = await db().transaction(async (tx) => {
-          const [stock] = await tx
-            .select({ id: recipeInstances.id })
-            .from(recipeInstances)
-            .where(
-              and(
-                eq(recipeInstances.flatId, flatId),
-                eq(recipeInstances.recipeId, recipe.id),
-                isNotNull(recipeInstances.finalisedAt),
-                isNull(recipeInstances.cookedAt),
-              ),
-            )
-            .orderBy(asc(recipeInstances.position))
-            .limit(1);
-          if (!stock) return false;
-          const [{ value: nextPos }] = await tx
-            .select({
-              value: sql<number>`coalesce(${max(recipeInstances.position)}, -1) + 1`,
-            })
-            .from(recipeInstances)
-            .where(
-              and(
-                eq(recipeInstances.flatId, flatId),
-                isNull(recipeInstances.finalisedAt),
-              ),
-            );
-          await tx
-            .update(recipeInstances)
-            .set({ finalisedAt: null, position: nextPos })
-            .where(
-              and(
-                eq(recipeInstances.id, stock.id),
-                eq(recipeInstances.flatId, flatId),
-                isNotNull(recipeInstances.finalisedAt),
-                isNull(recipeInstances.cookedAt),
-              ),
-            );
-          return true;
-        });
-        if (!demoted) {
-          return { error: "This recipe isn't in stock." };
-        }
-        return { ok: true as const };
-      } catch (err: unknown) {
-        const code = (err as { code?: string }).code;
-        if (code === "23505" && attempt < 2) continue; // unique_violation, retry
-        throw err;
-      }
-    }
-    return { error: "Couldn't move back to draft. Please try again." };
+    const result = await backToDraftForRecipe({
+      flatId: ctx.flat.id,
+      recipeId: recipe.id,
+    });
+    if (!result.ok) return { error: result.error };
+    return { ok: true as const };
   }
 
   if (parsed.data.intent === "toggle-omit") {
