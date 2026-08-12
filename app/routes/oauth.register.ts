@@ -1,5 +1,5 @@
 import type { Route } from "./+types/oauth.register";
-import { registerClient } from "../auth/oauth";
+import { isAllowedRedirectUri, registerClient } from "../auth/oauth";
 
 type RegisterBody = {
   client_name?: unknown;
@@ -39,16 +39,11 @@ export async function action({ request }: Route.ActionArgs) {
     if (typeof u !== "string") {
       return jsonError("invalid_redirect_uri", "redirect_uris must be strings");
     }
-    try {
-      const parsed = new URL(u);
-      if (parsed.protocol !== "https:" && parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1") {
-        return jsonError(
-          "invalid_redirect_uri",
-          "redirect_uri must be https or localhost",
-        );
-      }
-    } catch {
-      return jsonError("invalid_redirect_uri", "redirect_uri is not a URL");
+    if (!isAllowedRedirectUri(u)) {
+      return jsonError(
+        "invalid_redirect_uri",
+        "redirect_uri must be https, loopback http, or a private-use URI scheme",
+      );
     }
     redirectUris.push(u);
   }

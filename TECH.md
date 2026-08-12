@@ -292,6 +292,20 @@ Hand-rolled, deliberately small. Three tables (`users`, `sessions`,
   (NIST 800-63B). Block the most common ~10k passwords via a small
   embedded list.
 
+### 4.5 MCP OAuth redirect URIs
+
+Dynamic client registration (`/oauth/register`) accepts redirect URIs
+that are `https:`, loopback `http:` (`localhost` / `127.0.0.1` / `::1`),
+or a private-use URI scheme with a host (RFC 8252 §7.1). Browser-
+executable schemes (`javascript:`, `data:`, `file:`, …) are rejected.
+
+Cursor's DCR registers these three callbacks in one request — all must
+be accepted or OAuth never starts:
+
+- `cursor://anysphere.cursor-mcp/oauth/callback` (desktop / some surfaces)
+- `https://www.cursor.com/agents/mcp/oauth/callback` (web + Cloud Agents)
+- `http://localhost:8787/callback` (desktop loopback)
+
 ---
 
 ## 5. Search
