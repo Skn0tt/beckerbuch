@@ -846,6 +846,69 @@ test.describe("MCP server", () => {
     expect(body.scope).toBe("recipes:write");
   });
 
+  test("registration accepts Cursor's multi-callback redirect_uris set", async () => {
+    // Cursor DCR registers all three callbacks in one request. Rejecting the
+    // private-use cursor:// URI aborts the whole registration and OAuth never
+    // starts ("redirect_uri must be https or localhost").
+    const redirectUris = [
+      "cursor://anysphere.cursor-mcp/oauth/callback",
+      "https://www.cursor.com/agents/mcp/oauth/callback",
+      "http://localhost:8787/callback",
+    ];
+    const res = await fetch(`${BASE_URL}/oauth/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "Cursor",
+        redirect_uris: redirectUris,
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { redirect_uris: string[] };
+    expect(body.redirect_uris).toEqual(redirectUris);
+  });
+
+  test("registration accepts loopback http variants and rejects unsafe schemes", async () => {
+    for (const uri of [
+      "http://127.0.0.1:8787/callback",
+      "http://[::1]:8787/callback",
+      "vscode://anthropic.claude/oauth/callback",
+    ]) {
+      const res = await fetch(`${BASE_URL}/oauth/register`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          client_name: `ok ${uri}`,
+          redirect_uris: [uri],
+        }),
+      });
+      expect(res.status, `${uri} should be accepted`).toBe(201);
+    }
+
+    for (const uri of [
+      "http://example.com/callback",
+      "javascript:alert(1)",
+      "data:text/html,hi",
+      "file:///etc/passwd",
+    ]) {
+      const res = await fetch(`${BASE_URL}/oauth/register`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          client_name: `bad ${uri}`,
+          redirect_uris: [uri],
+        }),
+      });
+      expect(res.status, `${uri} should be rejected`).toBe(400);
+      const body = (await res.json()) as {
+        error: string;
+        error_description: string;
+      };
+      expect(body.error).toBe("invalid_redirect_uri");
+      expect(body.error_description).toMatch(/https|loopback|private-use/i);
+    }
+  });
+
   test("refresh token rotates and revokes the old one", async ({ page, flat }) => {
     await login(page, flat.user);
     const result = await runOAuthFlow(page);

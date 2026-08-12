@@ -26,6 +26,56 @@ export function verifyPkceS256(verifier: string, challenge: string): boolean {
   return constantTimeStringEqual(computed, challenge);
 }
 
+/**
+ * Schemes a browser can execute or that leak local content. DCR is
+ * unauthenticated, so accepting these as redirect_uris would turn
+ * registration into a token-exfiltration / stored-XSS primitive.
+ */
+const DISALLOWED_REDIRECT_SCHEMES = new Set([
+  "javascript",
+  "data",
+  "file",
+  "vbscript",
+  "blob",
+  "about",
+  "intent",
+  "view-source",
+]);
+
+function isLoopbackHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+/**
+ * Whether a redirect_uri is acceptable for dynamic client registration.
+ *
+ * Allows:
+ * - `https:` (any host)
+ * - `http:` only for loopback (`localhost`, `127.0.0.1`, `::1`)
+ * - private-use URI schemes with a host (RFC 8252 §7.1), e.g.
+ *   `cursor://anysphere.cursor-mcp/oauth/callback` — Cursor's DCR sends
+ *   this alongside https + localhost callbacks in one registration.
+ *
+ * Rejects browser-executable / local-content schemes (`javascript:`,
+ * `data:`, `file:`, …) and non-loopback `http:`.
+ */
+export function isAllowedRedirectUri(uri: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    return false;
+  }
+  const scheme = parsed.protocol.replace(/:$/, "").toLowerCase();
+  if (!scheme || DISALLOWED_REDIRECT_SCHEMES.has(scheme)) return false;
+  if (scheme === "https") return true;
+  if (scheme === "http") return isLoopbackHostname(parsed.hostname);
+  // Private-use schemes for native MCP clients (cursor://, vscode://, …).
+  // Require a host so bare `cursor:` without an authority is rejected.
+  return /^[a-z][a-z0-9+.-]*$/.test(scheme) && parsed.hostname.length > 0;
+}
+
 // ---------- client registration ----------
 
 export type RegisteredClient = {

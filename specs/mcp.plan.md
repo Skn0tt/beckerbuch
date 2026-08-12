@@ -227,6 +227,26 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
     - expect: The response status is 201.
     - expect: The response scope is `recipes:write`.
 
+#### 4.5a. registration-accepts-cursors-multi-callback-redirect-uris-set
+
+**File:** `tests/mcp.spec.ts`
+
+**Steps:**
+  1. POST dynamic-client-registration data to `/oauth/register` with Cursor's three DCR callbacks (`cursor://…`, `https://www.cursor.com/agents/mcp/oauth/callback`, `http://localhost:8787/callback`) without using the flat fixture.
+    - expect: The response status is 201.
+    - expect: The response echoes the same three `redirect_uris`.
+
+#### 4.5b. registration-accepts-loopback-http-variants-and-rejects-unsafe-schemes
+
+**File:** `tests/mcp.spec.ts`
+
+**Steps:**
+  1. POST dynamic-client-registration data for each of `http://127.0.0.1:8787/callback`, `http://[::1]:8787/callback`, and `vscode://anthropic.claude/oauth/callback` without using the flat fixture.
+    - expect: Each response status is 201.
+  2. POST dynamic-client-registration data for each of `http://example.com/callback`, `javascript:alert(1)`, `data:text/html,hi`, and `file:///etc/passwd` without using the flat fixture.
+    - expect: Each response status is 400.
+    - expect: Each error is `invalid_redirect_uri`.
+
 #### 4.6. refresh-token-rotates-and-revokes-the-old-one
 
 **File:** `tests/mcp.spec.ts`
