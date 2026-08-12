@@ -2,13 +2,9 @@ import { and, asc, eq, isNotNull, isNull, max, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { flatMembers, recipeInstances, recipes } from "../db/schema";
 
-export type KitchenOk<T extends Record<string, unknown> = Record<string, never>> = {
-  ok: true;
-} & T;
+export type KitchenOk<T = object> = { ok: true } & T;
 export type KitchenErr = { ok: false; error: string };
-export type KitchenResult<T extends Record<string, unknown> = Record<string, never>> =
-  | KitchenOk<T>
-  | KitchenErr;
+export type KitchenResult<T = object> = KitchenOk<T> | KitchenErr;
 
 export type PlanLane = "draft" | "stock";
 
