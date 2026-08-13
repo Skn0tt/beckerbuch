@@ -2,6 +2,7 @@ import { expect, test } from "./fixtures";
 import { login } from "./login";
 import type { Page } from "@playwright/test";
 import { geminiEmbeddingHandler } from "./mock-handlers";
+import { bringImportHref } from "../app/lib/bring";
 
 test.beforeEach(async ({ mocks }) => {
   await mocks.route(
@@ -100,8 +101,8 @@ async function createRecipeAndAddToDraft(page: Page, name: string) {
   await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
 }
 
-test.describe("Send to Bring! (import widget)", () => {
-  test("renders the Bring! widget with the handoff URL", async ({
+test.describe("Send to Bring!", () => {
+  test("links to Bring!'s import deeplink with the handoff URL", async ({
     page,
     flat,
   }) => {
@@ -113,36 +114,8 @@ test.describe("Send to Bring! (import widget)", () => {
     await page.getByRole("button", { name: "Confirm finalise draft" }).click();
     await expect(page).toHaveURL(`/h/${flat.id}`);
 
-    await expect(page.getByTestId("bring-import-widget")).toBeVisible();
-    await expect(page.getByText("Opens Bring! to import this list.")).toBeVisible();
-    await expect(page.getByTestId("handoff-desktop")).toBeVisible();
-
-    const calls = await page.evaluate(
-      () =>
-        (window as unknown as { __bringImportCalls: { url?: string }[] })
-          .__bringImportCalls,
-    );
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.url).toMatch(new RegExp(`/h/${flat.id}$`));
-  });
-
-  test.describe("mobile", () => {
-    test.use({ viewport: { width: 390, height: 844 } });
-
-    test("shows the widget and hides the desktop QR card", async ({
-      page,
-      flat,
-    }) => {
-      await login(page, flat.user);
-      await createRecipeAndAddToDraft(page, "Pasta al limone");
-
-      await page.goto("/kitchen");
-      await page.getByRole("button", { name: "Finalise draft" }).click();
-      await page.getByRole("button", { name: "Confirm finalise draft" }).click();
-      await expect(page).toHaveURL(`/h/${flat.id}`);
-
-      await expect(page.getByTestId("bring-import-widget")).toBeVisible();
-      await expect(page.getByTestId("handoff-desktop")).toBeHidden();
-    });
+    const link = page.getByRole("link", { name: "Send to Bring!" });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute("href", bringImportHref(page.url()));
   });
 });

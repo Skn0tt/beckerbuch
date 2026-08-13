@@ -8,12 +8,10 @@ import {
   test as base,
   expect,
   mergeTests,
-  type BrowserContext,
   type Page,
 } from "@playwright/test";
 import { login } from "./login";
 import { KPTNCOOK_TEST_API_KEY } from "./mock-data";
-import { BRING_WIDGET_STUB } from "./bring-widget-stub";
 import {
   test as mocksTest,
   type MocksTestFixtures,
@@ -54,13 +52,6 @@ export type WorkerFixtures = AppWorkerFixtures & MocksWorkerFixtures;
 export type TestFixtures = AppTestFixtures & MocksTestFixtures;
 
 const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixtures>({
-  // Browser-side: stub Bring!'s import.js so every spec that hits /h/:flatId
-  // stays off the real CDN (the Node mock proxy only sees the app server).
-  context: async ({ context }, use) => {
-    await installBringWidgetMock(context);
-    await use(context);
-  },
-
   // ---------------------------------------------------------------
   // Worker-scoped: one `react-router-serve` process per worker,
   // wired to the proxy, running the production build that
@@ -245,24 +236,6 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
 export const test = mergeTests(mocksTest, appTest);
 
 export { expect };
-
-/**
- * Intercept Bring! widget + related CDN requests on a Playwright context.
- * The default `context` fixture already calls this; extra contexts created
- * via `browser.newContext()` need it too if they load `/h/:flatId`.
- */
-export async function installBringWidgetMock(context: BrowserContext) {
-  await context.route("**://platform.getbring.com/**", async (route) => {
-    if (route.request().url().includes("import.js")) {
-      await route.fulfill({
-        contentType: "application/javascript; charset=utf-8",
-        body: BRING_WIDGET_STUB,
-      });
-      return;
-    }
-    await route.fulfill({ status: 204, body: "" });
-  });
-}
 
 /**
  * Drive the flat-settings UI to mint a fresh invite link as `user`. The

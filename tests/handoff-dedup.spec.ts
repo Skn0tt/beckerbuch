@@ -1,4 +1,4 @@
-import { expect, test, installBringWidgetMock } from "./fixtures";
+import { expect, test } from "./fixtures";
 import { login } from "./login";
 import type { Page } from "@playwright/test";
 import { geminiEmbeddingHandler } from "./mock-handlers";
@@ -189,7 +189,6 @@ test("public — anonymous visitor sees combined list and can split", async ({
   await finalise(page, flat.id);
 
   const anon = await browser.newContext();
-  await installBringWidgetMock(anon);
   const anonPage = await anon.newPage();
   await anonPage.goto(`/h/${flat.id}`);
   await expect(anonPage.getByText("600 g tomato", { exact: true })).toBeVisible();

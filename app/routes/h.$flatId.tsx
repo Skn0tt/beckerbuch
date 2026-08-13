@@ -1,11 +1,9 @@
 import {
   ActionIcon,
   Anchor,
-  Box,
   Button,
   Card,
   Container,
-  CopyButton,
   Group,
   Stack,
   Text,
@@ -13,7 +11,6 @@ import {
 } from "@mantine/core";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { data, useLocation, useNavigate } from "react-router";
-import QRCode from "qrcode";
 import { z } from "zod";
 import type { Route } from "./+types/h.$flatId";
 import { db } from "../db/client";
@@ -24,13 +21,13 @@ import {
   recipes,
 } from "../db/schema";
 import { formatIngredient } from "../lib/scale";
+import { bringImportHref } from "../lib/bring";
 import {
   buildDedupInputFromData,
   snapshotDedupForFlat,
 } from "../lib/dedup-snapshot";
 import { computeCombinedList } from "../lib/combined-list";
 import { CombinedList } from "../components/combined-list";
-import { BringImport } from "../components/bring-import";
 import { firstMessage, formDataToObject, parseParams } from "../lib/form";
 
 const ParamsSchema = z.object({ flatId: z.guid() });
@@ -104,10 +101,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           .from(ingredients)
           .where(inArray(ingredients.recipeId, recipeIds))
           .orderBy(asc(ingredients.position));
-  const [allIngs, qrSvg] = await Promise.all([
-    ingsQuery ?? Promise.resolve([] as never[]),
-    QRCode.toString(handoffUrl, { type: "svg", margin: 1 }),
-  ]);
+  const allIngs = ingsQuery ? await ingsQuery : [];
   const omittedIngredientIds = new Set<string>();
   for (const r of rows)
     for (const id of r.omittedIngredientIds) omittedIngredientIds.add(id);
@@ -156,7 +150,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     rejectedIds,
     snapshotFresh,
     handoffUrl,
-    qrSvg,
   };
 }
 
@@ -207,7 +200,6 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
     rejectedIds,
     snapshotFresh,
     handoffUrl,
-    qrSvg,
   } = loaderData;
   const location = useLocation();
   const navigate = useNavigate();
@@ -262,42 +254,13 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
           <Text c="dimmed">Nothing to shop right now.</Text>
         ) : (
           <>
-            <Stack gap={4}>
-              <BringImport url={handoffUrl} />
-              <Text size="xs" c="dimmed">
-                Opens Bring! to import this list.
-              </Text>
-            </Stack>
-
-            {/* Desktop fallback: QR + copy-link if the widget doesn't open
-                Bring! on this machine. Drop once we know the button works
-                on desktop. */}
-            <Card withBorder visibleFrom="sm" data-testid="handoff-desktop">
-              <Stack gap="sm">
-                <Title order={2} size="h5">
-                  Or open this page on your phone
-                </Title>
-                <Group align="center" gap="md" wrap="nowrap">
-                  <Box
-                    aria-label="QR code for handoff URL"
-                    w={160}
-                    dangerouslySetInnerHTML={{ __html: qrSvg }}
-                  />
-                  <Stack gap="xs">
-                    <Text size="sm" style={{ wordBreak: "break-all" }}>
-                      {handoffUrl}
-                    </Text>
-                    <CopyButton value={handoffUrl}>
-                      {({ copied, copy }) => (
-                        <Button size="xs" variant="default" onClick={copy}>
-                          {copied ? "Copied" : "Copy link"}
-                        </Button>
-                      )}
-                    </CopyButton>
-                  </Stack>
-                </Group>
-              </Stack>
-            </Card>
+            <Button
+              component="a"
+              href={bringImportHref(handoffUrl)}
+              fullWidth
+            >
+              Send to Bring!
+            </Button>
 
             {/* Combined deduped list (issue #7). */}
             <CombinedList

@@ -1,4 +1,4 @@
-import { expect, test, installBringWidgetMock } from "./fixtures";
+import { expect, test } from "./fixtures";
 import { login } from "./login";
 import { geminiEmbeddingHandler } from "./mock-handlers";
 
@@ -164,7 +164,6 @@ test("public /h/:flatId renders stock + JSON-LD, no auth required", async ({
   await expect(page).toHaveURL(`/h/${flat.id}`);
 
   const anon = await browser.newContext();
-  await installBringWidgetMock(anon);
   const anonPage = await anon.newPage();
   await anonPage.goto(`/h/${flat.id}`);
 

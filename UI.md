@@ -382,28 +382,15 @@ DESKTOP (modal)                                       MOBILE (sheet)
 (`cookbook.app/h/<flat-id>`) so Bring!'s parser can fetch it without
 cookies.
 
-Same URL, two responsive renderings:
-
-- **Both:** Bring!'s official import widget. Clicking it opens Bring!
-  with this page's URL; Bring scrapes the combined-list JSON-LD.
-- **On desktop:** a QR + Copy card as a fallback for getting the URL
-  onto a phone (drop if the widget works on desktop).
-
 ```
-DESKTOP                                              MOBILE
-┌──────────────────────────────────────────────┐     ┌──────────────────────────────────┐
-│ ←  Shopping list                             │     │ ←  Shopping list                 │
-├──────────────────────────────────────────────┤     ├──────────────────────────────────┤
-│ [ Add to Bring!  (official widget) ]         │     │ [ Add to Bring! (widget) ]       │
-│ Opens Bring! to import this list.            │     │ Opens Bring! to import this list.│
-│                                              │     │                                  │
-│ Or open this page on your phone              │     │ Combined list                    │
-│ ┌────────────────┬─────────────────────────┐ │     │  · 600 g tomato        [Split]   │
-│ │     [ QR ]     │ cookbook.app/h/<flat-id>│ │     │                                  │
-│ │                │ [ Copy link ]           │ │     │ Recipes in this list             │
-│ └────────────────┴─────────────────────────┘ │     │  · Pasta al limone (serves 4)    │
-│ Combined list                                │     │  · Chicken katsu (serves 6)      │
-│  · 600 g tomato                    [Split]   │     └──────────────────────────────────┘
+DESKTOP / MOBILE (same layout)
+┌──────────────────────────────────────────────┐
+│ ←  Shopping list                             │
+├──────────────────────────────────────────────┤
+│ [          Send to Bring!              ]     │
+│                                              │
+│ Combined list                                │
+│  · 600 g tomato                    [Split]   │
 │ Recipes in this list                         │
 │  · Pasta al limone (serves 4)                │
 │  · Chicken katsu (serves 6)                  │
@@ -411,12 +398,11 @@ DESKTOP                                              MOBILE
 ```
 
 - After Finalise (§7), the app navigates to this URL.
-- The widget tells Bring! to fetch the current page; ingredients come
-  from schema.org Recipe JSON-LD (DESIGN.md §4.4), not from the widget
-  markup. Split/Regenerate update that JSON-LD, so a later click picks
-  up the edited list.
-- The QR/copy card is desktop-only. The widget is the primary CTA on
-  both form factors.
+- **Send to Bring!** is a normal button styled like the rest of the
+  app. Its `href` is Bring!'s official deeplink endpoint with this
+  page's URL; Bring fetches the page and scrapes schema.org Recipe
+  JSON-LD (DESIGN.md §4.4). Split/Regenerate update that JSON-LD, so
+  a later click picks up the edited list.
 - The handoff URL is stable for the life of the flat — it always shows
   the latest finalise batch. After the next finalise, the same URL just
   shows the new contents.

@@ -423,20 +423,17 @@ SELECT * FROM recipe_instances
 
 Renders:
 
-- **Both:** Bring!'s official import widget (`platform.getbring.com/widgets/import.js`),
-  late-rendered after hydration via `bringwidgets.import.render`. The
-  widget opens Bring! with this page's URL; Bring's parser scrapes the
-  JSON-LD. Quantity attrs are omitted so Bring does not re-scale lines
-  that are already target-quantity. `data-bring-requires-consent` is
-  set and consent is never granted, so the widget does not inject
-  Google Analytics.
+- **Send to Bring!** — a normal Mantine button whose `href` is
+  `https://api.getbring.com/rest/bringrecipes/deeplink?url=<handoff>&source=web`.
+  Bring 307s that to an app deeplink, then fetches the public page and
+  scrapes the JSON-LD. Quantity query params are omitted so Bring does
+  not re-scale lines that are already at target quantity. No third-party
+  widget script (and no Google Analytics).
 - **JSON-LD:** `name`, `author` (Organization = flat name; required by
   Bring's checker), `recipeYield`, `recipeIngredient` (combined list,
   with split groups expanded).
-- **Desktop:** QR + Copy card as a fallback for opening the page on a
-  phone.
 
-UI per UI.md §8. Same URL, two responsive renderings.
+UI per UI.md §8.
 
 The URL is stable for the life of the flat — bookmarkable on the
 phone as "our shopping list lives here". It shows the latest finalise

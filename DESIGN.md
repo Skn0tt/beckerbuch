@@ -145,8 +145,9 @@ Finalising:
 
 We export the combined shopping list as a public page (`/h/:flatId`)
 that exposes [recipe schema.org JSON-LD](https://schema.org/Recipe).
-Bring!'s official import widget on that page opens the app with the
-page URL; Bring's parser scrapes `recipeIngredient`. The same JSON-LD
+A **Send to Bring!** button on that page is Bring!'s official no-JS
+deeplink (`api.getbring.com/rest/bringrecipes/deeplink`); Bring then
+fetches the page URL and scrapes `recipeIngredient`. The same JSON-LD
 also works if someone shares the URL into Bring! some other way.
 
 > The Bring! integration is a one-way push; cookbook never reads back from
