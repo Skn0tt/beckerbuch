@@ -116,3 +116,52 @@ export async function loadKitchen(flatId: string): Promise<KitchenData> {
     members,
   };
 }
+
+export type PlanCook = { id: string; displayName: string | null };
+
+export type PlanEntry = {
+  id: string;
+  recipeId: string;
+  recipeName: string;
+  portions: number;
+  position: number;
+  cook: PlanCook | null;
+  note: string | null;
+};
+
+export type PlanPayload = {
+  draft: PlanEntry[];
+  stock: PlanEntry[];
+  members: { id: string; displayName: string }[];
+};
+
+/**
+ * Draft + In stock + member roster for MCP / agents.
+ * Omits ingredient lines (use recipe get/search for those).
+ * If a designated cook left the flat, `cook.displayName` is null.
+ */
+export async function getPlanForMcp(flatId: string): Promise<PlanPayload> {
+  const data = await loadKitchen(flatId);
+  const memberById = new Map(data.members.map((m) => [m.id, m.displayName]));
+
+  const toEntry = (e: KitchenEntry): PlanEntry => ({
+    id: e.id,
+    recipeId: e.recipeId,
+    recipeName: e.recipeName,
+    portions: e.targetQuantity,
+    position: e.position,
+    cook: e.designatedCookId
+      ? {
+          id: e.designatedCookId,
+          displayName: memberById.get(e.designatedCookId) ?? null,
+        }
+      : null,
+    note: e.note,
+  });
+
+  return {
+    draft: data.draft.map(toEntry),
+    stock: data.stock.map(toEntry),
+    members: data.members.map((m) => ({ id: m.id, displayName: m.displayName })),
+  };
+}

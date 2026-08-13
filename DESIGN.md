@@ -203,6 +203,8 @@ like repeat-favourites have history to draw on), but there's no in-app
 view of it yet. Agents can pull a flat-scoped dump via the MCP tool
 `kochbuch_export_analysis` (normalized JSON tables: recipes, ingredients,
 cooked — with cook/recipe names on each cooked row) and analyze locally.
+Live Draft / In stock state is separate: `kochbuch_get_plan` /
+`kochbuch_update_plan` (finalise / Bring! handoff remains UI-only).
 
 ## 5. Users & access
 

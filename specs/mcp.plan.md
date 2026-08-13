@@ -2,7 +2,7 @@
 
 ## Application Overview
 
-The MCP server exposes OAuth-protected cookbook tools for external clients, including recipe creation, search, retrieval, editing, image handling, analysis-table export, discovery metadata, dynamic client registration, refresh-token rotation, and consent decisions.
+The MCP server exposes OAuth-protected cookbook tools for external clients, including recipe creation, search, retrieval, editing, image handling, Draft / In stock plan read/write, analysis-table export, discovery metadata, dynamic client registration, refresh-token rotation, and consent decisions.
 
 ## Test Scenarios
 
@@ -321,3 +321,52 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
   2. Create an isolated second flat, connect MCP, add `Other Flat Only` (uncooked), and export.
     - expect: The export contains only the second flat's recipe and ingredients.
     - expect: Flat A's recipe id, ingredient, and cooked rows are absent.
+
+### 6. MCP Meal Plan (Draft / In stock)
+
+**Seed:** `tests/fixtures.ts` (flat fixture)
+
+#### 6.1. get-plan-empty-then-add-and-edit-draft
+
+**File:** `tests/mcp.spec.ts`
+
+**Steps:**
+  1. Log in, approve OAuth, connect MCP, call `kochbuch_get_plan`.
+    - expect: `draft` and `stock` are empty; `members` includes the logged-in user.
+  2. Add recipes `Plan Pasta` and `Plan Curry` via MCP.
+  3. Call `kochbuch_update_plan` with `add_to_draft` for Pasta (portions 4, note "Thu", cookId = member id).
+    - expect: Success; `plan.draft` has one entry with those fields and cook display name.
+  4. Add Curry to draft, then `set_portions` / `set_note` / `set_cook` / `reorder`.
+    - expect: `get_plan` / returned `plan` reflects edits and order.
+  5. Call `remove_from_draft` on Curry.
+    - expect: Only Pasta remains in draft.
+
+#### 6.2. add-to-draft-is-idempotent-but-can-enrich
+
+**File:** `tests/mcp.spec.ts`
+
+**Steps:**
+  1. Add a recipe, `add_to_draft` twice with a note on the second call.
+    - expect: Still one draft entry; note applied; `created: false` on second call.
+
+#### 6.3. stock-back-to-draft-and-mark-cooked
+
+**File:** `tests/mcp.spec.ts`
+
+**Steps:**
+  1. Add two recipes to draft via MCP, finalise in the UI (not MCP).
+  2. Call `get_plan` — both in `stock`, draft empty.
+  3. `back_to_draft` one instance — it leaves stock and appears in draft.
+  4. `mark_cooked` the remaining stock entry — stock empty; cooked history (export) has one row.
+
+#### 6.4. plan-validation-and-isolation
+
+**File:** `tests/mcp.spec.ts`
+
+**Steps:**
+  1. Duplicate or incomplete `reorder` `instanceIds` → error.
+  2. Omitting `cookId` / `note` on `set_cook` / `set_note` → error; `note: null` clears.
+  3. `set_portions` on an in-stock instance → error.
+  4. `set_cook` with a random UUID → "Cook is not in this flat."
+  5. `reorder` on `in_stock` with the full lane succeeds.
+  6. Second flat's MCP client cannot see or mutate the first flat's plan instances.

@@ -14,8 +14,21 @@ import {
 } from "../lib/recipes";
 import { importRecipe } from "../lib/recipe-import";
 import { exportAnalysisTables } from "../lib/analysis-export";
+import { getPlanForMcp } from "../lib/kitchen-data";
+import {
+  PLAN_NOTE_MAX,
+  addToDraft,
+  backToDraft,
+  markCooked,
+  removeFromDraft,
+  reorderLane,
+  setCook,
+  setNote,
+  setPortions,
+} from "../lib/kitchen";
 
 const UUID_SCHEMA = z.guid("Recipe id must be a UUID.");
+const INSTANCE_UUID = z.guid("Instance id must be a UUID.");
 
 const ingredientSchema = z.object({
   amount: z.string().optional(),
@@ -117,6 +130,225 @@ const editRecipeInput = {
     .optional()
     .describe("Remove the current recipe photo"),
 };
+
+const PLAN_SHAPE_DOC =
+  'Returns JSON: { draft: PlanEntry[], stock: PlanEntry[], members: { id, displayName }[] }. ' +
+  "PlanEntry: { id (instance id), recipeId, recipeName, portions, position, cook: { id, displayName } | null, note }. " +
+  "cook.displayName is null if that member left the flat. " +
+  "Use members[].id as cookId for set_cook / add_to_draft. Use entry id as instanceId for mutations. " +
+  "Promoting draft → in stock (finalise / shopping handoff) is UI-only and not available here.";
+
+const updatePlanInput = {
+  action: z
+    .enum([
+      "add_to_draft",
+      "remove_from_draft",
+      "set_portions",
+      "set_cook",
+      "set_note",
+      "reorder",
+      "back_to_draft",
+      "mark_cooked",
+    ])
+    .describe(
+      "Mutation to apply. Finalise (draft → in stock) is not available via MCP — use the Cookbook UI.",
+    ),
+  recipeId: UUID_SCHEMA.optional().describe("Required for add_to_draft"),
+  instanceId: INSTANCE_UUID.optional().describe(
+    "Required for remove_from_draft, set_portions, set_cook, set_note, back_to_draft, mark_cooked",
+  ),
+  portions: z
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .optional()
+    .describe("Portions (1–1000). For add_to_draft / set_portions (draft only)"),
+  cookId: UUID_SCHEMA.nullable()
+    .optional()
+    .describe(
+      `Flat member id from plan.members, or null to unassign. Required for set_cook (omit only on add_to_draft).`,
+    ),
+  note: z
+    .string()
+    .max(PLAN_NOTE_MAX)
+    .nullable()
+    .optional()
+    .describe(
+      `Free-text note (max ${PLAN_NOTE_MAX} chars). Required for set_note — pass null/empty to clear. Optional on add_to_draft.`,
+    ),
+  list: z
+    .enum(["draft", "in_stock"])
+    .optional()
+    .describe("Lane for reorder: draft or in_stock"),
+  instanceIds: z
+    .array(INSTANCE_UUID)
+    .optional()
+    .describe("Full ordered list of instance ids in that lane (reorder)"),
+};
+
+type UpdatePlanArgs = {
+  action:
+    | "add_to_draft"
+    | "remove_from_draft"
+    | "set_portions"
+    | "set_cook"
+    | "set_note"
+    | "reorder"
+    | "back_to_draft"
+    | "mark_cooked";
+  recipeId?: string;
+  instanceId?: string;
+  portions?: number;
+  cookId?: string | null;
+  note?: string | null;
+  list?: "draft" | "in_stock";
+  instanceIds?: string[];
+};
+
+async function applyPlanUpdate(
+  flatId: string,
+  userId: string,
+  args: UpdatePlanArgs,
+): Promise<
+  | { ok: true; action: string; instanceId?: string; created?: boolean }
+  | { ok: false; error: string }
+> {
+  switch (args.action) {
+    case "add_to_draft": {
+      if (!args.recipeId || !UUID_SCHEMA.safeParse(args.recipeId).success) {
+        return { ok: false, error: "recipeId is required and must be a UUID." };
+      }
+      const result = await addToDraft({
+        flatId,
+        recipeId: args.recipeId,
+        portions: args.portions,
+        note: args.note,
+        cookId: args.cookId,
+      });
+      if (!result.ok) return result;
+      return {
+        ok: true,
+        action: args.action,
+        instanceId: result.instanceId,
+        created: result.created,
+      };
+    }
+    case "remove_from_draft": {
+      if (!args.instanceId || !INSTANCE_UUID.safeParse(args.instanceId).success) {
+        return { ok: false, error: "instanceId is required and must be a UUID." };
+      }
+      const result = await removeFromDraft({
+        flatId,
+        instanceId: args.instanceId,
+      });
+      if (!result.ok) return result;
+      return { ok: true, action: args.action, instanceId: args.instanceId };
+    }
+    case "set_portions": {
+      if (!args.instanceId || !INSTANCE_UUID.safeParse(args.instanceId).success) {
+        return { ok: false, error: "instanceId is required and must be a UUID." };
+      }
+      if (args.portions === undefined) {
+        return { ok: false, error: "portions is required." };
+      }
+      const result = await setPortions({
+        flatId,
+        instanceId: args.instanceId,
+        portions: args.portions,
+      });
+      if (!result.ok) return result;
+      return { ok: true, action: args.action, instanceId: args.instanceId };
+    }
+    case "set_cook": {
+      if (!args.instanceId || !INSTANCE_UUID.safeParse(args.instanceId).success) {
+        return { ok: false, error: "instanceId is required and must be a UUID." };
+      }
+      if (args.cookId === undefined) {
+        return {
+          ok: false,
+          error: "cookId is required (pass null to unassign).",
+        };
+      }
+      if (args.cookId !== null && !UUID_SCHEMA.safeParse(args.cookId).success) {
+        return { ok: false, error: "cookId must be a UUID or null." };
+      }
+      const result = await setCook({
+        flatId,
+        instanceId: args.instanceId,
+        cookId: args.cookId,
+      });
+      if (!result.ok) return result;
+      return { ok: true, action: args.action, instanceId: args.instanceId };
+    }
+    case "set_note": {
+      if (!args.instanceId || !INSTANCE_UUID.safeParse(args.instanceId).success) {
+        return { ok: false, error: "instanceId is required and must be a UUID." };
+      }
+      if (args.note === undefined) {
+        return {
+          ok: false,
+          error: "note is required (pass null or empty to clear).",
+        };
+      }
+      const result = await setNote({
+        flatId,
+        instanceId: args.instanceId,
+        note: args.note,
+      });
+      if (!result.ok) return result;
+      return { ok: true, action: args.action, instanceId: args.instanceId };
+    }
+    case "reorder": {
+      if (args.list !== "draft" && args.list !== "in_stock") {
+        return { ok: false, error: "list must be draft or in_stock." };
+      }
+      if (!args.instanceIds || args.instanceIds.length === 0) {
+        return { ok: false, error: "instanceIds is required." };
+      }
+      if (new Set(args.instanceIds).size !== args.instanceIds.length) {
+        return { ok: false, error: "instanceIds must be unique." };
+      }
+      for (const id of args.instanceIds) {
+        if (!INSTANCE_UUID.safeParse(id).success) {
+          return { ok: false, error: "instanceIds must be UUIDs." };
+        }
+      }
+      const result = await reorderLane({
+        flatId,
+        lane: args.list === "in_stock" ? "stock" : "draft",
+        instanceIds: args.instanceIds,
+      });
+      if (!result.ok) return result;
+      return { ok: true, action: args.action };
+    }
+    case "back_to_draft": {
+      if (!args.instanceId || !INSTANCE_UUID.safeParse(args.instanceId).success) {
+        return { ok: false, error: "instanceId is required and must be a UUID." };
+      }
+      const result = await backToDraft({
+        flatId,
+        instanceId: args.instanceId,
+      });
+      if (!result.ok) return result;
+      return { ok: true, action: args.action, instanceId: args.instanceId };
+    }
+    case "mark_cooked": {
+      if (!args.instanceId || !INSTANCE_UUID.safeParse(args.instanceId).success) {
+        return { ok: false, error: "instanceId is required and must be a UUID." };
+      }
+      const result = await markCooked({
+        flatId,
+        userId,
+        instanceId: args.instanceId,
+      });
+      if (!result.ok) return result;
+      return { ok: true, action: args.action, instanceId: args.instanceId };
+    }
+    default:
+      return { ok: false, error: "Unknown action." };
+  }
+}
 
 async function handle(request: Request): Promise<Response> {
   const ctx = await tryGetMcpContext(request);
@@ -293,12 +525,48 @@ async function handle(request: Request): Promise<Response> {
     {
       title: "Export analysis tables",
       description:
-        "Export the flat's cooking data as normalized JSON tables (recipes, ingredients, cooked) for local analysis. Save each array and load into DuckDB / pandas / SQLite — join ingredients.recipeId → recipes.id (and cooked.recipeId). Cook and recipe names are already on each cooked row. Does not include passwords, photos, steps, or draft/in-stock instances.",
+        "Export the flat's cooking data as normalized JSON tables (recipes, ingredients, cooked) for local analysis. Save each array and load into DuckDB / pandas / SQLite — join ingredients.recipeId → recipes.id (and cooked.recipeId). Cook and recipe names are already on each cooked row. Does not include passwords, photos, steps, or draft/in-stock instances. For the live Draft / In stock plan, use kochbuch_get_plan / kochbuch_update_plan.",
       inputSchema: {},
     },
     async () => {
       const payload = await exportAnalysisTables(ctx.flat.id);
       return jsonResult(payload);
+    },
+  );
+
+  server.registerTool(
+    "kochbuch_get_plan",
+    {
+      title: "Get the meal plan",
+      description:
+        "Return the flat's current Draft and In stock plan entries plus household members. " +
+        PLAN_SHAPE_DOC,
+      inputSchema: {},
+    },
+    async () => {
+      const plan = await getPlanForMcp(ctx.flat.id);
+      return jsonResult(plan);
+    },
+  );
+
+  server.registerTool(
+    "kochbuch_update_plan",
+    {
+      title: "Update the meal plan",
+      description:
+        "Mutate Draft / In stock. Actions: add_to_draft (recipeId; optional portions, note, cookId), " +
+        "remove_from_draft, set_portions (draft only), set_cook (requires cookId; null unassigns), " +
+        "set_note (requires note; null/empty clears), reorder (list + unique instanceIds), " +
+        "back_to_draft, mark_cooked. Does not finalise draft → in stock (UI-only). " +
+        "On success returns { ok, plan, ... } where plan matches kochbuch_get_plan. " +
+        PLAN_SHAPE_DOC,
+      inputSchema: updatePlanInput,
+    },
+    async (args) => {
+      const result = await applyPlanUpdate(ctx.flat.id, ctx.user.id, args);
+      if (!result.ok) return toolError(result.error);
+      const plan = await getPlanForMcp(ctx.flat.id);
+      return jsonResult({ ...result, plan });
     },
   );
 
