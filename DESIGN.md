@@ -143,10 +143,11 @@ Finalising:
 
 ### 4.4 Bring! handoff
 
-We export each recipe in the finalised list as a page that exposes
-[recipe schema.org JSON-LD](https://schema.org/Recipe) so that **Bring!'s
-"import recipe from URL" feature** can scrape it. The user shares the URL
-into Bring!, which pulls in the ingredients.
+We export the combined shopping list as a public page (`/h/:flatId`)
+that exposes [recipe schema.org JSON-LD](https://schema.org/Recipe).
+Bring!'s official import widget on that page opens the app with the
+page URL; Bring's parser scrapes `recipeIngredient`. The same JSON-LD
+also works if someone shares the URL into Bring! some other way.
 
 > The Bring! integration is a one-way push; cookbook never reads back from
 > Bring!. If something gets bought outside the list, that's invisible to us

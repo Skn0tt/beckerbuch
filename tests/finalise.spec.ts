@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { expect, test, installBringWidgetMock } from "./fixtures";
 import { login } from "./login";
 import { geminiEmbeddingHandler } from "./mock-handlers";
 
@@ -164,6 +164,7 @@ test("public /h/:flatId renders stock + JSON-LD, no auth required", async ({
   await expect(page).toHaveURL(`/h/${flat.id}`);
 
   const anon = await browser.newContext();
+  await installBringWidgetMock(anon);
   const anonPage = await anon.newPage();
   await anonPage.goto(`/h/${flat.id}`);
 
@@ -176,6 +177,10 @@ test("public /h/:flatId renders stock + JSON-LD, no auth required", async ({
     (await anonPage.locator('script[type="application/ld+json"]').textContent())!,
   );
   expect(jsonLd["@type"]).toBe("Recipe");
+  expect(jsonLd.author).toEqual({
+    "@type": "Organization",
+    name: flat.name,
+  });
   expect(jsonLd.recipeIngredient).toContain("400 g spaghetti");
 
   await anon.close();

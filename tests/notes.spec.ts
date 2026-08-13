@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { expect, test, installBringWidgetMock } from "./fixtures";
 import { login } from "./login";
 import { geminiEmbeddingHandler } from "./mock-handlers";
 
@@ -363,6 +363,7 @@ test("note: does NOT appear on the public /h/:flatId handoff page", async ({
 
   // Anonymous visitor on the public handoff page.
   const anon = await browser.newContext();
+  await installBringWidgetMock(anon);
   const anonPage = await anon.newPage();
   await anonPage.goto(`/h/${flat.id}`);
 

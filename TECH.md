@@ -423,16 +423,24 @@ SELECT * FROM recipe_instances
 
 Renders:
 
-- **Desktop:** "send this to your phone" card (QR + Copy) with the
-  current page URL.
-- **Mobile:** the per-recipe `Share into Bring! →` list. Each share
-  target's payload is the per-recipe URL from §6.1, scaled.
+- **Both:** Bring!'s official import widget (`platform.getbring.com/widgets/import.js`),
+  late-rendered after hydration via `bringwidgets.import.render`. The
+  widget opens Bring! with this page's URL; Bring's parser scrapes the
+  JSON-LD. Quantity attrs are omitted so Bring does not re-scale lines
+  that are already target-quantity. `data-bring-requires-consent` is
+  set and consent is never granted, so the widget does not inject
+  Google Analytics.
+- **JSON-LD:** `name`, `author` (Organization = flat name; required by
+  Bring's checker), `recipeYield`, `recipeIngredient` (combined list,
+  with split groups expanded).
+- **Desktop:** QR + Copy card as a fallback for opening the page on a
+  phone.
 
 UI per UI.md §8. Same URL, two responsive renderings.
 
 The URL is stable for the life of the flat — bookmarkable on the
-phone as "our shopping list lives here". It always shows whatever
-is currently in-stock; there is no per-finalise URL.
+phone as "our shopping list lives here". It shows the latest finalise
+batch that is still in stock; there is no per-finalise URL.
 
 ### 6.3 Combined shopping list (embedding dedup)
 
