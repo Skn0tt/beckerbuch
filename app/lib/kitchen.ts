@@ -8,6 +8,9 @@ export type KitchenResult<T = object> = KitchenOk<T> | KitchenErr;
 
 export type PlanLane = "draft" | "stock";
 
+/** Free-text kitchen notes (draft + in stock). */
+export const PLAN_NOTE_MAX = 2000;
+
 async function assertFlatMember(
   flatId: string,
   userId: string,
@@ -18,6 +21,34 @@ async function assertFlatMember(
     .where(and(eq(flatMembers.flatId, flatId), eq(flatMembers.userId, userId)))
     .limit(1);
   return member.length > 0;
+}
+
+function validatePortions(portions: number): KitchenErr | null {
+  if (!Number.isInteger(portions) || portions < 1 || portions > 1000) {
+    return { ok: false, error: "Portions must be between 1 and 1000." };
+  }
+  return null;
+}
+
+/**
+ * Normalize a plan note.
+ * - `undefined` → leave unchanged (no field)
+ * - `null` / blank → clear
+ * - otherwise trim + length-check
+ */
+function normalizeNote(
+  note: string | null | undefined,
+): KitchenResult<{ value: string | null | undefined }> {
+  if (note === undefined) return { ok: true, value: undefined };
+  if (note === null || note.trim().length === 0) return { ok: true, value: null };
+  const trimmed = note.trim();
+  if (trimmed.length > PLAN_NOTE_MAX) {
+    return {
+      ok: false,
+      error: `Note must be at most ${PLAN_NOTE_MAX} characters.`,
+    };
+  }
+  return { ok: true, value: trimmed };
 }
 
 /**
@@ -50,12 +81,14 @@ export async function addToDraft(opts: {
     }
   }
 
-  const noteValue =
-    opts.note === undefined
-      ? undefined
-      : opts.note === null || opts.note.trim().length === 0
-        ? null
-        : opts.note.trim();
+  if (opts.portions !== undefined) {
+    const portionsErr = validatePortions(opts.portions);
+    if (portionsErr) return portionsErr;
+  }
+
+  const noteNorm = normalizeNote(opts.note);
+  if (!noteNorm.ok) return noteNorm;
+  const noteValue = noteNorm.value;
 
   const [existing] = await db()
     .select({ id: recipeInstances.id })
@@ -88,9 +121,8 @@ export async function addToDraft(opts: {
   }
 
   const portions = opts.portions ?? recipe.baseQuantity;
-  if (!Number.isInteger(portions) || portions < 1 || portions > 1000) {
-    return { ok: false, error: "Portions must be between 1 and 1000." };
-  }
+  const portionsErr = validatePortions(portions);
+  if (portionsErr) return portionsErr;
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -148,9 +180,8 @@ export async function setPortions(opts: {
   instanceId: string;
   portions: number;
 }): Promise<KitchenResult> {
-  if (!Number.isInteger(opts.portions) || opts.portions < 1 || opts.portions > 1000) {
-    return { ok: false, error: "Portions must be between 1 and 1000." };
-  }
+  const portionsErr = validatePortions(opts.portions);
+  if (portionsErr) return portionsErr;
   const updated = await db()
     .update(recipeInstances)
     .set({ targetQuantity: opts.portions })
@@ -174,9 +205,8 @@ export async function setPortionsForRecipeDraft(opts: {
   recipeId: string;
   portions: number;
 }): Promise<KitchenResult> {
-  if (!Number.isInteger(opts.portions) || opts.portions < 1 || opts.portions > 1000) {
-    return { ok: false, error: "Portions must be between 1 and 1000." };
-  }
+  const portionsErr = validatePortions(opts.portions);
+  if (portionsErr) return portionsErr;
   await db()
     .update(recipeInstances)
     .set({ targetQuantity: opts.portions })
@@ -222,8 +252,10 @@ export async function setNote(opts: {
   instanceId: string;
   note: string | null;
 }): Promise<KitchenResult> {
-  const value =
-    opts.note === null || opts.note.trim().length === 0 ? null : opts.note.trim();
+  const noteNorm = normalizeNote(opts.note);
+  if (!noteNorm.ok) return noteNorm;
+  // setNote always receives an explicit value (null clears).
+  const value = noteNorm.value ?? null;
   const updated = await db()
     .update(recipeInstances)
     .set({ note: value })
@@ -247,6 +279,10 @@ export async function reorderLane(opts: {
   instanceIds: string[];
 }): Promise<KitchenResult> {
   const { flatId, lane, instanceIds: ids } = opts;
+  if (new Set(ids).size !== ids.length) {
+    return { ok: false, error: "instanceIds must be unique." };
+  }
+
   const laneCond =
     lane === "draft"
       ? isNull(recipeInstances.finalisedAt)
@@ -320,9 +356,9 @@ export async function markCookedForRecipe(opts: {
   userId: string;
   recipeId: string;
 }): Promise<KitchenResult> {
-  const updated = await db()
-    .update(recipeInstances)
-    .set({ cookedAt: new Date(), cookedBy: opts.userId })
+  const [stock] = await db()
+    .select({ id: recipeInstances.id })
+    .from(recipeInstances)
     .where(
       and(
         eq(recipeInstances.flatId, opts.flatId),
@@ -331,11 +367,16 @@ export async function markCookedForRecipe(opts: {
         isNull(recipeInstances.cookedAt),
       ),
     )
-    .returning({ id: recipeInstances.id });
-  if (updated.length === 0) {
+    .orderBy(asc(recipeInstances.position))
+    .limit(1);
+  if (!stock) {
     return { ok: false, error: "Already cooked or not in stock." };
   }
-  return { ok: true };
+  return markCooked({
+    flatId: opts.flatId,
+    userId: opts.userId,
+    instanceId: stock.id,
+  });
 }
 
 export async function backToDraft(opts: {
@@ -421,71 +462,23 @@ export async function backToDraftForRecipe(opts: {
   flatId: string;
   recipeId: string;
 }): Promise<KitchenResult> {
-  const { flatId, recipeId } = opts;
-  const [existingDraft] = await db()
+  const [stock] = await db()
     .select({ id: recipeInstances.id })
     .from(recipeInstances)
     .where(
       and(
-        eq(recipeInstances.flatId, flatId),
-        eq(recipeInstances.recipeId, recipeId),
-        isNull(recipeInstances.finalisedAt),
+        eq(recipeInstances.flatId, opts.flatId),
+        eq(recipeInstances.recipeId, opts.recipeId),
+        isNotNull(recipeInstances.finalisedAt),
+        isNull(recipeInstances.cookedAt),
       ),
     )
+    .orderBy(asc(recipeInstances.position))
     .limit(1);
-  if (existingDraft) {
-    return { ok: false, error: "This recipe is already in your draft." };
+  if (!stock) {
+    return { ok: false, error: "This recipe isn't in stock." };
   }
-
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const demoted = await db().transaction(async (tx) => {
-        const [stock] = await tx
-          .select({ id: recipeInstances.id })
-          .from(recipeInstances)
-          .where(
-            and(
-              eq(recipeInstances.flatId, flatId),
-              eq(recipeInstances.recipeId, recipeId),
-              isNotNull(recipeInstances.finalisedAt),
-              isNull(recipeInstances.cookedAt),
-            ),
-          )
-          .orderBy(asc(recipeInstances.position))
-          .limit(1);
-        if (!stock) return false;
-        const [{ value: nextPos }] = await tx
-          .select({
-            value: sql<number>`coalesce(${max(recipeInstances.position)}, -1) + 1`,
-          })
-          .from(recipeInstances)
-          .where(
-            and(eq(recipeInstances.flatId, flatId), isNull(recipeInstances.finalisedAt)),
-          );
-        await tx
-          .update(recipeInstances)
-          .set({ finalisedAt: null, position: nextPos })
-          .where(
-            and(
-              eq(recipeInstances.id, stock.id),
-              eq(recipeInstances.flatId, flatId),
-              isNotNull(recipeInstances.finalisedAt),
-              isNull(recipeInstances.cookedAt),
-            ),
-          );
-        return true;
-      });
-      if (!demoted) {
-        return { ok: false, error: "This recipe isn't in stock." };
-      }
-      return { ok: true };
-    } catch (err: unknown) {
-      const code = (err as { code?: string }).code;
-      if (code === "23505" && attempt < 2) continue;
-      throw err;
-    }
-  }
-  return { ok: false, error: "Couldn't move back to draft. Please try again." };
+  return backToDraft({ flatId: opts.flatId, instanceId: stock.id });
 }
 
 /** Neighbour swap for keyboard / button reorder in the UI. */

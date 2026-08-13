@@ -16,6 +16,7 @@ import { importRecipe } from "../lib/recipe-import";
 import { exportAnalysisTables } from "../lib/analysis-export";
 import { getPlanForMcp } from "../lib/kitchen-data";
 import {
+  PLAN_NOTE_MAX,
   addToDraft,
   backToDraft,
   markCooked,
@@ -133,6 +134,7 @@ const editRecipeInput = {
 const PLAN_SHAPE_DOC =
   'Returns JSON: { draft: PlanEntry[], stock: PlanEntry[], members: { id, displayName }[] }. ' +
   "PlanEntry: { id (instance id), recipeId, recipeName, portions, position, cook: { id, displayName } | null, note }. " +
+  "cook.displayName is null if that member left the flat. " +
   "Use members[].id as cookId for set_cook / add_to_draft. Use entry id as instanceId for mutations. " +
   "Promoting draft → in stock (finalise / shopping handoff) is UI-only and not available here.";
 
@@ -165,13 +167,16 @@ const updatePlanInput = {
   cookId: UUID_SCHEMA.nullable()
     .optional()
     .describe(
-      "Flat member id from plan.members (or null to unassign). For add_to_draft / set_cook",
+      `Flat member id from plan.members, or null to unassign. Required for set_cook (omit only on add_to_draft).`,
     ),
   note: z
     .string()
+    .max(PLAN_NOTE_MAX)
     .nullable()
     .optional()
-    .describe("Free-text note (empty/null clears). For add_to_draft / set_note"),
+    .describe(
+      `Free-text note (max ${PLAN_NOTE_MAX} chars). Required for set_note — pass null/empty to clear. Optional on add_to_draft.`,
+    ),
   list: z
     .enum(["draft", "in_stock"])
     .optional()
@@ -259,14 +264,19 @@ async function applyPlanUpdate(
       if (!args.instanceId || !INSTANCE_UUID.safeParse(args.instanceId).success) {
         return { ok: false, error: "instanceId is required and must be a UUID." };
       }
-      const cookId = args.cookId === undefined ? null : args.cookId;
-      if (cookId !== null && !UUID_SCHEMA.safeParse(cookId).success) {
+      if (args.cookId === undefined) {
+        return {
+          ok: false,
+          error: "cookId is required (pass null to unassign).",
+        };
+      }
+      if (args.cookId !== null && !UUID_SCHEMA.safeParse(args.cookId).success) {
         return { ok: false, error: "cookId must be a UUID or null." };
       }
       const result = await setCook({
         flatId,
         instanceId: args.instanceId,
-        cookId,
+        cookId: args.cookId,
       });
       if (!result.ok) return result;
       return { ok: true, action: args.action, instanceId: args.instanceId };
@@ -275,10 +285,16 @@ async function applyPlanUpdate(
       if (!args.instanceId || !INSTANCE_UUID.safeParse(args.instanceId).success) {
         return { ok: false, error: "instanceId is required and must be a UUID." };
       }
+      if (args.note === undefined) {
+        return {
+          ok: false,
+          error: "note is required (pass null or empty to clear).",
+        };
+      }
       const result = await setNote({
         flatId,
         instanceId: args.instanceId,
-        note: args.note ?? null,
+        note: args.note,
       });
       if (!result.ok) return result;
       return { ok: true, action: args.action, instanceId: args.instanceId };
@@ -289,6 +305,9 @@ async function applyPlanUpdate(
       }
       if (!args.instanceIds || args.instanceIds.length === 0) {
         return { ok: false, error: "instanceIds is required." };
+      }
+      if (new Set(args.instanceIds).size !== args.instanceIds.length) {
+        return { ok: false, error: "instanceIds must be unique." };
       }
       for (const id of args.instanceIds) {
         if (!INSTANCE_UUID.safeParse(id).success) {
@@ -536,7 +555,8 @@ async function handle(request: Request): Promise<Response> {
       title: "Update the meal plan",
       description:
         "Mutate Draft / In stock. Actions: add_to_draft (recipeId; optional portions, note, cookId), " +
-        "remove_from_draft, set_portions (draft only), set_cook, set_note, reorder (list + instanceIds), " +
+        "remove_from_draft, set_portions (draft only), set_cook (requires cookId; null unassigns), " +
+        "set_note (requires note; null/empty clears), reorder (list + unique instanceIds), " +
         "back_to_draft, mark_cooked. Does not finalise draft → in stock (UI-only). " +
         "On success returns { ok, plan, ... } where plan matches kochbuch_get_plan. " +
         PLAN_SHAPE_DOC,

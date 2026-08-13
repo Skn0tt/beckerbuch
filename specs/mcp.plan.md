@@ -364,6 +364,9 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
 **File:** `tests/mcp.spec.ts`
 
 **Steps:**
-  1. `set_portions` on an in-stock instance → error.
-  2. `set_cook` with a random UUID → "Cook is not in this flat."
-  3. Second flat's MCP client cannot see or mutate the first flat's plan instances.
+  1. Duplicate or incomplete `reorder` `instanceIds` → error.
+  2. Omitting `cookId` / `note` on `set_cook` / `set_note` → error; `note: null` clears.
+  3. `set_portions` on an in-stock instance → error.
+  4. `set_cook` with a random UUID → "Cook is not in this flat."
+  5. `reorder` on `in_stock` with the full lane succeeds.
+  6. Second flat's MCP client cannot see or mutate the first flat's plan instances.

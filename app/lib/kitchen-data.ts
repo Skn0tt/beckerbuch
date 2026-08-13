@@ -117,7 +117,7 @@ export async function loadKitchen(flatId: string): Promise<KitchenData> {
   };
 }
 
-export type PlanCook = { id: string; displayName: string };
+export type PlanCook = { id: string; displayName: string | null };
 
 export type PlanEntry = {
   id: string;
@@ -138,6 +138,7 @@ export type PlanPayload = {
 /**
  * Draft + In stock + member roster for MCP / agents.
  * Omits ingredient lines (use recipe get/search for those).
+ * If a designated cook left the flat, `cook.displayName` is null.
  */
 export async function getPlanForMcp(flatId: string): Promise<PlanPayload> {
   const data = await loadKitchen(flatId);
@@ -149,12 +150,12 @@ export async function getPlanForMcp(flatId: string): Promise<PlanPayload> {
     recipeName: e.recipeName,
     portions: e.targetQuantity,
     position: e.position,
-    cook:
-      e.designatedCookId && memberById.has(e.designatedCookId)
-        ? { id: e.designatedCookId, displayName: memberById.get(e.designatedCookId)! }
-        : e.designatedCookId
-          ? { id: e.designatedCookId, displayName: e.designatedCookId }
-          : null,
+    cook: e.designatedCookId
+      ? {
+          id: e.designatedCookId,
+          displayName: memberById.get(e.designatedCookId) ?? null,
+        }
+      : null,
     note: e.note,
   });
 

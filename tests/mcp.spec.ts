@@ -1250,7 +1250,7 @@ test.describe("MCP server", () => {
     recipeName: string;
     portions: number;
     position: number;
-    cook: { id: string; displayName: string } | null;
+    cook: { id: string; displayName: string | null } | null;
     note: string | null;
   };
   type PlanBody = {
@@ -1501,21 +1501,100 @@ test.describe("MCP server", () => {
     if (!result.ok) throw new Error("flow failed");
     const client = await mcpClient(result.tokens.accessToken);
 
-    const recipeId = await addRecipeViaMcp(client, {
-      name: "Validate Me",
+    const recipeA = await addRecipeViaMcp(client, {
+      name: "Validate A",
       ingredients: [{ item: "salt" }],
     });
-    const add = await client.callTool({
-      name: "kochbuch_update_plan",
-      arguments: { action: "add_to_draft", recipeId },
+    const recipeB = await addRecipeViaMcp(client, {
+      name: "Validate B",
+      ingredients: [{ item: "pepper" }],
     });
-    expect(add.isError).toBeFalsy();
+    for (const recipeId of [recipeA, recipeB]) {
+      const add = await client.callTool({
+        name: "kochbuch_update_plan",
+        arguments: { action: "add_to_draft", recipeId },
+      });
+      expect(add.isError).toBeFalsy();
+    }
+
+    let plan = jsonFromToolResult<PlanBody>(
+      await client.callTool({ name: "kochbuch_get_plan" }),
+    );
+    const draftA = plan.draft.find((e) => e.recipeId === recipeA)!;
+    const draftB = plan.draft.find((e) => e.recipeId === recipeB)!;
+
+    const dupReorder = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: {
+        action: "reorder",
+        list: "draft",
+        instanceIds: [draftA.id, draftA.id],
+      },
+    });
+    expect(dupReorder.isError).toBeTruthy();
+    expect(textFromToolResult(dupReorder)).toMatch(/unique/i);
+
+    const incompleteReorder = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: {
+        action: "reorder",
+        list: "draft",
+        instanceIds: [draftA.id],
+      },
+    });
+    expect(incompleteReorder.isError).toBeTruthy();
+    expect(textFromToolResult(incompleteReorder)).toMatch(/order/i);
+
+    const omitCook = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: { action: "set_cook", instanceId: draftA.id },
+    });
+    expect(omitCook.isError).toBeTruthy();
+    expect(textFromToolResult(omitCook)).toMatch(/cookId is required/i);
+
+    const omitNote = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: { action: "set_note", instanceId: draftA.id },
+    });
+    expect(omitNote.isError).toBeTruthy();
+    expect(textFromToolResult(omitNote)).toMatch(/note is required/i);
+
+    // Clear note explicitly with null (allowed).
+    await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: {
+        action: "set_note",
+        instanceId: draftA.id,
+        note: "temp",
+      },
+    });
+    const clearNote = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: {
+        action: "set_note",
+        instanceId: draftA.id,
+        note: null,
+      },
+    });
+    expect(clearNote.isError).toBeFalsy();
+    expect(
+      jsonFromToolResult<UpdatePlanBody>(clearNote).plan.draft.find(
+        (e) => e.id === draftA.id,
+      )!.note,
+    ).toBeNull();
+
+    // Keep draftB for stock tests after finalise — remove A first so stock count is 1.
+    await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: { action: "remove_from_draft", instanceId: draftA.id },
+    });
     await finaliseDraftOnly(page, 1);
 
-    const plan = jsonFromToolResult<PlanBody>(
+    plan = jsonFromToolResult<PlanBody>(
       await client.callTool({ name: "kochbuch_get_plan" }),
     );
     const stockId = plan.stock[0]!.id;
+    expect(stockId).toBe(draftB.id);
 
     const portionsOnStock = await client.callTool({
       name: "kochbuch_update_plan",
@@ -1534,6 +1613,16 @@ test.describe("MCP server", () => {
     });
     expect(badCook.isError).toBeTruthy();
     expect(textFromToolResult(badCook)).toBe("Cook is not in this flat.");
+
+    const stockReorder = await client.callTool({
+      name: "kochbuch_update_plan",
+      arguments: {
+        action: "reorder",
+        list: "in_stock",
+        instanceIds: [stockId],
+      },
+    });
+    expect(stockReorder.isError).toBeFalsy();
 
     const otherAccessToken = await createIsolatedFlatAccessToken(page, request);
     const otherClient = await mcpClient(otherAccessToken);
