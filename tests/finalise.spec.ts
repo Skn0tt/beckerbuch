@@ -176,6 +176,10 @@ test("public /h/:flatId renders stock + JSON-LD, no auth required", async ({
     (await anonPage.locator('script[type="application/ld+json"]').textContent())!,
   );
   expect(jsonLd["@type"]).toBe("Recipe");
+  expect(jsonLd.author).toEqual({
+    "@type": "Organization",
+    name: flat.name,
+  });
   expect(jsonLd.recipeIngredient).toContain("400 g spaghetti");
 
   await anon.close();

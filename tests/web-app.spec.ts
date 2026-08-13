@@ -2,6 +2,7 @@ import { expect, test } from "./fixtures";
 import { login } from "./login";
 import type { Page } from "@playwright/test";
 import { geminiEmbeddingHandler } from "./mock-handlers";
+import { bringImportHref } from "../app/lib/bring";
 
 test.beforeEach(async ({ mocks }) => {
   await mocks.route(
@@ -100,29 +101,11 @@ async function createRecipeAndAddToDraft(page: Page, name: string) {
   await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
 }
 
-test.describe("Send to Bring! (navigator.share)", () => {
-  test.use({ viewport: { width: 390, height: 844 } });
-
-  test("shares the handoff URL via the OS share sheet", async ({
+test.describe("Send to Bring!", () => {
+  test("links to Bring!'s import deeplink with the handoff URL", async ({
     page,
     flat,
   }) => {
-    // Stub navigator.share before any page script runs so the client
-    // feature-detect sees it and renders the button.
-    await page.addInitScript(() => {
-      (window as unknown as { __shareCalls: unknown[] }).__shareCalls = [];
-      Object.defineProperty(navigator, "share", {
-        configurable: true,
-        writable: true,
-        value: (data: unknown) => {
-          (window as unknown as { __shareCalls: unknown[] }).__shareCalls.push(
-            data,
-          );
-          return Promise.resolve();
-        },
-      });
-    });
-
     await login(page, flat.user);
     await createRecipeAndAddToDraft(page, "Pasta al limone");
 
@@ -131,14 +114,8 @@ test.describe("Send to Bring! (navigator.share)", () => {
     await page.getByRole("button", { name: "Confirm finalise draft" }).click();
     await expect(page).toHaveURL(`/h/${flat.id}`);
 
-    const shareButton = page.getByTestId("share-to-bring");
-    await expect(shareButton).toBeVisible();
-    await shareButton.click();
-
-    const calls = await page.evaluate(
-      () => (window as unknown as { __shareCalls: { url?: string }[] }).__shareCalls,
-    );
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.url).toMatch(new RegExp(`/h/${flat.id}$`));
+    const link = page.getByRole("link", { name: "Send to Bring!" });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute("href", bringImportHref(page.url()));
   });
 });

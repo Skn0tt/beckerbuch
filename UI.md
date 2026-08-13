@@ -378,52 +378,34 @@ DESKTOP (modal)                                       MOBILE (sheet)
 
 ## 8. Bring! handoff
 
-**Purpose:** push the finalised list into Bring!. Bring! lives on your
-phone, so this whole step is fundamentally a phone job — desktop's role
-is to get the URL onto your phone in one move.
-
-There is **one URL per flat** (e.g. `cookbook.app/h/<flat-id>`).
-It's a single shareable page with two responsive renderings:
-
-- **On desktop:** a "send this to your phone" card (QR + Copy link).
-- **On mobile:** the per-recipe share-into-Bring! list.
-
-Same URL, same data, different layout — opening it on your phone after
-copying it from desktop just lands you on the mobile view automatically.
+**Purpose:** push the finalised list into Bring!. The page is public
+(`cookbook.app/h/<flat-id>`) so Bring!'s parser can fetch it without
+cookies.
 
 ```
-DESKTOP — handoff URL rendered as modal              MOBILE — same URL, mobile rendering
-┌──────────────────────────────────────────────┐     ┌──────────────────────────────────┐
-│ Send to Bring!                           ✕   │     │ ←   Send to Bring!               │
-├──────────────────────────────────────────────┤     ├──────────────────────────────────┤
-│ Bring! lives on your phone. Open this        │     │ Tap to share each recipe into    │
-│ page on your phone to share each recipe in.  │     │ Bring!.                          │
-│ ┌────────────────┬─────────────────────────┐ │     │                                  │
-│ │                │                         │ │     │ ┌──────────────────────────────┐ │
-│ │                │ cookbook.app/h/<flat-id>│ │     │ │ Pasta al limone (serves 4)   │ │
-│ │     [ QR ]     │                         │ │     │ │ [   Share into Bring! →  ]   │ │
-│ │                │ [ Copy link ]           │ │     │ │ [ Done ]                     │ │
-│ │                │                         │ │     │ └──────────────────────────────┘ │
-│ │                │ Scan, AirDrop, or copy- │ │     │ ┌──────────────────────────────┐ │
-│ │                │ paste — whatever's      │ │     │ │ Chicken katsu (serves 6)     │ │
-│ │                │ easiest.                │ │     │ │ [   Share into Bring! →  ]   │ │
-│ └────────────────┴─────────────────────────┘ │     │ │ [ Done ]                     │ │
-│                                              │     │ └──────────────────────────────┘ │
-│                                              │     │ ┌──────────────────────────────┐ │
-│                                  [ Close ]   │     │ │ Linsensuppe (serves 8)       │ │
-│                                              │     │ │ [   Share into Bring! →  ]   │ │
-└──────────────────────────────────────────────┘     │ │ [ Done ]                     │ │
-                                                     │ └──────────────────────────────┘ │
-                                                     │                                  │
-                                                     │ All sent? [ Close ]              │
-                                                     └──────────────────────────────────┘
+DESKTOP / MOBILE (same layout)
+┌──────────────────────────────────────────────┐
+│ ←  Shopping list                             │
+├──────────────────────────────────────────────┤
+│ [          Send to Bring!              ]     │
+│                                              │
+│ Combined list                                │
+│  · 600 g tomato                    [Split]   │
+│ Recipes in this list                         │
+│  · Pasta al limone (serves 4)                │
+│  · Chicken katsu (serves 6)                  │
+└──────────────────────────────────────────────┘
 ```
 
-- After Finalise (§7), desktop opens this URL as a modal automatically; mobile navigates to it as a full page.
-- Pick whichever cross-device transfer is easiest on the day: scan the QR, AirDrop the URL from the Copy button, paste from clipboard sync, etc.
-- Each per-recipe `[ Share into Bring! → ]` opens the OS share sheet; Bring! registers as a share target and scrapes the per-recipe page (schema.org Recipe JSON-LD scaled to the chosen quantity, DESIGN.md §4.4).
-- "Done" greys out a row so you can keep track during shopping prep. Closing with un-Done rows is fine; this UI is non-blocking.
-- The handoff URL is stable for the life of the flat — it always shows the flat's current in-stock lane. You can keep it bookmarked, re-open it from your messages later, etc. After the next finalise, the same URL just shows the new contents. No "resume handoff" flow needed.
+- After Finalise (§7), the app navigates to this URL.
+- **Send to Bring!** is a normal button styled like the rest of the
+  app. Its `href` is Bring!'s official deeplink endpoint with this
+  page's URL; Bring fetches the page and scrapes schema.org Recipe
+  JSON-LD (DESIGN.md §4.4). Split/Regenerate update that JSON-LD, so
+  a later click picks up the edited list.
+- The handoff URL is stable for the life of the flat — it always shows
+  the latest finalise batch. After the next finalise, the same URL just
+  shows the new contents.
 
 ---
 

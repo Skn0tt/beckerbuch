@@ -423,16 +423,21 @@ SELECT * FROM recipe_instances
 
 Renders:
 
-- **Desktop:** "send this to your phone" card (QR + Copy) with the
-  current page URL.
-- **Mobile:** the per-recipe `Share into Bring! →` list. Each share
-  target's payload is the per-recipe URL from §6.1, scaled.
+- **Send to Bring!** — a normal Mantine button whose `href` is
+  `https://api.getbring.com/rest/bringrecipes/deeplink?url=<handoff>&source=web`.
+  Bring 307s that to an app deeplink, then fetches the public page and
+  scrapes the JSON-LD. Quantity query params are omitted so Bring does
+  not re-scale lines that are already at target quantity. No third-party
+  widget script (and no Google Analytics).
+- **JSON-LD:** `name`, `author` (Organization = flat name; required by
+  Bring's checker), `recipeYield`, `recipeIngredient` (combined list,
+  with split groups expanded).
 
-UI per UI.md §8. Same URL, two responsive renderings.
+UI per UI.md §8.
 
 The URL is stable for the life of the flat — bookmarkable on the
-phone as "our shopping list lives here". It always shows whatever
-is currently in-stock; there is no per-finalise URL.
+phone as "our shopping list lives here". It shows the latest finalise
+batch that is still in stock; there is no per-finalise URL.
 
 ### 6.3 Combined shopping list (embedding dedup)
 

@@ -1,20 +1,16 @@
 import {
   ActionIcon,
   Anchor,
-  Box,
   Button,
   Card,
   Container,
-  CopyButton,
   Group,
   Stack,
   Text,
   Title,
 } from "@mantine/core";
-import { useSyncExternalStore } from "react";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { data, useLocation, useNavigate } from "react-router";
-import QRCode from "qrcode";
 import { z } from "zod";
 import type { Route } from "./+types/h.$flatId";
 import { db } from "../db/client";
@@ -25,6 +21,7 @@ import {
   recipes,
 } from "../db/schema";
 import { formatIngredient } from "../lib/scale";
+import { bringImportHref } from "../lib/bring";
 import {
   buildDedupInputFromData,
   snapshotDedupForFlat,
@@ -34,13 +31,6 @@ import { CombinedList } from "../components/combined-list";
 import { firstMessage, formDataToObject, parseParams } from "../lib/form";
 
 const ParamsSchema = z.object({ flatId: z.guid() });
-
-// navigator.share is a client-only, static-after-load capability. Read it via
-// useSyncExternalStore so SSR sees `false` and the client swaps to the real
-// value on hydration without a mismatch (and without a setState-in-effect).
-const emptySubscribe = () => () => {};
-const shareSupported = () =>
-  typeof navigator !== "undefined" && !!navigator.share;
 
 const ActionSchema = z.discriminatedUnion("intent", [
   z.object({ intent: z.literal("regenerate") }),
@@ -111,10 +101,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           .from(ingredients)
           .where(inArray(ingredients.recipeId, recipeIds))
           .orderBy(asc(ingredients.position));
-  const [allIngs, qrSvg] = await Promise.all([
-    ingsQuery ?? Promise.resolve([] as never[]),
-    QRCode.toString(handoffUrl, { type: "svg", margin: 1 }),
-  ]);
+  const allIngs = ingsQuery ? await ingsQuery : [];
   const omittedIngredientIds = new Set<string>();
   for (const r of rows)
     for (const id of r.omittedIngredientIds) omittedIngredientIds.add(id);
@@ -163,7 +150,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     rejectedIds,
     snapshotFresh,
     handoffUrl,
-    qrSvg,
   };
 }
 
@@ -214,35 +200,9 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
     rejectedIds,
     snapshotFresh,
     handoffUrl,
-    qrSvg,
   } = loaderData;
   const location = useLocation();
   const navigate = useNavigate();
-
-  // navigator.share is only available client-side (and not in every browser).
-  // useSyncExternalStore keeps SSR (`false`) and the first client render in
-  // sync, then reflects real support once hydrated — no hydration mismatch.
-  const canShare = useSyncExternalStore(
-    emptySubscribe,
-    shareSupported,
-    () => false,
-  );
-
-  const shareToBring = async () => {
-    try {
-      await navigator.share({
-        title: `Shopping list — ${flat.name}`,
-        url: handoffUrl,
-      });
-    } catch (err) {
-      // The user dismissing the share sheet rejects with AbortError — that's
-      // an expected, non-error path, so swallow it (and any share failure;
-      // there's nothing actionable to surface here).
-      if ((err as Error)?.name !== "AbortError") {
-        // no-op
-      }
-    }
-  };
 
   // This page lives outside the authenticated app shell (it's a public,
   // shareable link), so it has no header/back chrome of its own. Offer a back
@@ -255,6 +215,7 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
     "@context": "https://schema.org/",
     "@type": "Recipe",
     name: `Shopping list — ${flat.name}`,
+    author: { "@type": "Organization", name: flat.name },
     recipeYield: `${groups.reduce((s, g) => s + g.targetQuantity, 0)} servings`,
     recipeIngredient: allIngredients,
   };
@@ -293,61 +254,13 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
           <Text c="dimmed">Nothing to shop right now.</Text>
         ) : (
           <>
-            {/* Desktop: QR + copy-link card to send the page to a phone. */}
-            <Card withBorder visibleFrom="sm" data-testid="handoff-desktop">
-              <Stack gap="sm">
-                <Title order={2} size="h5">
-                  Open on your phone, then share into Bring!
-                </Title>
-                <Group align="center" gap="md" wrap="nowrap">
-                  <Box
-                    aria-label="QR code for handoff URL"
-                    w={160}
-                    dangerouslySetInnerHTML={{ __html: qrSvg }}
-                  />
-                  <Stack gap="xs">
-                    <Text size="sm" style={{ wordBreak: "break-all" }}>
-                      {handoffUrl}
-                    </Text>
-                    <CopyButton value={handoffUrl}>
-                      {({ copied, copy }) => (
-                        <Button size="xs" variant="default" onClick={copy}>
-                          {copied ? "Copied" : "Copy link"}
-                        </Button>
-                      )}
-                    </CopyButton>
-                  </Stack>
-                </Group>
-              </Stack>
-            </Card>
-
-            {/* Mobile: share the list straight into Bring! via the OS share
-                sheet. Works inside a standalone/home-screen PWA, where there
-                is no browser Share menu to fall back on. */}
-            <Box hiddenFrom="sm">
-              {canShare ? (
-                <Stack gap={4}>
-                  <Button
-                    fullWidth
-                    onClick={shareToBring}
-                    data-testid="share-to-bring"
-                  >
-                    Send to Bring!
-                  </Button>
-                  <Text size="xs" c="dimmed">
-                    Opens the share sheet — pick Bring! to import this list.
-                    Bring! then sends a notification — tap it to finish the
-                    import.
-                  </Text>
-                </Stack>
-              ) : (
-                <Text size="sm" c="dimmed">
-                  Use your browser&apos;s Share menu and pick Bring! to import
-                  this list. Bring! then sends a notification — tap it to finish
-                  the import.
-                </Text>
-              )}
-            </Box>
+            <Button
+              component="a"
+              href={bringImportHref(handoffUrl)}
+              fullWidth
+            >
+              Send to Bring!
+            </Button>
 
             {/* Combined deduped list (issue #7). */}
             <CombinedList
