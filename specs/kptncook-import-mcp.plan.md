@@ -23,7 +23,8 @@ The MCP `fetch_recipe` tool exposes the same kptncook import normalization to ex
     - expect: Base quantity is `2`.
     - expect: Source URL is the canonical mocked kptncook share URL.
     - expect: Ingredients equal `250 g Mehl`, `150 ml Milch`, and `2 Eier`.
-    - expect: Steps include `Teig anrühren` and `180 °C`.
+    - expect: Steps are the three mocked instructions with `<timer>` expanded to `15 Min.`, `30–40 Min.`, and `bis zu 25 Min.`.
+    - expect: Steps do not contain a `<timer>` placeholder.
     - expect: A JPEG photo is returned with non-empty base64 data.
 
 #### 1.2. works-with-a-bare-uid

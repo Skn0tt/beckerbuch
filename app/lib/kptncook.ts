@@ -129,6 +129,79 @@ function formatAmount(quantity: unknown): string | null {
 }
 
 /**
+ * kptncook step text uses a literal `<timer>` placeholder; the matching
+ * duration lives in a parallel `timers` array (`minOrExact` / `max`,
+ * minutes). We expand those the same way the official kptncook exporters
+ * do (German "Min." wording, en-dash ranges) so the form isn't pre-filled
+ * with the raw placeholder.
+ *
+ * A following `.!?` is captured so `Min.` + sentence-ending `.` doesn't
+ * become `Min..`.
+ */
+type StepTimer = { minOrExact: number | null; max: number | null };
+
+const TIMER_PLACEHOLDER_PATTERN = /<timer>([.!?])?/g;
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function parseStepTimers(raw: unknown): StepTimer[] {
+  if (!Array.isArray(raw)) return [];
+  const out: StepTimer[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const obj = entry as Record<string, unknown>;
+    const minOrExact = finiteNumber(obj.minOrExact);
+    const max = finiteNumber(obj.max);
+    if (minOrExact === null && max === null) continue;
+    out.push({ minOrExact, max });
+  }
+  return out;
+}
+
+function formatTimer(timer: StepTimer): string {
+  if (timer.minOrExact !== null && timer.max !== null) {
+    return `${timer.minOrExact}–${timer.max} Min.`;
+  }
+  if (timer.minOrExact !== null) {
+    return `${timer.minOrExact} Min.`;
+  }
+  if (timer.max !== null) {
+    return `bis zu ${timer.max} Min.`;
+  }
+  return "";
+}
+
+function expandTimerPlaceholders(text: string, timers: StepTimer[]): string {
+  let index = 0;
+  const replaced = text.replace(
+    TIMER_PLACEHOLDER_PATTERN,
+    (_match, punct: string | undefined) => {
+      const punctuation = punct ?? "";
+      if (index >= timers.length) return punctuation;
+      let timerText = formatTimer(timers[index]!);
+      index += 1;
+      if (!timerText) return punctuation;
+      if (punctuation === "." && timerText.endsWith(".")) {
+        timerText = timerText.slice(0, -1);
+      }
+      return `${timerText}${punctuation}`;
+    },
+  );
+  // Stripped unmatched placeholders can leave a double space ("etwa  scharf").
+  return replaced.replace(/ {2,}/g, " ");
+}
+
+function stepTitle(step: Record<string, unknown>): string | null {
+  const title = localizedString(step.title);
+  if (!title) return null;
+  const expanded = expandTimerPlaceholders(title, parseStepTimers(step.timers));
+  const cleaned = expanded.trim();
+  return cleaned || null;
+}
+
+/**
  * Map a raw kptncook recipe payload to our import shape.
  * Lossy by design: we keep only what we render in the recipe form.
  */
@@ -162,7 +235,7 @@ export function mapKptncookRecipe(raw: unknown): KptncookImport | null {
   const rawSteps = Array.isArray(r.steps) ? r.steps : [];
   for (const step of rawSteps) {
     if (!step || typeof step !== "object") continue;
-    const title = localizedString((step as Record<string, unknown>).title);
+    const title = stepTitle(step as Record<string, unknown>);
     if (title) stepTexts.push(title);
   }
   const steps = stepTexts.length > 0 ? stepTexts.join("\n\n") : "";

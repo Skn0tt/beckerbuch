@@ -82,7 +82,10 @@ kptncook mobile API), and **any recipe page** that publishes schema.org
 `Recipe` metadata as JSON-LD (the format used by the vast majority of
 recipe sites and food blogs). In both cases the server fetches and
 normalizes the recipe, pre-fills the form (name, ingredients, steps,
-photo), and the user reviews/edits before saving. A `fetch_recipe` MCP
+photo), and the user reviews/edits before saving. kptncook step text
+uses `<timer>` placeholders plus a parallel `timers` array (minutes);
+we expand those to durations (`5 Min.`, `3–5 Min.`, `bis zu 10 Min.`)
+before pre-filling the form. A `fetch_recipe` MCP
 tool exposes the same import path (both sources) for agents. Fetching
 arbitrary user-supplied URLs is guarded against SSRF (http(s) only;
 private/loopback/link-local addresses are refused).
