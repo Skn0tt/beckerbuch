@@ -92,15 +92,27 @@ const cinnamonBuns: MockKptncookRecipe = {
     ],
     steps: [
       {
-        title: { de: "Teig anrühren und ruhen lassen.", en: "Mix the dough and let it rest." },
+        title: {
+          de: "Teig anrühren und <timer> ruhen lassen.",
+          en: "Mix the dough and let it rest <timer>.",
+        },
+        timers: [{ minOrExact: 15 }],
         image: { name: "step1", url: "https://mobile.kptncook.com/images/step1.jpg" },
       },
       {
-        title: { de: "Zimt-Zucker-Füllung verteilen, rollen und schneiden.", en: "Spread the filling, roll and slice." },
+        title: {
+          de: "Zimt-Zucker-Füllung verteilen, rollen und <timer> gehen lassen.",
+          en: "Spread the filling, roll and proof <timer>.",
+        },
+        timers: [{ minOrExact: 30, max: 40 }],
         image: { name: "step2", url: "https://mobile.kptncook.com/images/step2.jpg" },
       },
       {
-        title: { de: "Bei 180 °C 25 Minuten backen.", en: "Bake at 180 °C for 25 minutes." },
+        title: {
+          de: "Bei 180 °C backen, höchstens <timer>.",
+          en: "Bake at 180 °C, up to <timer>.",
+        },
+        timers: [{ max: 25 }],
         image: { name: "step3", url: "https://mobile.kptncook.com/images/step3.jpg" },
       },
     ],

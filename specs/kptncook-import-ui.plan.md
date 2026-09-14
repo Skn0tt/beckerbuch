@@ -23,12 +23,14 @@ The recipe import modal lets users paste a kptncook share link or id, preview no
     - expect: The Name field is `Zimtschnecken`.
     - expect: The Source URL field is the canonical mocked kptncook share URL.
     - expect: Ingredient rows are prefilled as `250 g Mehl`, `150 ml Milch`, and `2 Eier`.
-    - expect: Steps include `Teig anrühren`, `Zimt-Zucker`, and `180 °C`.
+    - expect: Steps include `Teig anrühren und 15 Min. ruhen lassen`, `Zimt-Zucker` with `30–40 Min.`, and `180 °C` with `bis zu 25 Min.`.
+    - expect: The Steps field does not contain a `<timer>` placeholder.
     - expect: The imported photo preview is visible.
   4. Click `Save recipe`.
     - expect: The browser lands on a recipe detail URL.
     - expect: The detail heading is `Zimtschnecken`.
     - expect: The detail view shows `250 g Mehl`, `150 ml Milch`, and `2 Eier`.
+    - expect: The detail view shows the expanded timer durations `15 Min.`, `30–40 Min.`, and `bis zu 25 Min.`.
     - expect: A recipe image is visible on the detail view.
 
 #### 1.2. ui-bogus-input-modal-shows-error-and-stays-open

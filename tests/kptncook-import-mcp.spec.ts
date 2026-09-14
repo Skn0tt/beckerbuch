@@ -67,8 +67,14 @@ test.describe("MCP fetch_recipe", () => {
         { amount: "150", unit: "ml", item: "Milch" },
         { amount: "2", unit: null, item: "Eier" },
       ]);
-      expect(data.steps).toMatch(/Teig anrühren/);
-      expect(data.steps).toMatch(/180 °C/);
+      expect(data.steps).toBe(
+        [
+          "Teig anrühren und 15 Min. ruhen lassen.",
+          "Zimt-Zucker-Füllung verteilen, rollen und 30–40 Min. gehen lassen.",
+          "Bei 180 °C backen, höchstens bis zu 25 Min.",
+        ].join("\n\n"),
+      );
+      expect(data.steps).not.toMatch(/<timer>/);
       expect(data.photo).not.toBeNull();
       expect(data.photo!.contentType).toBe("image/jpeg");
       expect(data.photo!.base64.length).toBeGreaterThan(0);

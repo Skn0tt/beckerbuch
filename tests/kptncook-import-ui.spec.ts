@@ -61,8 +61,9 @@ test.describe("kptncook import", () => {
     await expect(page.getByRole("row", { name: "Ingredient 3", exact: true }).getByLabel("Item")).toHaveValue("Eier");
 
     await expect(page.getByLabel("Steps")).toHaveValue(
-      /Teig anrühren.*Zimt-Zucker.*180 °C/s,
+      /Teig anrühren und 15 Min\. ruhen lassen[\s\S]*Zimt-Zucker[\s\S]*30–40 Min\.[\s\S]*180 °C[\s\S]*bis zu 25 Min\./,
     );
+    await expect(page.getByLabel("Steps")).not.toHaveValue(/<timer>/);
 
     // The imported photo shows as a preview thumbnail.
     await expect(page.getByAltText("Current photo")).toBeVisible();
@@ -76,6 +77,9 @@ test.describe("kptncook import", () => {
     await expect(page.getByText("250 g Mehl")).toBeVisible();
     await expect(page.getByText("150 ml Milch")).toBeVisible();
     await expect(page.getByText("2 Eier")).toBeVisible();
+    await expect(page.getByText(/15 Min\./)).toBeVisible();
+    await expect(page.getByText(/30–40 Min\./)).toBeVisible();
+    await expect(page.getByText(/bis zu 25 Min\./)).toBeVisible();
 
     // The imported photo lands on the recipe detail view (the recipe
     // would only have a <img> if photoBlobKey was set).
