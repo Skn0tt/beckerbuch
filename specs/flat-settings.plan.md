@@ -74,6 +74,7 @@ Flat settings let members manage invites, view their membership, configure MCP c
 **Steps:**
   1. Log in, open settings, click `Change profile picture`, and select a tiny PNG file.
     - expect: An image with the user's display name as accessible name is visible.
+    - expect: That image's computed `dynamic-range-limit` is `standard` (Safari 26 would otherwise present an HDR avatar in EDR and dim the page).
 
 #### 2.3. display-name-is-editable-inline-on-settings
 

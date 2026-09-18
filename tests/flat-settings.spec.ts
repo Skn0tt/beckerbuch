@@ -101,9 +101,11 @@ test("clicking avatar opens picker and uploads profile picture", async ({
     buffer: TINY_PNG,
   });
 
-  await expect(
-    page.getByRole("img", { name: flat.user.displayName }).first(),
-  ).toBeVisible();
+  const avatar = page.getByRole("img", { name: flat.user.displayName }).first();
+  await expect(avatar).toBeVisible();
+  // Safari 26 presents HDR JPEGs in EDR and can dim the rest of the page;
+  // clamp uploaded images to SDR so they don't overpower the UI.
+  await expect(avatar).toHaveCSS("dynamic-range-limit", "standard");
 });
 
 test("display name is editable inline on settings", async ({ page, flat }) => {

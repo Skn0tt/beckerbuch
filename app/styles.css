@@ -13,6 +13,17 @@ html {
   overscroll-behavior-y: none;
 }
 
+/*
+ * Safari 26+ (iOS/macOS 26) presents HDR images — typical of iPhone camera
+ * JPEGs with gain maps — in EDR. That can dim the rest of the page so the
+ * photo stands out against SDR whites. Clamp user-uploaded images (avatars,
+ * recipe photos) to SDR so they sit on the page instead of overpowering it.
+ * https://webkit.org/blog/17333/webkit-features-in-safari-26-0/
+ */
+img {
+  dynamic-range-limit: standard;
+}
+
 :where(input:not([type="hidden"]), textarea, select) {
   font-size: max(16px, 1rem) !important;
 }
