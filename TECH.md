@@ -627,6 +627,11 @@ Marking a stock entry as cooked is the symmetric one-liner:
 - No image processing in v1 (no thumbnailing, no EXIF strip beyond
   what the browser does on capture). Track as a v2 if file sizes
   start to bite.
+- User-uploaded images (avatars, recipe photos) can still be HDR —
+  iPhone camera JPEGs often carry gain maps. Safari 26 presents those
+  in EDR, which can dim the rest of the page so the photo overpowers
+  SDR whites. `app/styles.css` clamps `<img>` to SDR with
+  `dynamic-range-limit: standard` rather than re-encoding on upload.
 
 ---
 
