@@ -12,8 +12,10 @@ cookies. See [TECH.md §10](../TECH.md) for the full testing model.
 | `login.ts`              | Thin `login(page, user)` helper that fills the real form.     |
 | `playwright-mocks/`     | Vendored library: Playwright-shaped `Route`/`ProxyRequest`/`ProxyResponse` facade on top of [`mockttp`](https://github.com/httptoolkit/mockttp), plus the `workerProxy` + `mocks` fixtures consumed via `mergeTests`. See [`playwright-mocks/README.md`](./playwright-mocks/README.md) for the full API. |
 | `mockttp-fixture/`      | Sibling library: the bare-minimum mockttp + Playwright integration (`workerProxy` + raw `Mockttp` as `mocks`). Reference artifact for comparison — not consumed by this repo's tests. See [`mockttp-fixture/README.md`](./mockttp-fixture/README.md). |
-| `mock-handlers.ts`      | Closure-factory helpers that build reusable `route` handlers (kptncook share/search/images, OpenAI dedup) without registering them — specs hand the returned handler to `mocks.route(...)` themselves. |
+| `mock-handlers.ts`      | Closure-factory helpers that build reusable `route` handlers (kptncook share/search/images, OpenAI dedup, canned schema.org pages) without registering them — specs hand the returned handler to `mocks.route(...)` themselves. |
 | `mock-data.ts`          | Shared test payloads (cinnamon-buns recipe, tiny 1×1 JPEG, kptncook API key). |
+| `schema-org-pages.ts`   | Canned schema.org recipe URLs plus the HTML loaded from `schema-org-fixtures/`. Checked against the importer at import time. |
+| `schema-org-fixtures/`  | Synthetic Recipe JSON-LD pages and `cover.jpg` (a 1×1 JPEG). Not snapshots of third-party sites. |
 | `*.spec.ts`             | Specs. Import `test`/`expect` from `./fixtures`.              |
 
 The app's HTTP boundary is the only seam tests use — there's no direct
@@ -58,25 +60,26 @@ CI cold-starts.
 
 ## Mocking external APIs
 
-The app calls two external services that are mocked: kptncook (recipe
-import) and OpenAI (shopping-list dedup). Both are mocked at the HTTP
-layer by the vendored **[`playwright-mocks/`](./playwright-mocks/README.md)**
-library — a Playwright-shape facade over
+The app calls external services that are mocked at the HTTP layer:
+kptncook (recipe import), OpenAI / Gemini (shopping-list dedup), and
+schema.org recipe pages. Mocking is done by the vendored
+**[`playwright-mocks/`](./playwright-mocks/README.md)** library — a
+Playwright-shape facade over
 [mockttp](https://github.com/httptoolkit/mockttp). The library exposes
 its `workerProxy` + `mocks` fixtures, which this repo's
 `tests/fixtures.ts` composes with the rest via `mergeTests`. **App
 code calls real production URLs** — there is no test-only base-URL
 env var or `if (test)` branch in `app/`.
 
-> **Exception — generic recipe import.** The schema.org URL importer
-> (`recipe-import-live.spec.ts`, `recipe-import-ui-live.spec.ts`) is
-> deliberately **not** mocked: it fetches a handful of real recipe
-> pages over the network (unmatched requests fall through the proxy to
-> the real internet) and asserts loosely on the result. These specs
-> can flake if a third-party page 404s, bot-blocks the CI IP, or
-> changes its content — the fix is to swap the URL, not to weaken the
-> importer. The SSRF-guard / no-recipe error cases in those specs are
-> network-independent (localhost / example.com).
+Schema.org recipe-import specs (`recipe-import.spec.ts`,
+`recipe-import-ui.spec.ts`) do not fetch real recipe sites. They
+register `cannedRecipePagesHandler` on `CANNED_SCHEMA_ORG_HOSTS`. The
+handler serves synthetic HTML from `schema-org-fixtures/` and
+`cover.jpg` for each page's cover image. Any other URL on those hosts
+is fulfilled with HTTP 404, so a missed fixture cannot fall through
+to the internet. `https://example.com/` is a canned page with no
+Recipe node. The localhost SSRF case is rejected in the app before
+any fetch.
 
 Specs opt in to the test-scoped **`mocks` fixture** and call
 `mocks.route(pattern, handler, options?)` directly:

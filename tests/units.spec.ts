@@ -461,6 +461,15 @@ test.describe("recipeUrlFromClipboard", () => {
     ).toBe(KPTN_URL);
   });
 
+  test("decodes HTML entities only once in a href", () => {
+    expect(
+      recipeUrlFromClipboard({
+        plain: KPTN_BLURB,
+        html: '<a href="https://example.com/?value=&amp;lt;tail">Recipe</a>',
+      }),
+    ).toBe("https://example.com/?value=&lt;tail");
+  });
+
   test("reads a URI list when the plain text has no link", () => {
     expect(
       recipeUrlFromClipboard({
