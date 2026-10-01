@@ -552,12 +552,15 @@ which is why its threshold (`0.95`) sits well above the old OpenAI value
 comparable.
 
 During `npm test` each Playwright worker runs a bespoke HTTPS-MITM
-forward proxy (`tests/proxy/`); specs that exercise dedup opt in to the
+forward proxy (`tests/playwright-mocks/`); specs that exercise dedup opt in to the
 `mocks` fixture and register a Gemini route via
 `mocks.route("https://generativelanguage.googleapis.com/**", geminiEmbeddingHandler())`
 (from `tests/mock-handlers.ts`), which returns a deterministic vector
 per input string (identical/variant texts embed identically), so
-tests never hit the real API.
+tests never hit the real API. Schema.org recipe-import specs register
+the same proxy with `cannedRecipePagesHandler`, serving synthetic HTML
+and a cover image from `tests/schema-org-fixtures/` so they never
+fetch live recipe sites either.
 
 ---
 
@@ -787,7 +790,8 @@ That's it. `npm test` is `playwright test`, which:
    and an HTTPS-MITM forward proxy. Specs configure mocks on-demand
    through the opt-in `mocks` test fixture using
    `mocks.route(pattern, handler)` and the factories in
-   `tests/mock-handlers.ts`.
+   `tests/mock-handlers.ts` (kptncook, embeddings, and canned
+   schema.org recipe pages).
 3. Runs the suite. Each test that asks for a tenant gets a fresh
    user/flat via the `tenant` fixture (§10.3) and logs in via the
    real form using the `login()` helper.

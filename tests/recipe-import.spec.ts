@@ -6,17 +6,20 @@ import {
   jsonFromToolResult,
   setMcpBaseUrl,
 } from "./mcp-helpers";
+import { cannedRecipePagesHandler } from "./mock-handlers";
+import {
+  BBC_BAKED_RATATOUILLE,
+  CANNED_COVER_JPEG,
+  CANNED_NO_RECIPE_HTML,
+  CANNED_NO_RECIPE_URL,
+  CANNED_RECIPE_PAGES,
+  CANNED_SCHEMA_ORG_HOSTS,
+} from "./schema-org-pages";
 
 /**
- * Live import tests for arbitrary recipe pages (schema.org JSON-LD).
- *
- * These run against the REAL internet (the test proxy passes unmatched
- * requests through), so assertions are intentionally loose: third-party
- * pages change wording, counts, and photos over time. We assert the
- * shape and a few stable anchors, not exact strings.
- *
- * If one of these URLs 404s / bot-blocks / restructures, the fix is to
- * swap the URL — not to weaken the importer.
+ * MCP import tests for schema.org Recipe JSON-LD. Page HTML and cover
+ * photos are canned fixtures served by the test proxy — the specs do
+ * not fetch those hosts.
  */
 
 type FetchResult = {
@@ -24,48 +27,32 @@ type FetchResult = {
   baseQuantity: number;
   sourceUrl: string | null;
   steps: string;
-  ingredients: Array<{ amount: string | null; unit: string | null; item: string }>;
+  ingredients: Array<{
+    amount: string | null;
+    unit: string | null;
+    item: string;
+  }>;
   photo: { contentType: string; base64: string } | null;
   note?: string;
 };
 
-// Real, long-lived recipe URLs that expose schema.org Recipe JSON-LD.
-// Chosen for diversity (a magazine + two WP-Recipe-Maker food blogs) and
-// for currently serving without bot-blocking. If one starts 403/404ing,
-// swap it for another schema.org page rather than weakening assertions.
-const LIVE_RECIPES = [
-  {
-    label: "Bon Appétit chocolate chip cookies",
-    url: "https://www.bonappetit.com/recipe/bas-best-chocolate-chip-cookies",
-    nameRe: /cookie/i,
-    hostRe: /bonappetit\.com$/,
-    minIngredients: 5,
-  },
-  {
-    label: "Love and Lemons banana bread",
-    url: "https://www.loveandlemons.com/banana-bread/",
-    nameRe: /banana bread/i,
-    hostRe: /loveandlemons\.com$/,
-    minIngredients: 6,
-  },
-  {
-    label: "Sally's Baking Addiction banana bread",
-    url: "https://sallysbakingaddiction.com/best-banana-bread-recipe/",
-    nameRe: /banana bread/i,
-    hostRe: /sallysbakingaddiction\.com$/,
-    minIngredients: 6,
-  },
-] as const;
-
-test.describe("generic recipe import (live)", () => {
-  // Real-network requests are slower and flakier than mocked ones.
-  test.slow();
-
-  test.beforeEach(async ({ baseURL }) => {
+test.describe("generic recipe import", () => {
+  test.beforeEach(async ({ mocks, baseURL }) => {
     setMcpBaseUrl(baseURL!);
+    await mocks.route(
+      CANNED_SCHEMA_ORG_HOSTS,
+      cannedRecipePagesHandler(
+        [
+          ...CANNED_RECIPE_PAGES,
+          BBC_BAKED_RATATOUILLE,
+          { pageUrl: CANNED_NO_RECIPE_URL, html: CANNED_NO_RECIPE_HTML },
+        ],
+        CANNED_COVER_JPEG,
+      ),
+    );
   });
 
-  for (const recipe of LIVE_RECIPES) {
+  for (const recipe of CANNED_RECIPE_PAGES) {
     test(`fetch_recipe imports ${recipe.label}`, async ({ page, flat }) => {
       await login(page, flat.user);
       const oauth = await runOAuthFlow(page);
@@ -75,9 +62,12 @@ test.describe("generic recipe import (live)", () => {
       try {
         const callResult = await client.callTool({
           name: "fetch_recipe",
-          arguments: { input: recipe.url },
+          arguments: { input: recipe.pageUrl },
         });
-        expect(callResult.isError, JSON.stringify(callResult.content)).toBeFalsy();
+        expect(
+          callResult.isError,
+          JSON.stringify(callResult.content),
+        ).toBeFalsy();
 
         const data = jsonFromToolResult<FetchResult>(callResult);
 
@@ -90,16 +80,19 @@ test.describe("generic recipe import (live)", () => {
         expect(new URL(data.sourceUrl!).host).toMatch(recipe.hostRe);
 
         // Ingredients: enough of them, every line has a non-empty item,
-        // and at least one parsed into a numeric amount + unit.
-        expect(data.ingredients.length).toBeGreaterThanOrEqual(recipe.minIngredients);
+        // and at least one parsed into a numeric amount.
+        expect(data.ingredients.length).toBeGreaterThanOrEqual(
+          recipe.minIngredients,
+        );
         for (const ing of data.ingredients) {
           expect(ing.item.trim().length).toBeGreaterThan(0);
         }
         const withAmount = data.ingredients.filter((i) => i.amount !== null);
         expect(withAmount.length).toBeGreaterThan(0);
 
-        // Steps are present.
+        // Steps are present and came from the canned page, not the live site.
         expect(data.steps.trim().length).toBeGreaterThan(0);
+        expect(data.steps).toContain(recipe.stepMarker);
 
         // Cover photo imported.
         expect(data.photo).not.toBeNull();
@@ -123,7 +116,7 @@ test.describe("generic recipe import (live)", () => {
     try {
       const callResult = await client.callTool({
         name: "fetch_recipe",
-        arguments: { input: "https://example.com/" },
+        arguments: { input: CANNED_NO_RECIPE_URL },
       });
       expect(callResult.isError).toBe(true);
     } finally {
@@ -141,6 +134,7 @@ test.describe("generic recipe import (live)", () => {
     const client = await mcpClient(oauth.tokens.accessToken);
 
     try {
+      // assertPublicUrl rejects localhost before any fetch.
       const callResult = await client.callTool({
         name: "fetch_recipe",
         arguments: { input: "http://localhost/admin" },

@@ -1,17 +1,36 @@
 import { test, expect } from "./fixtures";
 import { login } from "./login";
+import { cannedRecipePagesHandler } from "./mock-handlers";
+import {
+  BBC_BAKED_RATATOUILLE,
+  CANNED_COVER_JPEG,
+  CANNED_NO_RECIPE_HTML,
+  CANNED_NO_RECIPE_URL,
+  CANNED_RECIPE_PAGES,
+  CANNED_SCHEMA_ORG_HOSTS,
+  LOVE_AND_LEMONS_BANANA_BREAD,
+} from "./schema-org-pages";
 
 /**
- * Live UI import test: paste a real recipe URL into the import modal and
- * confirm the form pre-fills and saves. Runs against the real internet
- * (proxy pass-through), so assertions stay loose — see
- * recipe-import-live.spec.ts for rationale.
+ * UI import: paste a schema.org recipe URL into the import modal and
+ * confirm the form pre-fills and saves. Page HTML and cover photos are
+ * canned fixtures served by the test proxy.
  */
 
-const LIVE_URL = "https://www.loveandlemons.com/banana-bread/";
-
-test.describe("generic recipe import (live UI)", () => {
-  test.slow();
+test.describe("generic recipe import (UI)", () => {
+  test.beforeEach(async ({ mocks }) => {
+    await mocks.route(
+      CANNED_SCHEMA_ORG_HOSTS,
+      cannedRecipePagesHandler(
+        [
+          ...CANNED_RECIPE_PAGES,
+          BBC_BAKED_RATATOUILLE,
+          { pageUrl: CANNED_NO_RECIPE_URL, html: CANNED_NO_RECIPE_HTML },
+        ],
+        CANNED_COVER_JPEG,
+      ),
+    );
+  });
 
   test("paste recipe URL → form prefilled → save creates the recipe", async ({
     page,
@@ -25,7 +44,9 @@ test.describe("generic recipe import (live UI)", () => {
       page.getByRole("heading", { name: /import a recipe/i }),
     ).toBeVisible();
 
-    await page.getByLabel("Recipe URL or kptncook link / id").fill(LIVE_URL);
+    await page
+      .getByLabel("Recipe URL or kptncook link / id")
+      .fill(LOVE_AND_LEMONS_BANANA_BREAD.pageUrl);
     await page.getByRole("button", { name: "Import", exact: true }).click();
 
     await expect(
@@ -34,13 +55,22 @@ test.describe("generic recipe import (live UI)", () => {
 
     // Name pre-filled from the page's JSON-LD.
     await expect(page.getByLabel("Name")).toHaveValue(/banana bread/i);
-    await expect(page.getByLabel("Source URL")).toHaveValue(/loveandlemons\.com/);
+    await expect(page.getByLabel("Source URL")).toHaveValue(
+      /loveandlemons\.com/,
+    );
 
     // First ingredient parsed into at least a non-empty item.
-    await expect(page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item")).not.toHaveValue("");
+    await expect(
+      page
+        .getByRole("row", { name: "Ingredient 1", exact: true })
+        .getByLabel("Item"),
+    ).not.toHaveValue("");
 
-    // Steps pre-filled.
+    // Steps pre-filled from the canned page.
     await expect(page.getByLabel("Steps")).not.toHaveValue("");
+    await expect(page.getByLabel("Steps")).toHaveValue(
+      new RegExp(LOVE_AND_LEMONS_BANANA_BREAD.stepMarker),
+    );
 
     // Imported cover photo shows as a preview thumbnail.
     await expect(page.getByAltText("Current photo")).toBeVisible();
@@ -53,12 +83,12 @@ test.describe("generic recipe import (live UI)", () => {
     ).toBeVisible();
   });
 
-  // spec: specs/recipe-import-ui-live.plan.md (1.2)
-  // Asserts the import modal extracts every ingredient from a BBC Good Food
-  // recipe with the exact amount, unit, and item — not just sanity counts.
-  // Catches regressions where unit detection drops tbsp/tsp/ml/g, where
-  // unitless counts get a spurious unit, or where the "For the cheese sauce"
-  // subsection is skipped.
+  // spec: specs/recipe-import-ui.plan.md (1.2)
+  // Asserts the import modal extracts every ingredient from the canned
+  // BBC Good Food page with the exact amount, unit, and item — not just
+  // sanity counts. Catches regressions where unit detection drops
+  // tbsp/tsp/ml/g, where unitless counts get a spurious unit, or where
+  // the "For the cheese sauce" subsection would be skipped.
   test("import BBC Good Food baked ratatouille prefills exact ingredients", async ({
     page,
     flat,
@@ -75,7 +105,7 @@ test.describe("generic recipe import (live UI)", () => {
     // 2. Paste the BBC Good Food URL and import.
     await page
       .getByLabel("Recipe URL or kptncook link / id")
-      .fill("https://www.bbcgoodfood.com/recipes/baked-ratatouille-goats-cheese");
+      .fill(BBC_BAKED_RATATOUILLE.pageUrl);
     await page.getByRole("button", { name: "Import", exact: true }).click();
 
     await expect(
@@ -88,9 +118,14 @@ test.describe("generic recipe import (live UI)", () => {
     // Wait for the importer to populate the form, then assert the whole
     // ingredients block as one ARIA snapshot so a single soft failure shows
     // every mismatched row, amount, unit, and item at once.
-    await expect(page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item")).not.toHaveValue("");
+    await expect(
+      page
+        .getByRole("row", { name: "Ingredient 1", exact: true })
+        .getByLabel("Item"),
+    ).not.toHaveValue("");
 
-    await expect.soft(page.getByRole("table", { name: "Ingredients" })).toMatchAriaSnapshot(`
+    await expect.soft(page.getByRole("table", { name: "Ingredients" }))
+      .toMatchAriaSnapshot(`
       - table "Ingredients":
         - rowgroup:
           - row "Amount Unit Item Actions":
@@ -165,8 +200,11 @@ test.describe("generic recipe import (live UI)", () => {
             - cell
     `);
 
-    // Steps prefilled with the 4 method steps.
+    // Steps prefilled with the 4 method steps from the canned page.
     await expect(page.getByLabel("Steps")).not.toHaveValue("");
+    await expect(page.getByLabel("Steps")).toHaveValue(
+      new RegExp(BBC_BAKED_RATATOUILLE.stepMarker),
+    );
 
     await expect(page.getByAltText("Current photo")).toBeVisible();
 

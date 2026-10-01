@@ -1,7 +1,8 @@
 // Shared route-handler factories for HTTP mocks. Each function returns
 // a Playwright-shaped route handler (closure) that specs hand to
 // `mocks.route(...)` inline. Helpers don't *register* anything — that
-// stays in the spec, next to the assertions.
+// stays in the spec, next to the assertions. Covers kptncook, embedding
+// providers, and canned schema.org recipe pages.
 
 import type { RouteHandler } from "./playwright-mocks/src";
 import {
@@ -47,7 +48,9 @@ export function kptncookShareRedirectHandler(
  * Requires `kptnkey` to match `KPTNCOOK_TEST_API_KEY` (the value the
  * worker fixture sets on the vite dev env).
  */
-export function kptncookSearchHandler(recipes: MockKptncookRecipe[]): RouteHandler {
+export function kptncookSearchHandler(
+  recipes: MockKptncookRecipe[],
+): RouteHandler {
   const byOid = new Map(recipes.map((r) => [r.oid, r]));
   const byUid = new Map(recipes.map((r) => [r.uid, r]));
   return async (route) => {
@@ -63,7 +66,10 @@ export function kptncookSearchHandler(recipes: MockKptncookRecipe[]): RouteHandl
       body = null;
     }
     if (!Array.isArray(body)) {
-      await route.fulfill({ status: 400, json: { error: "expected array body" } });
+      await route.fulfill({
+        status: 400,
+        json: { error: "expected array body" },
+      });
       return;
     }
     const out: Array<Record<string, unknown>> = [];
@@ -89,6 +95,86 @@ export function kptncookImagesHandler(): RouteHandler {
       status: 200,
       headers: { "content-type": "image/jpeg" },
       body: TINY_JPEG,
+    });
+  };
+}
+
+// --------------------------------------------------------------------
+// schema.org recipe pages
+
+export type CannedRecipePage = {
+  pageUrl: string;
+  html: string;
+  /** Cover photo URL referenced by the page. Served as `image`. */
+  imageUrl?: string;
+};
+
+function canonicalRequestUrl(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return raw;
+  }
+  url.hash = "";
+  if (url.pathname.length > 1) url.pathname = url.pathname.replace(/\/+$/, "");
+  return url.href;
+}
+
+/**
+ * Fulfills canned schema.org recipe pages and their cover photos.
+ * Register it on a pattern that covers every host the pages use
+ * (`CANNED_SCHEMA_ORG_HOSTS`). A URL on that pattern with no fixture
+ * is HTTP 404 — these specs must not fall through to the internet.
+ *
+ * `image` defaults to the shared 1×1 JPEG. Pass `CANNED_COVER_JPEG`
+ * to serve the bytes from `tests/schema-org-fixtures/cover.jpg`.
+ */
+export function cannedRecipePagesHandler(
+  pages: readonly CannedRecipePage[],
+  image: Buffer = TINY_JPEG,
+): RouteHandler {
+  const htmlByUrl = new Map<string, string>();
+  const imageUrls = new Set<string>();
+  for (const page of pages) {
+    const pageKey = canonicalRequestUrl(page.pageUrl);
+    if (htmlByUrl.has(pageKey) || imageUrls.has(pageKey)) {
+      throw new Error(`Duplicate canned page URL ${page.pageUrl}`);
+    }
+    htmlByUrl.set(pageKey, page.html);
+    if (!page.imageUrl) continue;
+    const imageKey = canonicalRequestUrl(page.imageUrl);
+    if (htmlByUrl.has(imageKey)) {
+      throw new Error(
+        `Canned image URL collides with a page URL ${page.imageUrl}`,
+      );
+    }
+    imageUrls.add(imageKey);
+  }
+
+  return async (route) => {
+    const key = canonicalRequestUrl(route.url());
+    const html = htmlByUrl.get(key);
+    if (html !== undefined) {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html; charset=utf-8",
+        body: html,
+      });
+      return;
+    }
+    if (imageUrls.has(key)) {
+      await route.fulfill({
+        status: 200,
+        contentType: "image/jpeg",
+        body: image,
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 404,
+      contentType: "text/plain; charset=utf-8",
+      body: `No canned response for ${route.url()}`,
     });
   };
 }
@@ -188,7 +274,10 @@ export function openAiEmbeddingHandler(
       json: {
         object: "list",
         data,
-        model: typeof body?.model === "string" ? body.model : "text-embedding-3-small",
+        model:
+          typeof body?.model === "string"
+            ? body.model
+            : "text-embedding-3-small",
         usage: { prompt_tokens: 0, total_tokens: 0 },
       },
     });

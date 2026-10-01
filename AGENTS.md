@@ -148,11 +148,11 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
   variants, invoke the CLI directly (`npx playwright test --debug`).
 - **No test-only code in the app**: no `/_test/*` routes, no
   `loginAs`, no `storageState`, no `if (test)` branches, no
-  `*_BASE_URL` env-var seams. External APIs (kptncook, OpenAI) are
-  mocked at the HTTP layer by the proxy in `tests/proxy/`; the app
-  code calls real production URLs. The generic schema.org URL importer
-  is the one deliberately-unmocked exception — its specs hit real
-  recipe pages (see [`tests/README.md`](./tests/README.md)).
+  `*_BASE_URL` env-var seams. External APIs (kptncook, OpenAI, and
+  schema.org recipe pages) are mocked at the HTTP layer by the proxy
+  in `tests/playwright-mocks/`; the app code calls real production
+  URLs. Canned schema.org HTML and a cover image live in
+  `tests/schema-org-fixtures/` (see [`tests/README.md`](./tests/README.md)).
 - **Schema changes**: edit `app/db/schema.ts`, then `npm run db:generate`
   to produce a new file in `drizzle/`. Commit both.
 - **Style**: Prettier + ESLint defaults. Don't add comments that
