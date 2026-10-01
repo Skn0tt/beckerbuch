@@ -3,15 +3,27 @@ import { login } from "./login";
 import { geminiEmbeddingHandler } from "./mock-handlers";
 
 test.beforeEach(async ({ mocks }) => {
-  await mocks.route("https://generativelanguage.googleapis.com/**", geminiEmbeddingHandler());
+  await mocks.route(
+    "https://generativelanguage.googleapis.com/**",
+    geminiEmbeddingHandler(),
+  );
 });
 
 async function createPasta(page: import("@playwright/test").Page) {
   await page.getByRole("link", { name: "+ New recipe" }).click();
   await page.getByLabel("Name").fill("Pasta al limone");
-  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Amount").fill("400");
-  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Unit").fill("g");
-  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill("spaghetti");
+  await page
+    .getByRole("row", { name: "Ingredient 1", exact: true })
+    .getByLabel("Amount")
+    .fill("400");
+  await page
+    .getByRole("row", { name: "Ingredient 1", exact: true })
+    .getByLabel("Unit")
+    .fill("g");
+  await page
+    .getByRole("row", { name: "Ingredient 1", exact: true })
+    .getByLabel("Item")
+    .fill("spaghetti");
   await page.getByRole("button", { name: "Save recipe" }).click();
   await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
 }
@@ -21,14 +33,15 @@ async function addPastaToDraftAndOpenKitchen(
 ) {
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await expect(
-    page.getByRole("button", { name: "✓ In draft" }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
   await page.goto("/kitchen");
   await expect(page).toHaveURL("/kitchen");
 }
 
-test("note: add to draft item, persists across reload", async ({ page, flat }) => {
+test("note: add to draft item, persists across reload", async ({
+  page,
+  flat,
+}) => {
   await login(page, flat.user);
   await addPastaToDraftAndOpenKitchen(page);
 
@@ -54,14 +67,10 @@ test("note: add to draft item, persists across reload", async ({ page, flat }) =
   await input.press("Enter");
   await waitForSetNote;
 
-  await expect(page.getByTestId("note-text")).toHaveText(
-    /cook this on Friday/,
-  );
+  await expect(page.getByTestId("note-text")).toHaveText(/cook this on Friday/);
 
   await page.reload();
-  await expect(page.getByTestId("note-text")).toHaveText(
-    /cook this on Friday/,
-  );
+  await expect(page.getByTestId("note-text")).toHaveText(/cook this on Friday/);
 });
 
 test("note: edit existing", async ({ page, flat }) => {
@@ -168,42 +177,50 @@ test("note: editable on in-stock items too", async ({ page, flat }) => {
   await page.getByTestId("note-input").fill("added after finalise");
   await page.getByTestId("note-input").press("Enter");
 
-  await expect(page.getByTestId("note-text")).toHaveText(/added after finalise/);
+  await expect(page.getByTestId("note-text")).toHaveText(
+    /added after finalise/,
+  );
 });
 
-test("note: mobile keeps + Note with controls when empty, moves note below once filled", async ({ page, flat }) => {
+test("note: draft card keeps controls on the title row and the note below", async ({
+  page,
+  flat,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page, flat.user);
   await addPastaToDraftAndOpenKitchen(page);
 
-  const addNote = page.getByRole("button", { name: "Add note for Pasta al limone" });
-  const decreasePortions = page.getByRole("button", {
+  const card = page
+    .getByRole("link", { name: "Pasta al limone" })
+    .locator("xpath=ancestor::*[contains(@class, 'mantine-Card-root')][1]");
+  const title = card.getByRole("link", { name: "Pasta al limone" });
+  const decrease = card.getByRole("button", {
     name: "Decrease Pasta al limone portions",
   });
-  await expect(addNote).toBeVisible();
-  await expect(decreasePortions).toBeVisible();
+  const cook = card.getByRole("button", {
+    name: "Choose cook for Pasta al limone",
+  });
+  const addNote = card.getByRole("button", {
+    name: "Add note for Pasta al limone",
+  });
 
-  const controlsContainAddNote = await decreasePortions.evaluate(
-    (decreaseEl, addNoteAriaLabel) => {
-      let controlsRow: Element | null = null;
-      let node: Element | null = decreaseEl;
-      while (node) {
-        if (
-          node.matches('[class*="mantine-Group-root"]') &&
-          node.querySelector(
-            'button[aria-label="Choose cook for Pasta al limone"]',
-          ) != null
-        ) {
-          controlsRow = node;
-          break;
-        }
-        node = node.parentElement;
-      }
-      return controlsRow?.querySelector(`button[aria-label="${addNoteAriaLabel}"]`) != null;
-    },
-    "Add note for Pasta al limone",
-  );
-  expect(controlsContainAddNote).toBe(true);
+  await expect(decrease).toBeVisible();
+  await expect(addNote).toBeVisible();
+
+  const titleRect = await title.boundingBox();
+  const decreaseRect = await decrease.boundingBox();
+  const cookRect = await cook.boundingBox();
+  const addNoteRect = await addNote.boundingBox();
+  expect(titleRect).not.toBeNull();
+  expect(decreaseRect).not.toBeNull();
+  expect(cookRect).not.toBeNull();
+  expect(addNoteRect).not.toBeNull();
+  const midY = (box: { y: number; height: number }) => box.y + box.height / 2;
+  expect(Math.abs(midY(titleRect!) - midY(decreaseRect!))).toBeLessThan(8);
+  expect(Math.abs(midY(titleRect!) - midY(cookRect!))).toBeLessThan(8);
+  expect(decreaseRect!.x).toBeLessThan(cookRect!.x);
+  expect(midY(addNoteRect!)).toBeGreaterThan(midY(titleRect!) + 8);
+  expect(addNoteRect!.x).toBeLessThan(decreaseRect!.x);
 
   await addNote.click();
   await page.getByTestId("note-input").fill("cook first");
@@ -218,29 +235,24 @@ test("note: mobile keeps + Note with controls when empty, moves note below once 
   await page.reload();
   await expect(page).toHaveURL("/kitchen");
 
-  const note = page.getByTestId("note-text");
+  const note = card.getByTestId("note-text");
   await expect(note).toHaveText(/cook first/);
-  const controlsContainNoteText = await decreasePortions.evaluate((decreaseEl) => {
-    let controlsRow: Element | null = null;
-    let node: Element | null = decreaseEl;
-    while (node) {
-      if (
-        node.matches('[class*="mantine-Group-root"]') &&
-        node.querySelector(
-          'button[aria-label="Choose cook for Pasta al limone"]',
-        ) != null
-      ) {
-        controlsRow = node;
-        break;
-      }
-      node = node.parentElement;
-    }
-    return controlsRow?.querySelector('[data-testid="note-text"]') != null;
-  });
-  expect(controlsContainNoteText).toBe(false);
+  const noteRect = await note.boundingBox();
+  const cookAfter = await cook.boundingBox();
+  const decreaseAfter = await decrease.boundingBox();
+  expect(noteRect).not.toBeNull();
+  expect(cookAfter).not.toBeNull();
+  expect(decreaseAfter).not.toBeNull();
+  const midYAfter = (box: { y: number; height: number }) =>
+    box.y + box.height / 2;
+  expect(
+    Math.abs(midYAfter(cookAfter!) - midYAfter(decreaseAfter!)),
+  ).toBeLessThan(8);
+  expect(midYAfter(noteRect!)).toBeGreaterThan(midYAfter(cookAfter!) + 8);
+  expect(noteRect!.x).toBeLessThan(decreaseAfter!.x);
 });
 
-test("note: mobile stock card keeps title top, quantity top-right, and avatar/note/cooked on one row", async ({
+test("note: mobile stock card keeps controls on the title row and the note below", async ({
   page,
   flat,
 }) => {
@@ -272,24 +284,34 @@ test("note: mobile stock card keeps title top, quantity top-right, and avatar/no
   await expect(addNote).toBeVisible();
   await expect(markCooked).toHaveText("✓");
 
-  const titleRect = await recipeTitle.evaluate((el) => el.getBoundingClientRect());
-  const quantityRect = await quantity.evaluate((el) => el.getBoundingClientRect());
-  const cookPickerRect = await cookPicker.evaluate((el) => el.getBoundingClientRect());
-  const addNoteRect = await addNote.evaluate((el) => el.getBoundingClientRect());
-  const markCookedRect = await markCooked.evaluate((el) => el.getBoundingClientRect());
+  const titleRect = await recipeTitle.evaluate((el) =>
+    el.getBoundingClientRect(),
+  );
+  const quantityRect = await quantity.evaluate((el) =>
+    el.getBoundingClientRect(),
+  );
+  const cookPickerRect = await cookPicker.evaluate((el) =>
+    el.getBoundingClientRect(),
+  );
+  const addNoteRect = await addNote.evaluate((el) =>
+    el.getBoundingClientRect(),
+  );
+  const markCookedRect = await markCooked.evaluate((el) =>
+    el.getBoundingClientRect(),
+  );
 
-  expect(titleRect.y).toBeLessThan(cookPickerRect.y - 2);
-  expect(quantityRect.y).toBeLessThan(cookPickerRect.y - 2);
+  const midY = (box: { y: number; height: number }) => box.y + box.height / 2;
+  expect(Math.abs(midY(titleRect) - midY(quantityRect))).toBeLessThan(8);
+  expect(Math.abs(midY(titleRect) - midY(cookPickerRect))).toBeLessThan(8);
+  expect(Math.abs(midY(titleRect) - midY(markCookedRect))).toBeLessThan(8);
   expect(titleRect.x).toBeLessThan(quantityRect.x);
-  expect(cookPickerRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
-  expect(addNoteRect.y).toBeLessThan(cookPickerRect.y + cookPickerRect.height);
-  expect(markCookedRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
-  expect(addNoteRect.y).toBeLessThan(markCookedRect.y + markCookedRect.height);
-  expect(cookPickerRect.x).toBeLessThan(addNoteRect.x);
-  expect(addNoteRect.x).toBeLessThan(markCookedRect.x);
+  expect(quantityRect.x).toBeLessThan(cookPickerRect.x);
+  expect(cookPickerRect.x).toBeLessThan(markCookedRect.x);
+  expect(midY(addNoteRect)).toBeGreaterThan(midY(titleRect) + 8);
+  expect(addNoteRect.x).toBeLessThan(quantityRect.x);
 });
 
-test("note: desktop stock card keeps title top, quantity top-right, and avatar/note/cooked on one row", async ({
+test("note: desktop stock card keeps controls on the title row and the note below", async ({
   page,
   flat,
 }) => {
@@ -321,21 +343,131 @@ test("note: desktop stock card keeps title top, quantity top-right, and avatar/n
   await expect(addNote).toBeVisible();
   await expect(markCooked).toHaveText("✓");
 
-  const titleRect = await recipeTitle.evaluate((el) => el.getBoundingClientRect());
-  const quantityRect = await quantity.evaluate((el) => el.getBoundingClientRect());
-  const cookPickerRect = await cookPicker.evaluate((el) => el.getBoundingClientRect());
-  const addNoteRect = await addNote.evaluate((el) => el.getBoundingClientRect());
-  const markCookedRect = await markCooked.evaluate((el) => el.getBoundingClientRect());
+  const titleRect = await recipeTitle.evaluate((el) =>
+    el.getBoundingClientRect(),
+  );
+  const quantityRect = await quantity.evaluate((el) =>
+    el.getBoundingClientRect(),
+  );
+  const cookPickerRect = await cookPicker.evaluate((el) =>
+    el.getBoundingClientRect(),
+  );
+  const addNoteRect = await addNote.evaluate((el) =>
+    el.getBoundingClientRect(),
+  );
+  const markCookedRect = await markCooked.evaluate((el) =>
+    el.getBoundingClientRect(),
+  );
 
-  expect(titleRect.y).toBeLessThan(cookPickerRect.y - 2);
-  expect(quantityRect.y).toBeLessThan(cookPickerRect.y - 2);
+  const midY = (box: { y: number; height: number }) => box.y + box.height / 2;
+  expect(Math.abs(midY(titleRect) - midY(quantityRect))).toBeLessThan(8);
+  expect(Math.abs(midY(titleRect) - midY(cookPickerRect))).toBeLessThan(8);
+  expect(Math.abs(midY(titleRect) - midY(markCookedRect))).toBeLessThan(8);
   expect(titleRect.x).toBeLessThan(quantityRect.x);
-  expect(cookPickerRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
-  expect(addNoteRect.y).toBeLessThan(cookPickerRect.y + cookPickerRect.height);
-  expect(markCookedRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
-  expect(addNoteRect.y).toBeLessThan(markCookedRect.y + markCookedRect.height);
-  expect(cookPickerRect.x).toBeLessThan(addNoteRect.x);
-  expect(addNoteRect.x).toBeLessThan(markCookedRect.x);
+  expect(quantityRect.x).toBeLessThan(cookPickerRect.x);
+  expect(cookPickerRect.x).toBeLessThan(markCookedRect.x);
+  expect(midY(addNoteRect)).toBeGreaterThan(midY(titleRect) + 8);
+  expect(addNoteRect.x).toBeLessThan(quantityRect.x);
+});
+
+test("sidebar: draft and in-stock cards share the title-row controls", async ({
+  page,
+  flat,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await login(page, flat.user);
+  await createPasta(page);
+  await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(`/h/${flat.id}`);
+
+  await page.goto("/");
+  await page.getByRole("link", { name: "+ New recipe" }).click();
+  await page.getByLabel("Name").fill("Ofengemüse");
+  await page
+    .getByRole("row", { name: "Ingredient 1", exact: true })
+    .getByLabel("Amount")
+    .fill("2");
+  await page
+    .getByRole("row", { name: "Ingredient 1", exact: true })
+    .getByLabel("Unit")
+    .fill("piece");
+  await page
+    .getByRole("row", { name: "Ingredient 1", exact: true })
+    .getByLabel("Item")
+    .fill("zucchini");
+  await page.getByRole("button", { name: "Save recipe" }).click();
+  await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
+  await page.getByRole("button", { name: "+ Add to draft" }).click();
+  await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
+
+  const sidebar = page.getByRole("complementary", { name: "Kitchen" });
+  const draftCard = sidebar
+    .getByRole("link", { name: "Ofengemüse" })
+    .locator("xpath=ancestor::*[contains(@class, 'mantine-Card-root')][1]");
+  const stockCard = sidebar
+    .getByRole("link", { name: "Pasta al limone" })
+    .locator("xpath=ancestor::*[contains(@class, 'mantine-Card-root')][1]");
+
+  const draftQty = draftCard.getByText("4", { exact: true });
+  const stockQty = stockCard.getByText("4", { exact: true });
+  const draftCook = draftCard.getByRole("button", {
+    name: "Choose cook for Ofengemüse",
+  });
+  const stockCook = stockCard.getByRole("button", {
+    name: "Choose cook for Pasta al limone",
+  });
+  const draftNote = draftCard.getByRole("button", {
+    name: "Add note for Ofengemüse",
+  });
+  const stockNote = stockCard.getByRole("button", {
+    name: "Add note for Pasta al limone",
+  });
+  const increase = draftCard.getByRole("button", {
+    name: "Increase Ofengemüse portions",
+  });
+  const cooked = stockCard.getByRole("button", {
+    name: "Mark Pasta al limone as cooked",
+  });
+
+  await expect(draftQty).toBeVisible();
+  await expect(stockQty).toBeVisible();
+
+  const draftQtyBox = await draftQty.boundingBox();
+  const stockQtyBox = await stockQty.boundingBox();
+  const draftCookBox = await draftCook.boundingBox();
+  const stockCookBox = await stockCook.boundingBox();
+  const draftNoteBox = await draftNote.boundingBox();
+  const stockNoteBox = await stockNote.boundingBox();
+  const increaseBox = await increase.boundingBox();
+  const cookedBox = await cooked.boundingBox();
+  for (const box of [
+    draftQtyBox,
+    stockQtyBox,
+    draftCookBox,
+    stockCookBox,
+    draftNoteBox,
+    stockNoteBox,
+    increaseBox,
+    cookedBox,
+  ]) {
+    expect(box).not.toBeNull();
+  }
+
+  expect(Math.abs(draftNoteBox!.x - stockNoteBox!.x)).toBeLessThan(2);
+  const right = (box: { x: number; width: number }) => box.x + box.width;
+  expect(Math.abs(right(draftCookBox!) - right(cookedBox!))).toBeLessThan(8);
+
+  const midY = (box: { y: number; height: number }) => box.y + box.height / 2;
+  expect(Math.abs(midY(draftQtyBox!) - midY(draftCookBox!))).toBeLessThan(8);
+  expect(Math.abs(midY(stockQtyBox!) - midY(stockCookBox!))).toBeLessThan(8);
+  expect(Math.abs(midY(stockCookBox!) - midY(cookedBox!))).toBeLessThan(8);
+  expect(midY(draftNoteBox!)).toBeGreaterThan(midY(draftCookBox!) + 8);
+  expect(midY(stockNoteBox!)).toBeGreaterThan(midY(stockCookBox!) + 8);
+  expect(draftNoteBox!.x).toBeLessThan(increaseBox!.x);
+  expect(stockNoteBox!.x).toBeLessThan(stockQtyBox!.x);
 });
 
 test("note: does NOT appear on the public /h/:flatId handoff page", async ({
@@ -349,9 +481,7 @@ test("note: does NOT appear on the public /h/:flatId handoff page", async ({
   await page
     .getByRole("button", { name: "Add note for Pasta al limone" })
     .click();
-  await page
-    .getByTestId("note-input")
-    .fill("internal note - should not leak");
+  await page.getByTestId("note-input").fill("internal note - should not leak");
   await page.getByTestId("note-input").press("Enter");
   await expect(page.getByTestId("note-text")).toHaveText(
     /internal note - should not leak/,
