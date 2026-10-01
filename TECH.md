@@ -425,10 +425,13 @@ Renders:
 
 - **Send to Bring!** — a normal Mantine button whose `href` is
   `https://api.getbring.com/rest/bringrecipes/deeplink?url=<handoff>&source=web`.
-  Bring 307s that to an app deeplink, then fetches the public page and
-  scrapes the JSON-LD. Quantity query params are omitted so Bring does
-  not re-scale lines that are already at target quantity. No third-party
-  widget script (and no Google Analytics).
+  On a desktop browser (`(hover: hover) and (pointer: fine)`) the link
+  opens in a new tab so the shopping list stays put. On a phone it
+  navigates in the same tab. Bring 307s that URL to an app deeplink,
+  then fetches the public page and scrapes the JSON-LD. Quantity query
+  params are omitted so Bring does not re-scale lines that are already
+  at target quantity. No third-party widget script (and no Google
+  Analytics).
 - **JSON-LD:** `name`, `author` (Organization = flat name; required by
   Bring's checker), `recipeYield`, `recipeIngredient` (combined list,
   with split groups expanded).

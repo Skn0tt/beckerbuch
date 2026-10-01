@@ -101,21 +101,77 @@ async function createRecipeAndAddToDraft(page: Page, name: string) {
   await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
 }
 
+async function openHandoff(
+  page: Page,
+  flat: { id: string; user: Parameters<typeof login>[1] },
+) {
+  await login(page, flat.user);
+  await createRecipeAndAddToDraft(page, "Pasta al limone");
+
+  await page.goto("/kitchen");
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(`/h/${flat.id}`);
+}
+
+// Don't hit the real Bring! API when the spec follows the deeplink.
+async function stubBring(page: Page) {
+  await page.context().route("https://api.getbring.com/**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: "<!doctype html><title>Bring</title><p>Bring import</p>",
+    }),
+  );
+}
+
 test.describe("Send to Bring!", () => {
-  test("links to Bring!'s import deeplink with the handoff URL", async ({
+  test("on a desktop browser, opens Bring in a new tab and keeps the shopping list", async ({
     page,
     flat,
   }) => {
-    await login(page, flat.user);
-    await createRecipeAndAddToDraft(page, "Pasta al limone");
-
-    await page.goto("/kitchen");
-    await page.getByRole("button", { name: "Finalise draft" }).click();
-    await page.getByRole("button", { name: "Confirm finalise draft" }).click();
-    await expect(page).toHaveURL(`/h/${flat.id}`);
+    await stubBring(page);
+    await openHandoff(page, flat);
 
     const link = page.getByRole("link", { name: "Send to Bring!" });
+    const href = bringImportHref(page.url());
     await expect(link).toBeVisible();
-    await expect(link).toHaveAttribute("href", bringImportHref(page.url()));
+    await expect(link).toHaveAttribute("href", href);
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+
+    const popupPromise = page.waitForEvent("popup");
+    await link.click();
+    const popup = await popupPromise;
+    await expect(page).toHaveURL(`/h/${flat.id}`);
+    await expect(popup).toHaveURL(href);
+    await expect(popup.getByText("Bring import")).toBeVisible();
+  });
+});
+
+test.describe("Send to Bring! on a phone", () => {
+  test.use({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 390, height: 844 },
+  });
+
+  test("navigates to Bring in the same tab", async ({ page, flat }) => {
+    await stubBring(page);
+    await openHandoff(page, flat);
+
+    const link = page.getByRole("link", { name: "Send to Bring!" });
+    const href = bringImportHref(page.url());
+    await expect(link).toHaveAttribute("href", href);
+    await expect(link).not.toHaveAttribute("target", "_blank");
+
+    let popups = 0;
+    page.on("popup", () => {
+      popups += 1;
+    });
+    await link.click();
+    await expect(page).toHaveURL(href);
+    await expect(page.getByText("Bring import")).toBeVisible();
+    expect(popups).toBe(0);
   });
 });
