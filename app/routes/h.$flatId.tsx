@@ -257,6 +257,8 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
             <Button
               component="a"
               href={bringImportHref(handoffUrl)}
+              target="_blank"
+              rel="noopener noreferrer"
               fullWidth
             >
               Send to Bring!
