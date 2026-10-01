@@ -401,9 +401,9 @@ DESKTOP / MOBILE (same layout)
 - **Send to Bring!** is a normal button styled like the rest of the
   app. Its `href` is Bring!'s official deeplink endpoint with this
   page's URL; Bring fetches the page and scrapes schema.org Recipe
-  JSON-LD (DESIGN.md §4.4). On a desktop browser the link opens in a
-  new tab so this page stays open. On a phone it navigates in place
-  so Bring! can take over. Split/Regenerate update that JSON-LD, so
+  JSON-LD (DESIGN.md §4.4). The link opens in a new tab
+  (`target="_blank"`) so this page stays open. Split/Regenerate
+  update that JSON-LD, so
   a later click picks up the edited list.
 - The handoff URL is stable for the life of the flat — it always shows
   the latest finalise batch. After the next finalise, the same URL just

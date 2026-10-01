@@ -9,9 +9,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { useMediaQuery } from "@mantine/hooks";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import type { MouseEvent } from "react";
 import { data, useLocation, useNavigate } from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/h.$flatId";
@@ -33,29 +31,6 @@ import { CombinedList } from "../components/combined-list";
 import { firstMessage, formDataToObject, parseParams } from "../lib/form";
 
 const ParamsSchema = z.object({ flatId: z.guid() });
-
-// Phones stay in this tab so Bring!'s 307 can open the app. A desktop
-// browser has no app to hand off to, and following the deeplink would
-// replace the shopping list.
-const desktopBrowserQuery = "(hover: hover) and (pointer: fine)";
-
-function openBringInNewTab(event: MouseEvent<HTMLAnchorElement>) {
-  if (
-    event.defaultPrevented ||
-    event.button !== 0 ||
-    event.metaKey ||
-    event.ctrlKey ||
-    event.shiftKey ||
-    event.altKey
-  ) {
-    return;
-  }
-  // Once `target="_blank"` is set, the browser opens the new tab itself.
-  if (event.currentTarget.target === "_blank") return;
-  if (!window.matchMedia(desktopBrowserQuery).matches) return;
-  event.preventDefault();
-  window.open(event.currentTarget.href, "_blank", "noopener,noreferrer");
-}
 
 const ActionSchema = z.discriminatedUnion("intent", [
   z.object({ intent: z.literal("regenerate") }),
@@ -228,7 +203,6 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
   } = loaderData;
   const location = useLocation();
   const navigate = useNavigate();
-  const bringOpensInNewTab = useMediaQuery(desktopBrowserQuery);
 
   // This page lives outside the authenticated app shell (it's a public,
   // shareable link), so it has no header/back chrome of its own. Offer a back
@@ -283,9 +257,8 @@ export default function Handoff({ loaderData }: Route.ComponentProps) {
             <Button
               component="a"
               href={bringImportHref(handoffUrl)}
-              target={bringOpensInNewTab ? "_blank" : undefined}
-              rel={bringOpensInNewTab ? "noopener noreferrer" : undefined}
-              onClick={openBringInNewTab}
+              target="_blank"
+              rel="noopener noreferrer"
               fullWidth
             >
               Send to Bring!
