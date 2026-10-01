@@ -82,7 +82,10 @@ kptncook mobile API), and **any recipe page** that publishes schema.org
 `Recipe` metadata as JSON-LD (the format used by the vast majority of
 recipe sites and food blogs). In both cases the server fetches and
 normalizes the recipe, pre-fills the form (name, ingredients, steps,
-photo), and the user reviews/edits before saving. kptncook step text
+photo), and the user reviews/edits before saving. kptncook ingredient
+quantities are for one portion, so the imported base quantity is 1 (the
+app's on-screen default of 2 is a display multiplier, not the yield of
+the stored amounts). kptncook step text
 uses `<timer>` placeholders plus a parallel `timers` array (minutes);
 we expand those to durations (`5 Min.`, `3–5 Min.`, `bis zu 10 Min.`)
 before pre-filling the form. A `fetch_recipe` MCP

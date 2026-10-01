@@ -58,7 +58,7 @@ test.describe("MCP fetch_recipe", () => {
 
       const data = jsonFromToolResult<FetchResult>(callResult);
       expect(data.name).toBe("Zimtschnecken");
-      expect(data.baseQuantity).toBe(2);
+      expect(data.baseQuantity).toBe(1);
       expect(data.sourceUrl).toBe(
         `https://share.kptncook.com/${MOCK_RECIPES.cinnamonBuns.uid}`,
       );

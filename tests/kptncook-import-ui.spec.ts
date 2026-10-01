@@ -45,8 +45,9 @@ test.describe("kptncook import", () => {
       page.getByRole("heading", { name: /import a recipe/i }),
     ).toBeHidden();
 
-    // Form fields are prefilled.
+    // Form fields are prefilled. Amounts are for one portion.
     await expect(page.getByLabel("Name")).toHaveValue("Zimtschnecken");
+    await expect(page.getByLabel("Base portions")).toHaveValue("1");
     await expect(page.getByLabel("Source URL")).toHaveValue(
       `https://share.kptncook.com/${MOCK_RECIPES.cinnamonBuns.uid}`,
     );
@@ -74,6 +75,7 @@ test.describe("kptncook import", () => {
     await expect(
       page.getByRole("heading", { name: "Zimtschnecken" }),
     ).toBeVisible();
+    await expect(page.getByText("Base: 1 portions")).toBeVisible();
     await expect(page.getByText("250 g Mehl")).toBeVisible();
     await expect(page.getByText("150 ml Milch")).toBeVisible();
     await expect(page.getByText("2 Eier")).toBeVisible();

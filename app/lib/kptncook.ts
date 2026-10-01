@@ -240,10 +240,10 @@ export function mapKptncookRecipe(raw: unknown): KptncookImport | null {
   }
   const steps = stepTexts.length > 0 ? stepTexts.join("\n\n") : "";
 
-  // baseQuantity: kptncook quantities are per portion; default to 2
-  // (matches their app's default serving size). User can adjust in the
-  // pre-filled form before saving.
-  const baseQuantity = 2;
+  // kptncook quantities are for one portion. The app multiplies them by
+  // the chosen serving count (its default is 2); that multiplier is not
+  // part of the stored amounts, so the base yield stays 1.
+  const baseQuantity = 1;
 
   let sourceUrl: string | null = null;
   let sourceHost: string | null = null;
