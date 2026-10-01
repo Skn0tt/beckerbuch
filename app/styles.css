@@ -24,8 +24,24 @@ img {
   dynamic-range-limit: standard;
 }
 
-:where(input:not([type="hidden"]), textarea, select) {
+:where(input:not([type="hidden"]), textarea, select, [data-recipe-link-field]) {
   font-size: max(16px, 1rem) !important;
+}
+
+/*
+ * The import link field is contenteditable, not an <input>. KptnCook's
+ * share message is a sentence with the URL attached as a hyperlink;
+ * Safari pastes that into a text field as the sentence alone, but into
+ * a contenteditable element it keeps the <a href>.
+ */
+[data-recipe-link-field] {
+  white-space: nowrap;
+  overflow-x: auto;
+}
+[data-recipe-link-field]:empty::before,
+[data-recipe-link-field]:has(> br:only-child)::before {
+  content: attr(data-placeholder);
+  color: var(--mantine-color-placeholder);
 }
 
 /* GFM task lists: hide list bullet so only the checkbox shows (matches GitHub). */

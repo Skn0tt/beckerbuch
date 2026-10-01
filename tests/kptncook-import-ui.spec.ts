@@ -45,8 +45,9 @@ test.describe("kptncook import", () => {
       page.getByRole("heading", { name: /import a recipe/i }),
     ).toBeHidden();
 
-    // Form fields are prefilled.
+    // Form fields are prefilled. Amounts are for one portion.
     await expect(page.getByLabel("Name")).toHaveValue("Zimtschnecken");
+    await expect(page.getByLabel("Base portions")).toHaveValue("1");
     await expect(page.getByLabel("Source URL")).toHaveValue(
       `https://share.kptncook.com/${MOCK_RECIPES.cinnamonBuns.uid}`,
     );
@@ -74,6 +75,7 @@ test.describe("kptncook import", () => {
     await expect(
       page.getByRole("heading", { name: "Zimtschnecken" }),
     ).toBeVisible();
+    await expect(page.getByText("Base: 1 portions")).toBeVisible();
     await expect(page.getByText("250 g Mehl")).toBeVisible();
     await expect(page.getByText("150 ml Milch")).toBeVisible();
     await expect(page.getByText("2 Eier")).toBeVisible();
@@ -84,6 +86,74 @@ test.describe("kptncook import", () => {
     // The imported photo lands on the recipe detail view (the recipe
     // would only have a <img> if photoBlobKey was set).
     await expect(page.locator("img").first()).toBeVisible();
+  });
+
+  test("UI: kptncook share message blurb is stripped from the link field", async ({
+    page,
+    flat,
+  }) => {
+    await login(page, flat.user);
+    await page.goto("/recipes/new");
+    await page.getByRole("button", { name: /import recipe/i }).click();
+
+    const shareMessage = `Look at this great recipe I've just discovered in the KptnCook app. ${SHARE_URL}`;
+    await page.getByLabel("Recipe URL or kptncook link / id").fill(shareMessage);
+    await expect(page.getByLabel("Recipe URL or kptncook link / id")).toHaveText(
+      SHARE_URL,
+    );
+
+    await page.getByRole("button", { name: "Import", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: /import a recipe/i }),
+    ).toBeHidden();
+    await expect(page.getByLabel("Name")).toHaveValue("Zimtschnecken");
+    await expect(page.getByLabel("Source URL")).toHaveValue(
+      `https://share.kptncook.com/${MOCK_RECIPES.cinnamonBuns.uid}`,
+    );
+  });
+
+  test("UI: share sentence whose URL is only a hyperlink still imports", async ({
+    page,
+    flat,
+  }) => {
+    await login(page, flat.user);
+    await page.goto("/recipes/new");
+    await page.getByRole("button", { name: /import recipe/i }).click();
+
+    const blurb =
+      "Look at this great recipe I've just discovered in the KptnCook app.";
+    const field = page.getByLabel("Recipe URL or kptncook link / id");
+
+    // Safari text fields would keep only the sentence. The paste event
+    // still carries the hyperlink in text/html (Chrome, Firefox) or the
+    // browser inserts an <a> (Safari, contenteditable).
+    await field.evaluate(
+      (el, payload: { plain: string; html: string }) => {
+        const data = new DataTransfer();
+        data.setData("text/plain", payload.plain);
+        data.setData("text/html", payload.html);
+        const event = new ClipboardEvent("paste", {
+          bubbles: true,
+          cancelable: true,
+        });
+        Object.defineProperty(event, "clipboardData", { value: data });
+        el.dispatchEvent(event);
+      },
+      {
+        plain: blurb,
+        html: `<a href="${SHARE_URL}">${blurb}</a>`,
+      },
+    );
+    await expect(field).toHaveText(SHARE_URL);
+
+    await field.evaluate((el, href: string) => {
+      el.innerHTML = `<a href="${href}">Look at this great recipe I've just discovered in the KptnCook app.</a>`;
+      el.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    }, SHARE_URL);
+    await expect(field).toHaveText(SHARE_URL);
+
+    await page.getByRole("button", { name: "Import", exact: true }).click();
+    await expect(page.getByLabel("Name")).toHaveValue("Zimtschnecken");
   });
 
   test("UI: bogus input → modal shows error and stays open", async ({

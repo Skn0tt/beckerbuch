@@ -20,7 +20,7 @@ The MCP `fetch_recipe` tool exposes the same kptncook import normalization to ex
   2. Call `fetch_recipe` with the mocked kptncook share URL.
     - expect: The tool result is not an error.
     - expect: The recipe name is `Zimtschnecken`.
-    - expect: Base quantity is `2`.
+    - expect: Base quantity is `1`.
     - expect: Source URL is the canonical mocked kptncook share URL.
     - expect: Ingredients equal `250 g Mehl`, `150 ml Milch`, and `2 Eier`.
     - expect: Steps are the three mocked instructions with `<timer>` expanded to `15 Min.`, `30–40 Min.`, and `bis zu 25 Min.`.
