@@ -1,6 +1,6 @@
 /**
- * Direct logic tests for unit summing / postProcess family splits.
- * No browser — imports app/lib pure helpers.
+ * Direct logic tests for pure helpers (unit summing, dedup, recipe
+ * URL isolation). No browser.
  */
 import { expect, test } from "@playwright/test";
 import {
@@ -10,6 +10,11 @@ import {
   pickReadableDisplay,
 } from "../app/lib/units";
 import { postProcess, type DedupInput, type RawMerges } from "../app/lib/dedup";
+import {
+  isolateRecipeUrl,
+  recipeUrlFromClipboard,
+  recipeUrlFromClipboardData,
+} from "../app/lib/recipe-url";
 
 test.describe("normalizeUnit", () => {
   const cases: [string | null, string | null][] = [
@@ -368,5 +373,140 @@ test.describe("postProcess family split", () => {
     expect(groups[0].amount).toBe("4");
     expect(groups[0].unit).toBeNull();
     expect(groups[0].displayText).toBe("4 Peperoni");
+  });
+});
+
+test.describe("isolateRecipeUrl", () => {
+  const kptn =
+    "Look at this great recipe I've just discovered in the KptnCook app. https://share.kptncook.com/Dh4a/je5k84od";
+
+  test("drops the kptncook share-message blurb", () => {
+    expect(isolateRecipeUrl(kptn)).toBe(
+      "https://share.kptncook.com/Dh4a/je5k84od",
+    );
+  });
+
+  test("drops a blurb that follows the link", () => {
+    expect(
+      isolateRecipeUrl(
+        "https://share.kptncook.com/Dh4a/je5k84od Look at this great recipe I've just discovered in the KptnCook app.",
+      ),
+    ).toBe("https://share.kptncook.com/Dh4a/je5k84od");
+  });
+
+  test("drops a blurb on its own line", () => {
+    expect(
+      isolateRecipeUrl(
+        "Look at this great recipe I've just discovered in the KptnCook app.\nhttps://share.kptncook.com/Dh4a/je5k84od",
+      ),
+    ).toBe("https://share.kptncook.com/Dh4a/je5k84od");
+  });
+
+  test("strips a sentence mark stuck to the link", () => {
+    expect(
+      isolateRecipeUrl(
+        "Look at this great recipe I've just discovered in the KptnCook app. https://share.kptncook.com/Dh4a/je5k84od.",
+      ),
+    ).toBe("https://share.kptncook.com/Dh4a/je5k84od");
+  });
+
+  test("leaves a clean URL and a bare id alone", () => {
+    expect(isolateRecipeUrl("https://share.kptncook.com/BUN12345")).toBe(
+      "https://share.kptncook.com/BUN12345",
+    );
+    expect(isolateRecipeUrl("BUN12345")).toBe("BUN12345");
+    expect(isolateRecipeUrl("nope-not-an-id")).toBe("nope-not-an-id");
+  });
+
+  test("trims whitespace around an otherwise clean URL", () => {
+    expect(
+      isolateRecipeUrl("  https://example.com/recipes/banana-bread  "),
+    ).toBe("https://example.com/recipes/banana-bread");
+  });
+
+  test("keeps a query string and a parenthetical path", () => {
+    expect(
+      isolateRecipeUrl(
+        "try this https://www.example.com/recipes/banana-bread?utm=1",
+      ),
+    ).toBe("https://www.example.com/recipes/banana-bread?utm=1");
+    expect(
+      isolateRecipeUrl("https://en.wikipedia.org/wiki/Recipe_(food)"),
+    ).toBe("https://en.wikipedia.org/wiki/Recipe_(food)");
+  });
+
+  test("unwraps parentheses around the link", () => {
+    expect(isolateRecipeUrl("(https://example.com/recipes/soup)")).toBe(
+      "https://example.com/recipes/soup",
+    );
+  });
+
+  test("leaves text with several links unchanged", () => {
+    const both = "https://a.example/1 and https://b.example/2";
+    expect(isolateRecipeUrl(both)).toBe(both);
+  });
+});
+
+const KPTN_BLURB =
+  "Look at this great recipe I've just discovered in the KptnCook app.";
+const KPTN_URL = "https://share.kptncook.com/Dh4a/je5k84od";
+
+test.describe("recipeUrlFromClipboard", () => {
+  test("reads a kptncook href when the plain text is only the sentence", () => {
+    expect(
+      recipeUrlFromClipboard({
+        plain: KPTN_BLURB,
+        html: `<a href="${KPTN_URL}">${KPTN_BLURB}</a>`,
+      }),
+    ).toBe(KPTN_URL);
+  });
+
+  test("reads a URI list when the plain text has no link", () => {
+    expect(
+      recipeUrlFromClipboard({
+        plain: KPTN_BLURB,
+        uriList: `${KPTN_URL}\n`,
+      }),
+    ).toBe(KPTN_URL);
+  });
+
+  test("reads an href the browser already inserted", () => {
+    expect(
+      recipeUrlFromClipboard({
+        plain: KPTN_BLURB,
+        hrefs: [KPTN_URL],
+      }),
+    ).toBe(KPTN_URL);
+  });
+
+  test("prefers the kptncook link over an app-store link", () => {
+    expect(
+      recipeUrlFromClipboard({
+        plain: KPTN_BLURB,
+        html: `<a href="https://apps.apple.com/app/kptncook">App</a><a href="${KPTN_URL}">${KPTN_BLURB}</a>`,
+      }),
+    ).toBe(KPTN_URL);
+  });
+
+  test("uses the visible URL when the sentence already includes one", () => {
+    expect(
+      recipeUrlFromClipboard({
+        plain: `${KPTN_BLURB} ${KPTN_URL}`,
+      }),
+    ).toBe(KPTN_URL);
+  });
+
+  test("returns null when the link was already discarded", () => {
+    expect(recipeUrlFromClipboard({ plain: KPTN_BLURB })).toBeNull();
+  });
+
+  test("reads the href off a paste event's clipboard flavors", () => {
+    const html = `<a href="${KPTN_URL}">${KPTN_BLURB}</a>`;
+    expect(
+      recipeUrlFromClipboardData({
+        types: ["text/plain", "text/html"],
+        getData: (type) => (type === "text/html" ? html : KPTN_BLURB),
+      }),
+    ).toBe(KPTN_URL);
   });
 });

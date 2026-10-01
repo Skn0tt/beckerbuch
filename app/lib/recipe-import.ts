@@ -4,6 +4,7 @@ import { parse as parseHtml } from "node-html-parser";
 import { validatePhotoBytes } from "../blobs";
 import { fetchWithTimeout } from "./http";
 import { importKptncookRecipe, parseKptncookId } from "./kptncook";
+import { isolateRecipeUrl } from "./recipe-url";
 
 /**
  * Generic recipe importer. Fetches an arbitrary web page and extracts a
@@ -596,7 +597,9 @@ export async function importRecipe(
   input: string,
   opts: { includePhoto?: boolean } = {},
 ): Promise<RecipeImportResult> {
-  const trimmed = input.trim();
+  // Share messages paste a blurb around the URL. Keep just the link so
+  // a kptncook short-link token isn't mistaken for a recipe uid.
+  const trimmed = isolateRecipeUrl(input).trim();
   if (!trimmed) {
     return { ok: false, error: "Please provide a recipe URL or kptncook share link / id." };
   }

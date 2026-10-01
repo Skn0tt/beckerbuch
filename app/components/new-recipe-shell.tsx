@@ -1,6 +1,10 @@
-import { useState } from "react";
-import { Button, Group, Modal, Stack, Text, TextInput } from "@mantine/core";
+import { memo, useCallback, useState } from "react";
+import { Button, Group, Input, Modal, Stack, Text } from "@mantine/core";
 import { useFetcher } from "react-router";
+import {
+  recipeUrlFromClipboard,
+  recipeUrlFromClipboardData,
+} from "../lib/recipe-url";
 import { RecipeForm, type RecipeFormInitial } from "./recipe-form";
 
 type ImportedPhoto = { contentType: string; base64: string };
@@ -25,6 +29,67 @@ type Props = {
 };
 
 /**
+ * Contenteditable, not `<input>`. Pasting into a text field forces
+ * plain text, and Safari then drops the hyperlink KptnCook hung on
+ * the share sentence. A contenteditable keeps that `<a href>`, and
+ * the paste event's other clipboard flavors (HTML, URI list) cover
+ * browsers that do expose them.
+ *
+ * Memoized so parent state updates don't reconcile the element and
+ * wipe what the user pasted.
+ */
+const ImportLinkField = memo(function ImportLinkField({
+  onValue,
+}: {
+  onValue: (value: string) => void;
+}) {
+  function commit(el: HTMLElement, next: string) {
+    if ((el.textContent ?? "") !== next) el.textContent = next;
+    onValue(next);
+  }
+
+  return (
+    <Input.Wrapper label="Recipe URL or kptncook link / id" required>
+      <Input
+        component="div"
+        contentEditable
+        role="textbox"
+        aria-multiline={false}
+        aria-label="Recipe URL or kptncook link / id"
+        spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
+        data-autofocus
+        data-recipe-link-field
+        data-placeholder="https://example.com/recipes/banana-bread"
+        onPaste={(e) => {
+          const data = e.clipboardData;
+          if (!data) return;
+          const picked = recipeUrlFromClipboardData(data);
+          if (!picked) return;
+          e.preventDefault();
+          commit(e.currentTarget, picked);
+        }}
+        onInput={(e) => {
+          const el = e.currentTarget;
+          const hrefs = [...el.querySelectorAll("a[href]")].map(
+            (anchor) => anchor.getAttribute("href") ?? "",
+          );
+          const plain = el.textContent ?? "";
+          const picked = recipeUrlFromClipboard({ plain, hrefs });
+          commit(el, picked ?? plain);
+        }}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          e.currentTarget.closest("form")?.requestSubmit();
+        }}
+      />
+    </Input.Wrapper>
+  );
+});
+
+/**
  * Wraps RecipeForm with a "Import from kptncook" button that opens a
  * modal. On a successful import the form fields are pre-filled and the
  * fetched photo is carried into the create action via a hidden base64
@@ -40,6 +105,10 @@ export function NewRecipeShell({ csrfToken, error }: Props) {
   const [consumedData, setConsumedData] = useState<ImportResponse | undefined>(
     undefined,
   );
+
+  const setLink = useCallback((value: string) => {
+    setInput(value);
+  }, []);
 
   const importing = fetcher.state !== "idle";
   const fetcherError = fetcher.data && !fetcher.data.ok ? fetcher.data.error : null;
@@ -92,7 +161,10 @@ export function NewRecipeShell({ csrfToken, error }: Props) {
       <Modal
         opened={opened}
         onClose={() => {
-          if (!importing) setOpened(false);
+          if (!importing) {
+            setOpened(false);
+            setInput("");
+          }
         }}
         title="Import a recipe"
         centered
@@ -102,19 +174,13 @@ export function NewRecipeShell({ csrfToken, error }: Props) {
           <Stack gap="sm">
             <Text size="sm" c="dimmed">
               Paste a link to a recipe page, or a kptncook share URL (e.g.
-              https://share.kptncook.com/…) or recipe id. The fields below
-              will be pre-filled; review and edit before saving.
+              https://share.kptncook.com/…) or recipe id. The KptnCook
+              share message can be pasted as-is, including when the URL
+              is only attached to the sentence. The fields below will be
+              pre-filled; review and edit before saving.
             </Text>
-            <TextInput
-              name="input"
-              label="Recipe URL or kptncook link / id"
-              placeholder="https://example.com/recipes/banana-bread"
-              value={input}
-              onChange={(e) => setInput(e.currentTarget.value)}
-              required
-              autoFocus
-              data-autofocus
-            />
+            <input type="hidden" name="input" value={input} />
+            <ImportLinkField key={opened ? "open" : "closed"} onValue={setLink} />
             {fetcherError && (
               <Text size="sm" c="red" role="alert">
                 {fetcherError}
@@ -124,7 +190,10 @@ export function NewRecipeShell({ csrfToken, error }: Props) {
               <Button
                 type="button"
                 variant="default"
-                onClick={() => setOpened(false)}
+                onClick={() => {
+                  setOpened(false);
+                  setInput("");
+                }}
                 disabled={importing}
               >
                 Cancel
