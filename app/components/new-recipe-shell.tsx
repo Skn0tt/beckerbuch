@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button, Group, Modal, Stack, Text, TextInput } from "@mantine/core";
 import { useFetcher } from "react-router";
+import { isolateRecipeUrl } from "../lib/recipe-url";
 import { RecipeForm, type RecipeFormInitial } from "./recipe-form";
 
 type ImportedPhoto = { contentType: string; base64: string };
@@ -102,15 +103,18 @@ export function NewRecipeShell({ csrfToken, error }: Props) {
           <Stack gap="sm">
             <Text size="sm" c="dimmed">
               Paste a link to a recipe page, or a kptncook share URL (e.g.
-              https://share.kptncook.com/…) or recipe id. The fields below
-              will be pre-filled; review and edit before saving.
+              https://share.kptncook.com/…) or recipe id — the KptnCook
+              share message can be pasted as-is. The fields below will be
+              pre-filled; review and edit before saving.
             </Text>
             <TextInput
               name="input"
               label="Recipe URL or kptncook link / id"
               placeholder="https://example.com/recipes/banana-bread"
               value={input}
-              onChange={(e) => setInput(e.currentTarget.value)}
+              onChange={(e) =>
+                setInput(isolateRecipeUrl(e.currentTarget.value))
+              }
               required
               autoFocus
               data-autofocus

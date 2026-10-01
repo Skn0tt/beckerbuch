@@ -86,6 +86,30 @@ test.describe("kptncook import", () => {
     await expect(page.locator("img").first()).toBeVisible();
   });
 
+  test("UI: kptncook share message blurb is stripped from the link field", async ({
+    page,
+    flat,
+  }) => {
+    await login(page, flat.user);
+    await page.goto("/recipes/new");
+    await page.getByRole("button", { name: /import recipe/i }).click();
+
+    const shareMessage = `Look at this great recipe I've just discovered in the KptnCook app. ${SHARE_URL}`;
+    await page.getByLabel("Recipe URL or kptncook link / id").fill(shareMessage);
+    await expect(page.getByLabel("Recipe URL or kptncook link / id")).toHaveValue(
+      SHARE_URL,
+    );
+
+    await page.getByRole("button", { name: "Import", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: /import a recipe/i }),
+    ).toBeHidden();
+    await expect(page.getByLabel("Name")).toHaveValue("Zimtschnecken");
+    await expect(page.getByLabel("Source URL")).toHaveValue(
+      `https://share.kptncook.com/${MOCK_RECIPES.cinnamonBuns.uid}`,
+    );
+  });
+
   test("UI: bogus input → modal shows error and stays open", async ({
     page,
     flat,

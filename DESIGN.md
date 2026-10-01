@@ -76,7 +76,9 @@ Recipes are owned by the flat. Anyone in the flat can create, edit, and
 delete them. There is no per-recipe ownership in v1.
 
 **Importing recipes.** The "Add recipe" form accepts a URL (or recipe
-id) as an alternative to typing all the fields in. Two sources are
+id) as an alternative to typing all the fields in. Pasting a share
+message that wraps the link in extra text (kptncook copies a short
+blurb plus the URL) keeps only the link. Two sources are
 supported: a **kptncook** share URL / recipe id (resolved via the
 kptncook mobile API), and **any recipe page** that publishes schema.org
 `Recipe` metadata as JSON-LD (the format used by the vast majority of
