@@ -96,7 +96,7 @@ test.describe("kptncook import", () => {
 
     const shareMessage = `Look at this great recipe I've just discovered in the KptnCook app. ${SHARE_URL}`;
     await page.getByLabel("Recipe URL or kptncook link / id").fill(shareMessage);
-    await expect(page.getByLabel("Recipe URL or kptncook link / id")).toHaveValue(
+    await expect(page.getByLabel("Recipe URL or kptncook link / id")).toHaveText(
       SHARE_URL,
     );
 
@@ -108,6 +108,50 @@ test.describe("kptncook import", () => {
     await expect(page.getByLabel("Source URL")).toHaveValue(
       `https://share.kptncook.com/${MOCK_RECIPES.cinnamonBuns.uid}`,
     );
+  });
+
+  test("UI: share sentence whose URL is only a hyperlink still imports", async ({
+    page,
+    flat,
+  }) => {
+    await login(page, flat.user);
+    await page.goto("/recipes/new");
+    await page.getByRole("button", { name: /import recipe/i }).click();
+
+    const blurb =
+      "Look at this great recipe I've just discovered in the KptnCook app.";
+    const field = page.getByLabel("Recipe URL or kptncook link / id");
+
+    // Safari text fields would keep only the sentence. The paste event
+    // still carries the hyperlink in text/html (Chrome, Firefox) or the
+    // browser inserts an <a> (Safari, contenteditable).
+    await field.evaluate(
+      (el, payload: { plain: string; html: string }) => {
+        const data = new DataTransfer();
+        data.setData("text/plain", payload.plain);
+        data.setData("text/html", payload.html);
+        const event = new ClipboardEvent("paste", {
+          bubbles: true,
+          cancelable: true,
+        });
+        Object.defineProperty(event, "clipboardData", { value: data });
+        el.dispatchEvent(event);
+      },
+      {
+        plain: blurb,
+        html: `<a href="${SHARE_URL}">${blurb}</a>`,
+      },
+    );
+    await expect(field).toHaveText(SHARE_URL);
+
+    await field.evaluate((el, href: string) => {
+      el.innerHTML = `<a href="${href}">Look at this great recipe I've just discovered in the KptnCook app.</a>`;
+      el.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    }, SHARE_URL);
+    await expect(field).toHaveText(SHARE_URL);
+
+    await page.getByRole("button", { name: "Import", exact: true }).click();
+    await expect(page.getByLabel("Name")).toHaveValue("Zimtschnecken");
   });
 
   test("UI: bogus input → modal shows error and stays open", async ({

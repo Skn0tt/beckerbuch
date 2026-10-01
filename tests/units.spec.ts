@@ -10,7 +10,11 @@ import {
   pickReadableDisplay,
 } from "../app/lib/units";
 import { postProcess, type DedupInput, type RawMerges } from "../app/lib/dedup";
-import { isolateRecipeUrl } from "../app/lib/recipe-url";
+import {
+  isolateRecipeUrl,
+  recipeUrlFromClipboard,
+  recipeUrlFromClipboardData,
+} from "../app/lib/recipe-url";
 
 test.describe("normalizeUnit", () => {
   const cases: [string | null, string | null][] = [
@@ -440,5 +444,69 @@ test.describe("isolateRecipeUrl", () => {
   test("leaves text with several links unchanged", () => {
     const both = "https://a.example/1 and https://b.example/2";
     expect(isolateRecipeUrl(both)).toBe(both);
+  });
+});
+
+const KPTN_BLURB =
+  "Look at this great recipe I've just discovered in the KptnCook app.";
+const KPTN_URL = "https://share.kptncook.com/Dh4a/je5k84od";
+
+test.describe("recipeUrlFromClipboard", () => {
+  test("reads a kptncook href when the plain text is only the sentence", () => {
+    expect(
+      recipeUrlFromClipboard({
+        plain: KPTN_BLURB,
+        html: `<a href="${KPTN_URL}">${KPTN_BLURB}</a>`,
+      }),
+    ).toBe(KPTN_URL);
+  });
+
+  test("reads a URI list when the plain text has no link", () => {
+    expect(
+      recipeUrlFromClipboard({
+        plain: KPTN_BLURB,
+        uriList: `${KPTN_URL}\n`,
+      }),
+    ).toBe(KPTN_URL);
+  });
+
+  test("reads an href the browser already inserted", () => {
+    expect(
+      recipeUrlFromClipboard({
+        plain: KPTN_BLURB,
+        hrefs: [KPTN_URL],
+      }),
+    ).toBe(KPTN_URL);
+  });
+
+  test("prefers the kptncook link over an app-store link", () => {
+    expect(
+      recipeUrlFromClipboard({
+        plain: KPTN_BLURB,
+        html: `<a href="https://apps.apple.com/app/kptncook">App</a><a href="${KPTN_URL}">${KPTN_BLURB}</a>`,
+      }),
+    ).toBe(KPTN_URL);
+  });
+
+  test("uses the visible URL when the sentence already includes one", () => {
+    expect(
+      recipeUrlFromClipboard({
+        plain: `${KPTN_BLURB} ${KPTN_URL}`,
+      }),
+    ).toBe(KPTN_URL);
+  });
+
+  test("returns null when the link was already discarded", () => {
+    expect(recipeUrlFromClipboard({ plain: KPTN_BLURB })).toBeNull();
+  });
+
+  test("reads the href off a paste event's clipboard flavors", () => {
+    const html = `<a href="${KPTN_URL}">${KPTN_BLURB}</a>`;
+    expect(
+      recipeUrlFromClipboardData({
+        types: ["text/plain", "text/html"],
+        getData: (type) => (type === "text/html" ? html : KPTN_BLURB),
+      }),
+    ).toBe(KPTN_URL);
   });
 });
