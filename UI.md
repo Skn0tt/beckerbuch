@@ -5,6 +5,7 @@
 > product story and vocabulary.
 >
 > **Conventions**
+>
 > - Desktop boxes ~90 cols, mobile boxes ~36 cols.
 > - `🔍`, `👤`, `↗`, `✓` etc. used as iconography placeholders.
 > - `[Button]` = button. `[ field _________ ]` = input.
@@ -94,14 +95,14 @@ main pane; glance at Draft + In stock in the sidebar.
 ├──────────────────────────────────────────────────────┬──────────────────────────────────┤
 │ COLLECTION                                           │ DRAFT                    (4) [+]│
 │ 🔍 [ chick________________________________ ]         │ ──────────────────────────────── │
-│                                                      │ Pasta al limone                  │
-│ Chicken katsu                              14d ago   │   serves [ 4 ⏶⏷]   👤 Tom       │
-│   chicken thigh, panko, …                            │ Chicken katsu                    │
-│                                                      │   serves [ 6 ⏶⏷]   👤 –         │
-│ Chicken miso soup                           3d ago   │ Linsensuppe                      │
-│   chicken, miso, scallion, …                         │   serves [ 8 ⏶⏷]   👤 Anna      │
-│                                                      │ Pasta al limone                  │
-│ Hähnchencurry                              1mo ago   │   serves [ 4 ⏶⏷]   👤 –         │
+│                                                      │ Pasta al limone         [− 4 +]  │
+│ Chicken katsu                              14d ago   │ 👤 Tom   + Note                   │
+│   chicken thigh, panko, …                            │ Chicken katsu           [− 6 +]  │
+│                                                      │ 👤 –     + Note                   │
+│ Chicken miso soup                           3d ago   │ Linsensuppe             [− 8 +]  │
+│   chicken, miso, scallion, …                         │ 👤 Anna  + Note                   │
+│                                                      │ Pasta al limone         [− 4 +]  │
+│ Hähnchencurry                              1mo ago   │ 👤 –     + Note                   │
 │   chicken, curry paste, …                            │                                  │
 │                                                      │ ▼ Combined list preview          │
 │ — full collection —                                  │   400 g spaghetti                │
@@ -113,12 +114,12 @@ main pane; glance at Draft + In stock in the sidebar.
 │                                                      │ ──────────────────────────────── │
 │                                                      │ IN STOCK                  (2)    │
 │                                                      │ ──────────────────────────────── │
-│                                                      │ Hähnchencurry                    │
-│                                                      │   serves 4   👤 Anna             │
-│                                                      │   [ ✓ Cooked ]                   │
-│                                                      │ Ofengemüse                       │
-│                                                      │   serves 6   👤 –                │
-│                                                      │   [ ✓ Cooked ]                   │
+│                                                      │ Hähnchencurry               4    │
+│                                                      │ 👤 Anna  + Note         [✓]       │
+│                                                      │                                  │
+│                                                      │ Ofengemüse                  6    │
+│                                                      │ 👤 –     + Note         [✓]       │
+│                                                      │                                  │
 │                                                      │ ──────────────────────────────── │
 │ [+ New recipe]                                       │ [ « Collapse sidebar ]           │
 └──────────────────────────────────────────────────────┴──────────────────────────────────┘
@@ -126,12 +127,12 @@ main pane; glance at Draft + In stock in the sidebar.
 
 - Search box focused on load; results highlight matches; default sort = most-recently-used (last cooked → last edited). See DESIGN.md §4.1.
 - Clicking a recipe row swaps the main pane to **Recipe detail** (§3).
-- Sidebar Draft: per-recipe target-quantity stepper, designated-cook chip (click to assign/clear), reorder via drag.
+- Sidebar cards share one grid. Row 1 is the drag handle, recipe name, and quantity — a stepper in Draft, the same-width static number in In stock. Row 2 is the designated-cook chip and the note. In stock adds the Cooked check in the quantity column. Reorder via drag.
 - "Combined list preview" expands/collapses a deduplicated `(item, unit)` view of the merged ingredients. See DESIGN.md §4.2.
 - "Finalise →" opens **Finalise confirmation** (§7).
-- Sidebar In stock: per-recipe **Cooked** action removes it and writes a history entry (DESIGN.md §4.5/4.6).
+- Sidebar In stock: the **Cooked** check removes the recipe and writes a history entry (DESIGN.md §4.5/4.6). Quantity is the finalised target and is not editable.
 - "« Collapse sidebar" collapses to the thin rail (§10).
-- ⚙ opens the menu shown in *Layout philosophy*: Flat settings (§9), Sign out.
+- ⚙ opens the menu shown in _Layout philosophy_: Flat settings (§9), Sign out.
 
 ---
 
@@ -147,22 +148,22 @@ to the collection. Sidebar stays put.
 ├──────────────────────────────────────────────────────┬──────────────────────────────────┤
 │ ← Collection                                         │ DRAFT                    (4) [+]│
 │                                                      │ ──────────────────────────────── │
-│ Pasta al limone                              [Edit]  │ Pasta al limone                  │
-│                                                      │   serves [ 4 ⏶⏷]   👤 Tom       │
-│ ┌────────────────────────────────────┐               │ Chicken katsu                    │
-│ │            [photo]                 │               │   serves [ 6 ⏶⏷]   👤 –         │
+│ Pasta al limone                              [Edit]  │ Pasta al limone         [− 4 +]  │
+│                                                      │ 👤 Tom   + Note                   │
+│ ┌────────────────────────────────────┐               │ Chicken katsu           [− 6 +]  │
+│ │            [photo]                 │               │ 👤 –     + Note                   │
 │ └────────────────────────────────────┘               │ …                                │
 │                                                      │                                  │
 │ Base: serves 4                                       │ [        Finalise →            ] │
 │                                                      │ ──────────────────────────────── │
 │ [   + Add to draft   ]                               │ IN STOCK                  (2)    │
 │                                                      │ ──────────────────────────────── │
-│ Ingredients (serves 4)                               │ Hähnchencurry                    │
-│ • 400 g spaghetti                                    │   serves 4   👤 Anna             │
-│ • 2 lemons                                           │   [ ✓ Cooked ]                   │
-│ • 100 g parmesan                                     │ Ofengemüse                       │
-│ • 1 bunch parsley                                    │   serves 6   👤 –                │
-│ • olive oil, salt, pepper                            │   [ ✓ Cooked ]                   │
+│ Ingredients (serves 4)                               │ Hähnchencurry               4    │
+│ • 400 g spaghetti                                    │ 👤 Anna  + Note         [✓]       │
+│ • 2 lemons                                           │                                  │
+│ • 100 g parmesan                                     │ Ofengemüse                  6    │
+│ • 1 bunch parsley                                    │ 👤 –     + Note         [✓]       │
+│ • olive oil, salt, pepper                            │                                  │
 │                                                      │ ──────────────────────────────── │
 │ Steps                                                │ [ « Collapse sidebar ]           │
 │ 1. Boil salted water…                                │                                  │
@@ -292,20 +293,20 @@ MOBILE — Draft                                       MOBILE — In stock
 │   (4)       (2)                   │                │   (4)       (2)                   │
 ├──────────────────────────────────┤                ├──────────────────────────────────┤
 │ ┌──────────────────────────────┐ │                │ ┌──────────────────────────────┐ │
-│ │ Pasta al limone              │ │                │ │ Hähnchencurry                │ │
-│ │ serves [ 4 ⏶⏷]   👤 Tom     │ │                │ │ serves 4    👤 Anna          │ │
-│ └──────────────────────────────┘ │                │ │                              │ │
-│ ┌──────────────────────────────┐ │                │ │ [      ✓ Cooked          ]   │ │
-│ │ Chicken katsu                │ │                │ └──────────────────────────────┘ │
-│ │ serves [ 6 ⏶⏷]   👤 –       │ │                │ ┌──────────────────────────────┐ │
-│ └──────────────────────────────┘ │                │ │ Ofengemüse                   │ │
-│ ┌──────────────────────────────┐ │                │ │ serves 6    👤 –             │ │
-│ │ Linsensuppe                  │ │                │ │                              │ │
-│ │ serves [ 8 ⏶⏷]   👤 Anna    │ │                │ │ [      ✓ Cooked          ]   │ │
+│ │ Pasta al limone      [− 4 +] │ │                │ │ Hähnchencurry              4 │ │
+│ │ 👤 Tom   + Note              │ │                │ │ 👤 Anna  + Note          [✓] │ │
+│ └──────────────────────────────┘ │                │ └──────────────────────────────┘ │
+│ ┌──────────────────────────────┐ │                │ ┌──────────────────────────────┐ │
+│ │ Chicken katsu        [− 6 +] │ │                │ │ Ofengemüse                 6 │ │
+│ │ 👤 –     + Note              │ │                │ │ 👤 –     + Note          [✓] │ │
 │ └──────────────────────────────┘ │                │ └──────────────────────────────┘ │
 │ ┌──────────────────────────────┐ │                │                                  │
-│ │ Pasta al limone              │ │                │ Empty? Cook from the Draft       │
-│ │ serves [ 4 ⏶⏷]   👤 –       │ │                │ tab and finalise to refill.      │
+│ │ Linsensuppe          [− 8 +] │ │                │ Empty? Cook from the Draft       │
+│ │ 👤 Anna  + Note              │ │                │ tab and finalise to refill.      │
+│ └──────────────────────────────┘ │                │                                  │
+│ ┌──────────────────────────────┐ │                │                                  │
+│ │ Pasta al limone      [− 4 +] │ │                │                                  │
+│ │ 👤 –     cook Friday         │ │                │                                  │
 │ └──────────────────────────────┘ │                │                                  │
 │                                  │                │                                  │
 │ [    Finalise →              ]   │                │                                  │
@@ -339,9 +340,9 @@ MOBILE — Ingredients (planned, all in-stock)
 
 - Tapping a recipe card → **Recipe detail** (§5).
 - Tapping `👤` opens a sheet to assign/clear the designated cook.
-- Per-card **"+ Note"** affordance: tap → inline single-line input ("e.g. cook this on Friday"). Once set, the note shows under the recipe header with a small Edit button. Notes are kitchen-only — they do not appear on the public handoff page.
+- Per-card **"+ Note"** affordance on the second row, beside the cook chip: tap → inline single-line input ("e.g. cook this on Friday"). Once set, the note text replaces "+ Note" on that row; tap it to edit. Notes are kitchen-only — they do not appear on the public handoff page.
 - "Finalise →" opens **Finalise confirmation** (§7) as a sheet.
-- In stock: `[ ✓ Cooked ]` is a deliberately big tap target (kitchen-with-greasy-hands ergonomics). Tap → "Marked cooked. **Undo**" toast for ~5s before writing to history.
+- Draft and In stock cards use the same two-row grid as the desktop sidebar: quantity (stepper or static number) on the title row, cook and note on the row below, Cooked check only on In stock. Tap the check → confirm → the recipe leaves In stock.
 - Empty draft: shows a friendly empty state with `[ Browse recipes → ]` jumping to the Recipes tab.
 - **Ingredients** lane: read-only combined list over every in-stock recipe (not just the latest finalise batch). Rows are A–Z by representative item name. A subtle search icon expands a filter **left over the “Planned ingredients” heading** (same row — no extra vertical space). After a short debounce the query hits `/kitchen/combined/search` (text match, then meaning/embedding only if text is empty). Desktop exposes the same list via the sidebar "Ingredients" modal without a filter (browser find). Handoff (§8) still pins merged groups to the top for Split/override.
 
@@ -449,8 +450,8 @@ DESKTOP (modal)                                       MOBILE (full-screen)
 - No roles, no remove-member, no rename-flat in v1 (DESIGN.md §5).
 - "Generate new link" invalidates the previous one.
 - Sign out lives one level up, in the **⚙** menu itself, not on this screen.
-  *(Account block here is a placeholder for the current implementation;
-  it will move into the ⚙ menu when that lands.)*
+  _(Account block here is a placeholder for the current implementation;
+  it will move into the ⚙ menu when that lands.)_
 - **MCP block** surfaces the server's MCP endpoint so it can be wired
   into an LLM client. "Claude" links to Anthropic's docs on adding a
   custom connector — no auto-install button (no stable deep-link

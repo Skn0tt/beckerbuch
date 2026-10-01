@@ -2,6 +2,7 @@ import {
   ActionIcon,
   Anchor,
   Avatar,
+  Box,
   Button,
   Card,
   Center,
@@ -16,13 +17,8 @@ import {
   Title,
   UnstyledButton,
 } from "@mantine/core";
-import { useDisclosure, useMediaQuery } from "@mantine/hooks";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useDisclosure } from "@mantine/hooks";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Form, Link, useFetcher, useNavigation } from "react-router";
 import {
   DndContext,
@@ -50,18 +46,15 @@ import type { loader as combinedLoader } from "../routes/kitchen.combined";
 import type { KitchenEntry, KitchenMember } from "../lib/kitchen-data";
 
 type Lane = "draft" | "stock";
-const kitchenMobileQuery = "(max-width: 48em)";
 
 function NoteEditor({
   entry,
   csrfToken,
   formAction,
-  compactWhenEmpty = false,
 }: {
   entry: KitchenEntry;
   csrfToken: string;
   formAction?: string;
-  compactWhenEmpty?: boolean;
 }) {
   const fetcher = useFetcher({ key: `note-${entry.id}` });
   const submittedNote = fetcher.formData?.get("note");
@@ -97,7 +90,10 @@ function NoteEditor({
     fd.set("intent", "set-note");
     fd.set("instanceId", entry.id);
     fd.set("note", value);
-    fetcher.submit(fd, { method: "post", ...(formAction ? { action: formAction } : {}) });
+    fetcher.submit(fd, {
+      method: "post",
+      ...(formAction ? { action: formAction } : {}),
+    });
     setEditing(false);
   };
 
@@ -142,12 +138,11 @@ function NoteEditor({
   return (
     <Button
       type="button"
-      size={compactWhenEmpty ? "xs" : "compact-xs"}
+      size="xs"
       variant="subtle"
       c="dimmed"
       onClick={startEditing}
       aria-label={`Add note for ${entry.recipeName}`}
-      style={compactWhenEmpty ? undefined : { alignSelf: "flex-start" }}
     >
       + Note
     </Button>
@@ -298,6 +293,89 @@ function CookPicker({
   );
 }
 
+/** Same width as the stepper's − / + buttons, so a static quantity lines up with the draft number. */
+function PortionSlotSpacer() {
+  return (
+    <ActionIcon
+      component="div"
+      size="sm"
+      variant="transparent"
+      aria-hidden
+      style={{ visibility: "hidden" }}
+    />
+  );
+}
+
+function PortionReadout({ value }: { value: number }) {
+  return (
+    <Group gap={4} wrap="nowrap">
+      <PortionSlotSpacer />
+      <Text size="sm" w={28} ta="center">
+        {value}
+      </Text>
+      <PortionSlotSpacer />
+    </Group>
+  );
+}
+
+/**
+ * Shared draft / in-stock card grid:
+ *   handle | name                         | quantity
+ *          | cook  note                   | trailing
+ * Quantity is a stepper on draft and a same-width static number in stock.
+ * Trailing is the cooked check on in-stock cards only.
+ */
+function PlanCardGrid({
+  entry,
+  dragHandle,
+  quantity,
+  cook,
+  note,
+  trailing,
+}: {
+  entry: KitchenEntry;
+  dragHandle?: ReactNode;
+  quantity: ReactNode;
+  cook: ReactNode;
+  note: ReactNode;
+  trailing?: ReactNode;
+}) {
+  return (
+    <Box
+      style={{
+        display: "grid",
+        gridTemplateColumns: "auto minmax(0, 1fr) auto",
+        columnGap: "var(--mantine-spacing-xs)",
+        rowGap: "var(--mantine-spacing-xs)",
+        alignItems: "center",
+      }}
+    >
+      <Box>{dragHandle}</Box>
+      <Anchor
+        component={Link}
+        to={`/recipes/${entry.recipeId}`}
+        prefetch="intent"
+        fw={500}
+        style={{
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {entry.recipeName}
+      </Anchor>
+      {quantity}
+      <span />
+      <Group gap="xs" wrap="nowrap" align="center" style={{ minWidth: 0 }}>
+        {cook}
+        <Box style={{ flex: 1, minWidth: 0 }}>{note}</Box>
+      </Group>
+      <Box style={{ justifySelf: "end" }}>{trailing}</Box>
+    </Box>
+  );
+}
+
 export function DraftCard({
   entry,
   csrfToken,
@@ -323,7 +401,6 @@ export function DraftCard({
       : entry.targetQuantity;
 
   const removeFetcher = useFetcher();
-  const isMobile = useMediaQuery(kitchenMobileQuery);
   const [confirmRemove, { open: openConfirm, close: closeConfirm }] =
     useDisclosure(false);
 
@@ -337,7 +414,10 @@ export function DraftCard({
     fd.set("instanceId", entry.id);
     fd.set("targetQuantity", String(next));
     fd.set(csrfFieldName(), csrfToken);
-    fetcher.submit(fd, { method: "post", ...(formAction ? { action: formAction } : {}) });
+    fetcher.submit(fd, {
+      method: "post",
+      ...(formAction ? { action: formAction } : {}),
+    });
   };
 
   const confirmRemoveSubmit = () => {
@@ -368,96 +448,68 @@ export function DraftCard({
     fd.set("instanceId", entry.id);
     fd.set("cookId", cookId);
     fd.set(csrfFieldName(), csrfToken);
-    cookFetcher.submit(fd, { method: "post", ...(formAction ? { action: formAction } : {}) });
+    cookFetcher.submit(fd, {
+      method: "post",
+      ...(formAction ? { action: formAction } : {}),
+    });
   };
-  const showInlineAddNote = isMobile && !entry.note;
 
   return (
     <Card withBorder padding="sm">
-      <Stack gap="xs">
-        <Group
-          justify="space-between"
-          align={isMobile ? "stretch" : "center"}
-          wrap="nowrap"
-          style={isMobile ? { flexDirection: "column" } : undefined}
-        >
-          <Group
-            gap="xs"
-            wrap="nowrap"
-            style={{ minWidth: 0, flex: 1, ...(isMobile ? { width: "100%" } : {}) }}
-          >
-            {dragHandle ?? (
-              <MoveButtons
-                entry={entry}
-                csrfToken={csrfToken}
-                isFirst={isFirst}
-                isLast={isLast}
-                formAction={formAction}
-              />
-            )}
-            <Anchor
-              component={Link}
-              to={`/recipes/${entry.recipeId}`}
-              prefetch="intent"
-              fw={500}
-              style={{
-                ...(isMobile
-                  ? { minWidth: 0, flex: 1 }
-                  : {
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }),
-              }}
-            >
-              {entry.recipeName}
-            </Anchor>
-          </Group>
-          <Group gap="xs" wrap="nowrap">
-            <Group gap={4} wrap="nowrap">
-              <ActionIcon
-                variant="default"
-                size="sm"
-                type="button"
-                aria-label={`Decrease ${entry.recipeName} portions`}
-                onClick={() => submitTarget(target - 1)}
-              >
-                −
-              </ActionIcon>
-              <Text size="sm" w={28} ta="center" aria-live="polite">
-                {target}
-              </Text>
-              <ActionIcon
-                variant="default"
-                size="sm"
-                type="button"
-                aria-label={`Increase ${entry.recipeName} portions`}
-                onClick={() => submitTarget(target + 1)}
-              >
-                +
-              </ActionIcon>
-            </Group>
-            <CookPicker
+      <PlanCardGrid
+        entry={entry}
+        dragHandle={
+          dragHandle ?? (
+            <MoveButtons
               entry={entry}
-              members={members}
-              effectiveCookId={effectiveCookId}
-              submitCook={submitCook}
+              csrfToken={csrfToken}
+              isFirst={isFirst}
+              isLast={isLast}
+              formAction={formAction}
             />
-            {showInlineAddNote ? (
-              <NoteEditor
-                entry={entry}
-                csrfToken={csrfToken}
-                formAction={formAction}
-                compactWhenEmpty
-              />
-            ) : null}
+          )
+        }
+        quantity={
+          <Group gap={4} wrap="nowrap">
+            <ActionIcon
+              variant="default"
+              size="sm"
+              type="button"
+              aria-label={`Decrease ${entry.recipeName} portions`}
+              onClick={() => submitTarget(target - 1)}
+            >
+              −
+            </ActionIcon>
+            <Text size="sm" w={28} ta="center" aria-live="polite">
+              {target}
+            </Text>
+            <ActionIcon
+              variant="default"
+              size="sm"
+              type="button"
+              aria-label={`Increase ${entry.recipeName} portions`}
+              onClick={() => submitTarget(target + 1)}
+            >
+              +
+            </ActionIcon>
           </Group>
-        </Group>
-
-        {!showInlineAddNote ? (
-          <NoteEditor entry={entry} csrfToken={csrfToken} formAction={formAction} />
-        ) : null}
-      </Stack>
+        }
+        cook={
+          <CookPicker
+            entry={entry}
+            members={members}
+            effectiveCookId={effectiveCookId}
+            submitCook={submitCook}
+          />
+        }
+        note={
+          <NoteEditor
+            entry={entry}
+            csrfToken={csrfToken}
+            formAction={formAction}
+          />
+        }
+      />
 
       <Modal
         opened={confirmRemove}
@@ -520,13 +572,16 @@ export function StockCard({
     fd.set("instanceId", entry.id);
     fd.set("cookId", cookId);
     fd.set(csrfFieldName(), csrfToken);
-    cookFetcher.submit(fd, { method: "post", ...(formAction ? { action: formAction } : {}) });
+    cookFetcher.submit(fd, {
+      method: "post",
+      ...(formAction ? { action: formAction } : {}),
+    });
   };
 
-  const [confirmCooked, { open: openCookedConfirm, close: closeCookedConfirm }] =
-    useDisclosure(false);
-  const flexFillStyle = { minWidth: 0, flex: 1 } as const;
-
+  const [
+    confirmCooked,
+    { open: openCookedConfirm, close: closeCookedConfirm },
+  ] = useDisclosure(false);
   const cookedFetcher = useFetcher();
   const submitCooked = () => {
     const fd = new FormData();
@@ -542,9 +597,10 @@ export function StockCard({
 
   return (
     <Card withBorder padding="sm">
-      <Stack gap="xs">
-        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0, width: "100%" }}>
-          {dragHandle ?? (
+      <PlanCardGrid
+        entry={entry}
+        dragHandle={
+          dragHandle ?? (
             <MoveButtons
               entry={entry}
               csrfToken={csrfToken}
@@ -552,40 +608,25 @@ export function StockCard({
               isLast={isLast}
               formAction={formAction}
             />
-          )}
-          <Anchor
-            component={Link}
-            to={`/recipes/${entry.recipeId}`}
-            prefetch="intent"
-            fw={500}
-            style={{
-              ...flexFillStyle,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {entry.recipeName}
-          </Anchor>
-          <Text size="sm" c="dimmed">
-            {entry.targetQuantity}
-          </Text>
-        </Group>
-        <Group align="center" gap="xs" wrap="nowrap" style={{ width: "100%" }}>
+          )
+        }
+        quantity={<PortionReadout value={entry.targetQuantity} />}
+        cook={
           <CookPicker
             entry={entry}
             members={members}
             effectiveCookId={effectiveCookId}
             submitCook={submitCook}
           />
-          <div style={flexFillStyle}>
-            <NoteEditor
-              entry={entry}
-              csrfToken={csrfToken}
-              formAction={formAction}
-              compactWhenEmpty
-            />
-          </div>
+        }
+        note={
+          <NoteEditor
+            entry={entry}
+            csrfToken={csrfToken}
+            formAction={formAction}
+          />
+        }
+        trailing={
           <ActionIcon
             type="button"
             variant="outline"
@@ -596,8 +637,8 @@ export function StockCard({
           >
             ✓
           </ActionIcon>
-        </Group>
-      </Stack>
+        }
+      />
 
       <Modal
         opened={confirmCooked}
@@ -762,8 +803,14 @@ function SortableRow({
   id: string;
   children: (handle: ReactNode) => ReactNode;
 }) {
-  const { setNodeRef, transform, transition, isDragging, attributes, listeners } =
-    useSortable({ id });
+  const {
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+    attributes,
+    listeners,
+  } = useSortable({ id });
   return (
     <div
       ref={setNodeRef}
@@ -774,7 +821,11 @@ function SortableRow({
       }}
     >
       {children(
-        <DragHandle attributes={attributes} listeners={listeners} label="Reorder" />,
+        <DragHandle
+          attributes={attributes}
+          listeners={listeners}
+          label="Reorder"
+        />,
       )}
     </div>
   );
@@ -795,10 +846,12 @@ export function SortableLane({
 }) {
   const serverOrder = entries.map((e) => e.id);
   const serverKey = serverOrder.join(",");
-  const [override, setOverride] = useState<{ key: string; ids: string[] } | null>(
-    null,
-  );
-  const order = override && override.key === serverKey ? override.ids : serverOrder;
+  const [override, setOverride] = useState<{
+    key: string;
+    ids: string[];
+  } | null>(null);
+  const order =
+    override && override.key === serverKey ? override.ids : serverOrder;
 
   const fetcher = useFetcher();
   const sensors = useSensors(
@@ -806,11 +859,15 @@ export function SortableLane({
     useSensor(TouchSensor, {
       activationConstraint: { delay: 150, tolerance: 5 },
     }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
 
   const byId = new Map(entries.map((e) => [e.id, e]));
-  const ordered = order.map((id) => byId.get(id)).filter(Boolean) as KitchenEntry[];
+  const ordered = order
+    .map((id) => byId.get(id))
+    .filter(Boolean) as KitchenEntry[];
 
   const onDragEnd = (e: DragEndEvent) => {
     const { active, over } = e;
@@ -924,7 +981,10 @@ export function KitchenSidebar({
     >
       <Stack gap="xs">
         <Title order={4}>
-          Draft <Text span c="dimmed" inherit>{draft.length}</Text>
+          Draft{" "}
+          <Text span c="dimmed" inherit>
+            {draft.length}
+          </Text>
         </Title>
         {draft.length === 0 ? (
           <Text size="sm" c="dimmed">
@@ -952,13 +1012,12 @@ export function KitchenSidebar({
       <Stack gap="xs">
         <Group justify="space-between" align="center">
           <Title order={4}>
-            In stock <Text span c="dimmed" inherit>{stock.length}</Text>
+            In stock{" "}
+            <Text span c="dimmed" inherit>
+              {stock.length}
+            </Text>
           </Title>
-          <Button
-            variant="subtle"
-            size="xs"
-            onClick={openIngredientsModal}
-          >
+          <Button variant="subtle" size="xs" onClick={openIngredientsModal}>
             Ingredients
           </Button>
         </Group>
@@ -994,8 +1053,7 @@ export function KitchenSidebar({
             showSingletonSource
             emptyState={
               <Text size="sm" c="dimmed">
-                No planned ingredients — finalise the draft to start
-                cooking.
+                No planned ingredients — finalise the draft to start cooking.
               </Text>
             }
           />
