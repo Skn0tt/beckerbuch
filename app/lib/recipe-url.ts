@@ -28,11 +28,23 @@ function uniqueHttpUrls(text: string): string[] {
 
 function decodeHtmlAttr(value: string): string {
   return value
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#0*39;|&apos;/gi, "'")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">");
+    .replace(/&(?:amp|quot|#0*39|apos|lt|gt);/gi, (entity) => {
+      switch (entity.toLowerCase()) {
+        case "&amp;":
+          return "&";
+        case "&quot;":
+          return '"';
+        case "&apos;":
+        case "&#39;":
+          return "'";
+        case "&lt;":
+          return "<";
+        case "&gt;":
+          return ">";
+        default:
+          return "'";
+      }
+    });
 }
 
 function hrefsFromHtml(html: string): string[] {
