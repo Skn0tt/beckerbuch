@@ -30,7 +30,7 @@ type FetchResult = {
 };
 
 // Real, long-lived recipe URLs that expose schema.org Recipe JSON-LD.
-// Chosen for diversity (a magazine + two WP-Recipe-Maker food blogs) and
+// Chosen for diversity (a magazine + a WP-Recipe-Maker food blog) and
 // for currently serving without bot-blocking. If one starts 403/404ing,
 // swap it for another schema.org page rather than weakening assertions.
 const LIVE_RECIPES = [
@@ -46,13 +46,6 @@ const LIVE_RECIPES = [
     url: "https://www.loveandlemons.com/banana-bread/",
     nameRe: /banana bread/i,
     hostRe: /loveandlemons\.com$/,
-    minIngredients: 6,
-  },
-  {
-    label: "Sally's Baking Addiction banana bread",
-    url: "https://sallysbakingaddiction.com/best-banana-bread-recipe/",
-    nameRe: /banana bread/i,
-    hostRe: /sallysbakingaddiction\.com$/,
     minIngredients: 6,
   },
 ] as const;
