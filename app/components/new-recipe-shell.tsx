@@ -55,6 +55,7 @@ const ImportLinkField = memo(function ImportLinkField({
         contentEditable
         role="textbox"
         aria-multiline={false}
+        aria-label="Recipe URL or kptncook link / id"
         spellCheck={false}
         autoCapitalize="off"
         autoCorrect="off"
