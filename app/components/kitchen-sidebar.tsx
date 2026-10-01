@@ -293,37 +293,13 @@ function CookPicker({
   );
 }
 
-/** Same width as the stepper's − / + buttons, so a static quantity lines up with the draft number. */
-function PortionSlotSpacer() {
-  return (
-    <ActionIcon
-      component="div"
-      size="sm"
-      variant="transparent"
-      aria-hidden
-      style={{ visibility: "hidden" }}
-    />
-  );
-}
-
-function PortionReadout({ value }: { value: number }) {
-  return (
-    <Group gap={4} wrap="nowrap">
-      <PortionSlotSpacer />
-      <Text size="sm" w={28} ta="center">
-        {value}
-      </Text>
-      <PortionSlotSpacer />
-    </Group>
-  );
-}
-
 /**
- * Shared draft / in-stock card grid:
- *   handle | name                         | quantity
- *          | cook  note                   | trailing
- * Quantity is a stepper on draft and a same-width static number in stock.
- * Trailing is the cooked check on in-stock cards only.
+ * Shared draft / in-stock card:
+ *   handle | name                     | quantity  cook  [check]
+ *          | note, full width under the name
+ * The note stays out of the control cluster so a long note doesn't wrap
+ * around the cook chip. Quantity is a stepper on draft and a static
+ * number in stock. The check is in-stock only.
  */
 function PlanCardGrid({
   entry,
@@ -365,13 +341,12 @@ function PlanCardGrid({
       >
         {entry.recipeName}
       </Anchor>
-      {quantity}
-      <span />
-      <Group gap="xs" wrap="nowrap" align="center" style={{ minWidth: 0 }}>
+      <Group gap="xs" wrap="nowrap" align="center">
+        {quantity}
         {cook}
-        <Box style={{ flex: 1, minWidth: 0 }}>{note}</Box>
+        {trailing}
       </Group>
-      <Box style={{ justifySelf: "end" }}>{trailing}</Box>
+      <Box style={{ gridColumn: "2 / -1", minWidth: 0 }}>{note}</Box>
     </Box>
   );
 }
@@ -610,7 +585,16 @@ export function StockCard({
             />
           )
         }
-        quantity={<PortionReadout value={entry.targetQuantity} />}
+        quantity={
+          <Text
+            size="sm"
+            c="dimmed"
+            ta="right"
+            style={{ fontVariantNumeric: "tabular-nums" }}
+          >
+            {entry.targetQuantity}
+          </Text>
+        }
         cook={
           <CookPicker
             entry={entry}

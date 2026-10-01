@@ -116,7 +116,8 @@ test("mobile kitchen card keeps the stepper on the title row", async ({
   expect(cookBox).not.toBeNull();
   const midY = (box: { y: number; height: number }) => box.y + box.height / 2;
   expect(Math.abs(midY(recipeBox!) - midY(decreaseBox!))).toBeLessThan(8);
-  expect(midY(cookBox!)).toBeGreaterThan(midY(recipeBox!) + 8);
+  expect(Math.abs(midY(recipeBox!) - midY(cookBox!))).toBeLessThan(8);
+  expect(decreaseBox!.x).toBeLessThan(cookBox!.x);
 });
 
 test("draft is scoped to the flat — other flat's draft is invisible", async ({

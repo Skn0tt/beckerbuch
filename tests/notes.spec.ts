@@ -182,7 +182,7 @@ test("note: editable on in-stock items too", async ({ page, flat }) => {
   );
 });
 
-test("note: draft card keeps the stepper with the title, and cook with the note", async ({
+test("note: draft card keeps controls on the title row and the note below", async ({
   page,
   flat,
 }) => {
@@ -216,11 +216,11 @@ test("note: draft card keeps the stepper with the title, and cook with the note"
   expect(cookRect).not.toBeNull();
   expect(addNoteRect).not.toBeNull();
   const midY = (box: { y: number; height: number }) => box.y + box.height / 2;
-  // Stepper shares the title row; cook and + Note share the row below.
   expect(Math.abs(midY(titleRect!) - midY(decreaseRect!))).toBeLessThan(8);
-  expect(midY(cookRect!)).toBeGreaterThan(midY(titleRect!) + 8);
-  expect(Math.abs(midY(cookRect!) - midY(addNoteRect!))).toBeLessThan(8);
-  expect(cookRect!.x).toBeLessThan(addNoteRect!.x);
+  expect(Math.abs(midY(titleRect!) - midY(cookRect!))).toBeLessThan(8);
+  expect(decreaseRect!.x).toBeLessThan(cookRect!.x);
+  expect(midY(addNoteRect!)).toBeGreaterThan(midY(titleRect!) + 8);
+  expect(addNoteRect!.x).toBeLessThan(decreaseRect!.x);
 
   await addNote.click();
   await page.getByTestId("note-input").fill("cook first");
@@ -245,14 +245,14 @@ test("note: draft card keeps the stepper with the title, and cook with the note"
   expect(decreaseAfter).not.toBeNull();
   const midYAfter = (box: { y: number; height: number }) =>
     box.y + box.height / 2;
-  expect(midYAfter(cookAfter!)).toBeGreaterThan(midYAfter(decreaseAfter!) + 8);
-  expect(Math.abs(midYAfter(cookAfter!) - midYAfter(noteRect!))).toBeLessThan(
-    8,
-  );
-  expect(cookAfter!.x).toBeLessThan(noteRect!.x);
+  expect(
+    Math.abs(midYAfter(cookAfter!) - midYAfter(decreaseAfter!)),
+  ).toBeLessThan(8);
+  expect(midYAfter(noteRect!)).toBeGreaterThan(midYAfter(cookAfter!) + 8);
+  expect(noteRect!.x).toBeLessThan(decreaseAfter!.x);
 });
 
-test("note: mobile stock card keeps title top, quantity top-right, and avatar/note/cooked on one row", async ({
+test("note: mobile stock card keeps controls on the title row and the note below", async ({
   page,
   flat,
 }) => {
@@ -300,18 +300,18 @@ test("note: mobile stock card keeps title top, quantity top-right, and avatar/no
     el.getBoundingClientRect(),
   );
 
-  expect(titleRect.y).toBeLessThan(cookPickerRect.y - 2);
-  expect(quantityRect.y).toBeLessThan(cookPickerRect.y - 2);
+  const midY = (box: { y: number; height: number }) => box.y + box.height / 2;
+  expect(Math.abs(midY(titleRect) - midY(quantityRect))).toBeLessThan(8);
+  expect(Math.abs(midY(titleRect) - midY(cookPickerRect))).toBeLessThan(8);
+  expect(Math.abs(midY(titleRect) - midY(markCookedRect))).toBeLessThan(8);
   expect(titleRect.x).toBeLessThan(quantityRect.x);
-  expect(cookPickerRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
-  expect(addNoteRect.y).toBeLessThan(cookPickerRect.y + cookPickerRect.height);
-  expect(markCookedRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
-  expect(addNoteRect.y).toBeLessThan(markCookedRect.y + markCookedRect.height);
-  expect(cookPickerRect.x).toBeLessThan(addNoteRect.x);
-  expect(addNoteRect.x).toBeLessThan(markCookedRect.x);
+  expect(quantityRect.x).toBeLessThan(cookPickerRect.x);
+  expect(cookPickerRect.x).toBeLessThan(markCookedRect.x);
+  expect(midY(addNoteRect)).toBeGreaterThan(midY(titleRect) + 8);
+  expect(addNoteRect.x).toBeLessThan(quantityRect.x);
 });
 
-test("note: desktop stock card keeps title top, quantity top-right, and avatar/note/cooked on one row", async ({
+test("note: desktop stock card keeps controls on the title row and the note below", async ({
   page,
   flat,
 }) => {
@@ -359,18 +359,18 @@ test("note: desktop stock card keeps title top, quantity top-right, and avatar/n
     el.getBoundingClientRect(),
   );
 
-  expect(titleRect.y).toBeLessThan(cookPickerRect.y - 2);
-  expect(quantityRect.y).toBeLessThan(cookPickerRect.y - 2);
+  const midY = (box: { y: number; height: number }) => box.y + box.height / 2;
+  expect(Math.abs(midY(titleRect) - midY(quantityRect))).toBeLessThan(8);
+  expect(Math.abs(midY(titleRect) - midY(cookPickerRect))).toBeLessThan(8);
+  expect(Math.abs(midY(titleRect) - midY(markCookedRect))).toBeLessThan(8);
   expect(titleRect.x).toBeLessThan(quantityRect.x);
-  expect(cookPickerRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
-  expect(addNoteRect.y).toBeLessThan(cookPickerRect.y + cookPickerRect.height);
-  expect(markCookedRect.y).toBeLessThan(addNoteRect.y + addNoteRect.height);
-  expect(addNoteRect.y).toBeLessThan(markCookedRect.y + markCookedRect.height);
-  expect(cookPickerRect.x).toBeLessThan(addNoteRect.x);
-  expect(addNoteRect.x).toBeLessThan(markCookedRect.x);
+  expect(quantityRect.x).toBeLessThan(cookPickerRect.x);
+  expect(cookPickerRect.x).toBeLessThan(markCookedRect.x);
+  expect(midY(addNoteRect)).toBeGreaterThan(midY(titleRect) + 8);
+  expect(addNoteRect.x).toBeLessThan(quantityRect.x);
 });
 
-test("sidebar: draft and in-stock quantity numbers share a column", async ({
+test("sidebar: draft and in-stock cards share the title-row controls", async ({
   page,
   flat,
 }) => {
@@ -456,18 +456,18 @@ test("sidebar: draft and in-stock quantity numbers share a column", async ({
     expect(box).not.toBeNull();
   }
 
-  expect(Math.abs(draftQtyBox!.x - stockQtyBox!.x)).toBeLessThan(2);
-  expect(Math.abs(draftCookBox!.x - stockCookBox!.x)).toBeLessThan(2);
   expect(Math.abs(draftNoteBox!.x - stockNoteBox!.x)).toBeLessThan(2);
   const right = (box: { x: number; width: number }) => box.x + box.width;
-  expect(Math.abs(right(increaseBox!) - right(cookedBox!))).toBeLessThan(2);
+  expect(Math.abs(right(draftCookBox!) - right(cookedBox!))).toBeLessThan(8);
 
   const midY = (box: { y: number; height: number }) => box.y + box.height / 2;
-  expect(Math.abs(midY(draftCookBox!) - midY(draftNoteBox!))).toBeLessThan(8);
-  expect(Math.abs(midY(stockCookBox!) - midY(stockNoteBox!))).toBeLessThan(8);
+  expect(Math.abs(midY(draftQtyBox!) - midY(draftCookBox!))).toBeLessThan(8);
+  expect(Math.abs(midY(stockQtyBox!) - midY(stockCookBox!))).toBeLessThan(8);
   expect(Math.abs(midY(stockCookBox!) - midY(cookedBox!))).toBeLessThan(8);
-  expect(midY(draftCookBox!)).toBeGreaterThan(midY(draftQtyBox!) + 8);
-  expect(midY(stockCookBox!)).toBeGreaterThan(midY(stockQtyBox!) + 8);
+  expect(midY(draftNoteBox!)).toBeGreaterThan(midY(draftCookBox!) + 8);
+  expect(midY(stockNoteBox!)).toBeGreaterThan(midY(stockCookBox!) + 8);
+  expect(draftNoteBox!.x).toBeLessThan(increaseBox!.x);
+  expect(stockNoteBox!.x).toBeLessThan(stockQtyBox!.x);
 });
 
 test("note: does NOT appear on the public /h/:flatId handoff page", async ({
