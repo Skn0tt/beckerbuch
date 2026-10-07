@@ -39,7 +39,7 @@ result as a normal recipe.
 
 #### 1.1. import-bbc-good-food-baked-ratatouille-prefills-exact-ingredients
 
-**File:** `tests/recipe-import-ui-live.spec.ts`
+**File:** `tests/recipe-import-ui.spec.ts`
 
 Asserts the import modal extracts every ingredient from the source
 URL into the recipe form with the exact amount, unit, and item — not
