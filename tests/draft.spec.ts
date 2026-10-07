@@ -5,15 +5,27 @@ import { geminiEmbeddingHandler } from "./mock-handlers";
 // Finalise triggers dedup → OpenAI embeddings. Mock it so tests don't
 // hit the real API (which they couldn't, anyway — no real key in test).
 test.beforeEach(async ({ mocks }) => {
-  await mocks.route("https://generativelanguage.googleapis.com/**", geminiEmbeddingHandler());
+  await mocks.route(
+    "https://generativelanguage.googleapis.com/**",
+    geminiEmbeddingHandler(),
+  );
 });
 
 async function createPasta(page: import("@playwright/test").Page) {
   await page.getByRole("link", { name: "+ New recipe" }).click();
   await page.getByLabel("Name").fill("Pasta al limone");
-  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Amount").fill("400");
-  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Unit").fill("g");
-  await page.getByRole("row", { name: "Ingredient 1", exact: true }).getByLabel("Item").fill("spaghetti");
+  await page
+    .getByRole("row", { name: "Ingredient 1", exact: true })
+    .getByLabel("Amount")
+    .fill("400");
+  await page
+    .getByRole("row", { name: "Ingredient 1", exact: true })
+    .getByLabel("Unit")
+    .fill("g");
+  await page
+    .getByRole("row", { name: "Ingredient 1", exact: true })
+    .getByLabel("Item")
+    .fill("spaghetti");
   await page.getByRole("button", { name: "Save recipe" }).click();
   await expect(page).toHaveURL(/\/recipes\/[0-9a-f-]{36}$/);
 }
@@ -39,7 +51,9 @@ test("add a recipe to draft → button flips to 'In draft' → kitchen shows one
 
   // Only one instance even after a no-op re-click would happen.
   await expect(page.getByText("Draft 1", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Pasta al limone" })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: "Pasta al limone" })).toHaveCount(
+    1,
+  );
 
   // Step the portions to 0 → opens the remove-confirm modal → confirm.
   // Base is 4 portions; click − 4 times.
@@ -52,7 +66,9 @@ test("add a recipe to draft → button flips to 'In draft' → kitchen shows one
     .getByRole("button", { name: "Confirm remove Pasta al limone from draft" })
     .click();
 
-  await expect(page.getByRole("link", { name: "Pasta al limone" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Pasta al limone" })).toHaveCount(
+    0,
+  );
 
   // Back on the recipe page the add button returns.
   await page.goto(recipeUrl);
@@ -68,7 +84,7 @@ test("kitchen empty state links back to collection", async ({ page, flat }) => {
   await expect(page.getByText(/Draft is empty/)).toBeVisible();
 });
 
-test("mobile kitchen card puts recipe name above controls", async ({
+test("mobile kitchen card keeps the stepper on the title row", async ({
   page,
   flat,
 }) => {
@@ -80,18 +96,28 @@ test("mobile kitchen card puts recipe name above controls", async ({
 
   await page.goto("/kitchen");
 
-  const recipeName = page.getByRole("link", { name: "Pasta al limone" }).first();
+  const recipeName = page
+    .getByRole("link", { name: "Pasta al limone" })
+    .first();
   const decrease = page
     .getByRole("button", { name: "Decrease Pasta al limone portions" })
     .first();
+  const cook = page.getByRole("button", {
+    name: "Choose cook for Pasta al limone",
+  });
   await expect(recipeName).toBeVisible();
   await expect(decrease).toBeVisible();
 
   const recipeBox = await recipeName.boundingBox();
   const decreaseBox = await decrease.boundingBox();
+  const cookBox = await cook.boundingBox();
   expect(recipeBox).not.toBeNull();
   expect(decreaseBox).not.toBeNull();
-  expect(decreaseBox!.y).toBeGreaterThan(recipeBox!.y + recipeBox!.height - 1);
+  expect(cookBox).not.toBeNull();
+  const midY = (box: { y: number; height: number }) => box.y + box.height / 2;
+  expect(Math.abs(midY(recipeBox!) - midY(decreaseBox!))).toBeLessThan(8);
+  expect(Math.abs(midY(recipeBox!) - midY(cookBox!))).toBeLessThan(8);
+  expect(decreaseBox!.x).toBeLessThan(cookBox!.x);
 });
 
 test("draft is scoped to the flat — other flat's draft is invisible", async ({
@@ -125,7 +151,10 @@ test("draft is scoped to the flat — other flat's draft is invisible", async ({
   await expect(page.getByText(/Draft is empty/)).toBeVisible();
 });
 
-test("change target portions → ingredients re-scale", async ({ page, flat }) => {
+test("change target portions → ingredients re-scale", async ({
+  page,
+  flat,
+}) => {
   await login(page, flat.user);
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
@@ -186,11 +215,16 @@ test("recipe view scales ingredients immediately while quantity update is in fli
   await page
     .getByRole("button", { name: "Increase Pasta al limone portions" })
     .click();
-  await expect(page.getByText("500 g spaghetti")).toBeVisible({ timeout: 1000 });
+  await expect(page.getByText("500 g spaghetti")).toBeVisible({
+    timeout: 1000,
+  });
   await page.unroute("**/recipes/*.data", delayedQuantityUpdate);
 });
 
-test("designated cook picker — assign self, then unassign", async ({ page, flat }) => {
+test("designated cook picker — assign self, then unassign", async ({
+  page,
+  flat,
+}) => {
   await login(page, flat.user);
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
@@ -199,8 +233,12 @@ test("designated cook picker — assign self, then unassign", async ({ page, fla
 
   const openPicker = page.getByLabel("Choose cook for Pasta al limone");
   await openPicker.click();
-  const setSelf = page.getByLabel(`Set cook to ${flat.user.displayName} for Pasta al limone`);
-  const setUnassigned = page.getByLabel("Set cook to unassigned for Pasta al limone");
+  const setSelf = page.getByLabel(
+    `Set cook to ${flat.user.displayName} for Pasta al limone`,
+  );
+  const setUnassigned = page.getByLabel(
+    "Set cook to unassigned for Pasta al limone",
+  );
 
   await expect(setUnassigned).toHaveAttribute("aria-pressed", "true");
 
@@ -222,10 +260,9 @@ test("designated cook picker — assign self, then unassign", async ({ page, fla
   // Reload — choice persisted.
   await page.reload();
   await page.getByLabel("Choose cook for Pasta al limone").click();
-  await expect(page.getByLabel(`Set cook to ${flat.user.displayName} for Pasta al limone`)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  await expect(
+    page.getByLabel(`Set cook to ${flat.user.displayName} for Pasta al limone`),
+  ).toHaveAttribute("aria-pressed", "true");
 
   // Unassign.
   await page.getByLabel("Choose cook for Pasta al limone").click();
@@ -243,9 +280,7 @@ test("designated cook can be edited in stock lane", async ({ page, flat }) => {
   await login(page, flat.user);
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await expect(
-    page.getByRole("button", { name: "✓ In draft" }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
   await page.goto("/kitchen");
   await page.getByRole("button", { name: "Finalise draft" }).click();
   await page.getByRole("button", { name: "Confirm finalise draft" }).click();
@@ -279,9 +314,7 @@ test("finalise draft → in-stock lane → mark cooked → empty", async ({
   await login(page, flat.user);
   await createPasta(page);
   await page.getByRole("button", { name: "+ Add to draft" }).click();
-  await expect(
-    page.getByRole("button", { name: "✓ In draft" }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "✓ In draft" })).toBeVisible();
   await page.goto("/kitchen");
 
   // Lane defaults to draft.
@@ -290,9 +323,7 @@ test("finalise draft → in-stock lane → mark cooked → empty", async ({
 
   // Finalise the draft → redirects to handoff page.
   await page.getByRole("button", { name: "Finalise draft" }).click();
-  await page
-    .getByRole("button", { name: "Confirm finalise draft" })
-    .click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
   await expect(page).toHaveURL(/\/h\/[0-9a-f-]{36}$/);
 
   // Back to kitchen — draft is empty, stock has 1.
@@ -303,7 +334,9 @@ test("finalise draft → in-stock lane → mark cooked → empty", async ({
   // Switch to in-stock lane (click the visible label).
   await page.getByText("In stock 1", { exact: true }).click();
   await expect(page).toHaveURL(/\?lane=stock$/);
-  await expect(page.getByRole("link", { name: "Pasta al limone" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Pasta al limone" }),
+  ).toBeVisible();
 
   // Mark cooked → opens confirm modal → confirm → leaves the lane.
   await page
@@ -336,7 +369,9 @@ test("finalise → demote back to draft from the recipe page", async ({
 
   // On the recipe page the in-stock actions are shown.
   await page.goto(recipeUrl);
-  await expect(page.getByRole("button", { name: "Mark as cooked" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Mark as cooked" }),
+  ).toBeVisible();
   const backToDraft = page.getByRole("button", { name: "← Back to draft" });
   await expect(backToDraft).toBeVisible();
 
@@ -356,6 +391,7 @@ test("finalise → demote back to draft from the recipe page", async ({
   await page.goto("/kitchen");
   await expect(page.getByText("Draft 1", { exact: true })).toBeVisible();
   await expect(page.getByText("In stock 0", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Pasta al limone" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Pasta al limone" }),
+  ).toBeVisible();
 });
-
