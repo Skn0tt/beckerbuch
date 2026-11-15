@@ -108,6 +108,15 @@ export const flats = pgTable("flats", {
   dedupGeneratedAt: timestamp("dedup_generated_at", { withTimezone: true }),
   /** Backend identifier — e.g. "openai:gpt-5-mini", "fake", "none". */
   dedupModel: text("dedup_model"),
+  /**
+   * Staple names kept off the shopping list ("Salz", "Öl"). Names only,
+   * not amounts. Matched to ingredient item text by embedding similarity
+   * when the handoff is read — see app/lib/pantry.ts.
+   */
+  pantryItems: jsonb("pantry_items")
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
 });
 
 export const flatMembers = pgTable(

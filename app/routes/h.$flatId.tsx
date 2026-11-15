@@ -27,6 +27,7 @@ import {
   snapshotDedupForFlat,
 } from "../lib/dedup-snapshot";
 import { computeCombinedList } from "../lib/combined-list";
+import { omitPantryGroups } from "../lib/pantry";
 import { CombinedList } from "../components/combined-list";
 import { firstMessage, formDataToObject, parseParams } from "../lib/form";
 
@@ -53,6 +54,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       dedupGroups: flats.dedupGroups,
       dedupRejectedGroupIds: flats.dedupRejectedGroupIds,
       dedupInputHash: flats.dedupInputHash,
+      pantryItems: flats.pantryItems,
     })
     .from(flats)
     .where(eq(flats.id, flatId))
@@ -130,8 +132,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // If the saved snapshot is missing or stale (recipes/ingredients
   // changed since Finalise), we still render an unmerged combined list
   // but mark it as stale so the user can regenerate.
-  const { combinedGroups, snapshotFresh, rejectedIds } =
-    await computeCombinedList(flat, currentInput);
+  const {
+    combinedGroups: snapshotGroups,
+    snapshotFresh,
+    rejectedIds,
+  } = await computeCombinedList(flat, currentInput);
+  // Pantry is applied here, not in the snapshot, so editing the list
+  // changes this page and the JSON-LD without regenerating dedup.
+  const combinedGroups = await omitPantryGroups(
+    snapshotGroups,
+    flat.pantryItems,
+  );
   const rejectedSet = new Set(rejectedIds);
 
   // The exact lines that go into the JSON-LD recipeIngredient. Rejected
