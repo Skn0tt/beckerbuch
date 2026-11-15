@@ -71,7 +71,7 @@
   production wraps that same file in a Fetch handler.
 - **Process lifetime:** an instance stays up while it has requests,
   then sleeps after a few minutes idle (early access always scales
-  to zero). The `pg` pool is one module-level binding in `app/db/pool.ts`,
+  to zero). The `pg` pool is one module-level binding in `app/db/client.ts`,
   inlined into the server build (the Netlify entry does not import it),
   and warmed with `SELECT 1` in `onStart`. Idle clients
   are closed at 20s because the platform drops outbound connections
