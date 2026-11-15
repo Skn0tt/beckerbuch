@@ -2,11 +2,7 @@ import { createRequestHandler, type ServerBuild } from "react-router";
 import type { Config } from "@netlify/server";
 import * as serverBuildNs from "#server-build";
 
-// `@netlify/vite-plugin-react-router` publishes a function on `/*`.
-// Functions run before the server, so that adapter has to stay out of
-// the deploy or this process never receives a request. The handler
-// below serves the same `build/server/server-build.js` the tests boot
-// with `react-router-serve`.
+// Same `build/server/server-build.js` the tests boot with `react-router-serve`.
 const handleRequest = createRequestHandler(
   serverBuildNs as unknown as ServerBuild,
   "production",
