@@ -66,9 +66,15 @@ export type DedupGroup = {
   id: string;
   /** Display item name chosen for the group. */
   item: string;
-  /** Canonical unit, or null for unitless / unmergeable. */
+  /**
+   * Canonical unit, or null when the line is unitless or when a
+   * planned-ingredients group spans unit families (no single quantity).
+   */
   unit: string | null;
-  /** Summed amount in the canonical unit, or null. */
+  /**
+   * Summed amount in the canonical unit, or null when it cannot be
+   * expressed as one number (missing amount, or mixed unit families).
+   */
   amount: string | null;
   /** Pre-formatted text shown in the UI and emitted to JSON-LD. */
   displayText: string;

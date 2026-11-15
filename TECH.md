@@ -500,12 +500,26 @@ Snapshot lifecycle:
 | `count` | 1 | empty / null unit |
 | `u:<key>` | 1 | any unrecognized unit string |
 
-Mass and volume never cross (so `200 g flour` + `2 cups flour` stay
-separate). Synonyms and plurals are normalized before lookup
-(`cups`→`cup`, `grams`→`g`). After summing, display prefers a
-readable unit (e.g. `1500 g` → `1.5 kg`, `48 tsp` → `16 tbsp`;
-cup+ml mixtures display in ml). Logic is covered by
-`tests/units.spec.ts` plus E2E in `tests/handoff-dedup.spec.ts`.
+Mass and volume never cross on the **shopping-list handoff** (so
+`200 g flour` + `2 cups flour` stay separate buyable lines). Synonyms
+and plurals are normalized before lookup (`cups`→`cup`, `grams`→`g`).
+After summing, display prefers a readable unit (e.g. `1500 g` →
+`1.5 kg`, `48 tsp` → `16 tbsp`; cup+ml mixtures display in ml). Logic
+is covered by `tests/units.spec.ts` plus E2E in
+`tests/handoff-dedup.spec.ts`.
+
+**Planned ingredients uses the same clusters and a different
+assembly** (`dedup(..., { incompatibleUnits: "keep" })`, issue #80).
+The view answers "what is still spoken for, and by which recipe?".
+One group per cluster, titled with the item name only. Each recipe's
+amount stays on its source line, including when the units cannot be
+added (`flour` with `200 g flour — Bread` and `2 cups flour —
+Pancakes`). A single unit family still stores the summed `amount` and
+`unit` on the group; mixed families leave both null. The handoff
+snapshot is unchanged: it calls `dedup` with the default `split`.
+
+Covered by the planned cases in `tests/units.spec.ts` and
+`tests/planned-ingredients.spec.ts`.
 
 Embeddings are cached in the `ingredient_embeddings` table, keyed by
 `(model, text)` where `text` is a normalized form of the item string

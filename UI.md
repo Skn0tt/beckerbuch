@@ -325,9 +325,14 @@ MOBILE — Ingredients (planned, all in-stock)
 │ │ Pasta al limone              │ │
 │ └──────────────────────────────┘ │
 │ ┌──────────────────────────────┐ │
-│ │ 600 g tomato            2×   │ │  merges interleaved alphabetically
+│ │ tomato                  2×   │ │  title is the name; amounts below
 │ │ · 300 g tomato — Pasta …     │ │
 │ │ · 300 g tomatos — Tomato …   │ │
+│ └──────────────────────────────┘ │
+│ ┌──────────────────────────────┐ │
+│ │ flour                   2×   │ │  same row when units cannot be added
+│ │ · 2 cups flour — Pancakes    │ │
+│ │ · 200 g flour — Bread        │ │
 │ └──────────────────────────────┘ │
 │                                  │
 │ 🔍 expands left over the title:  │
@@ -343,7 +348,7 @@ MOBILE — Ingredients (planned, all in-stock)
 - "Finalise →" opens **Finalise confirmation** (§7) as a sheet.
 - In stock: `[ ✓ Cooked ]` is a deliberately big tap target (kitchen-with-greasy-hands ergonomics). Tap → "Marked cooked. **Undo**" toast for ~5s before writing to history.
 - Empty draft: shows a friendly empty state with `[ Browse recipes → ]` jumping to the Recipes tab.
-- **Ingredients** lane: read-only combined list over every in-stock recipe (not just the latest finalise batch). Rows are A–Z by representative item name. A subtle search icon expands a filter **left over the “Planned ingredients” heading** (same row — no extra vertical space). After a short debounce the query hits `/kitchen/combined/search` (text match, then meaning/embedding only if text is empty). The rows stay on screen while that request is in flight; a spinner sits in the filter field. Desktop exposes the same list via the sidebar "Ingredients" modal, with a search field at the top of the dialog that hits the same endpoint and shows its spinner inside the field. Handoff (§8) still pins merged groups to the top for Split/override.
+- **Ingredients** lane: read-only combined list over every in-stock recipe (not just the latest finalise batch). Rows are A–Z by item name. A merged row is titled with that name only; each recipe's amount is on the line underneath, including when the units cannot be added (`flour` with `200 g` and `2 cups`). A subtle search icon expands a filter **left over the “Planned ingredients” heading** (same row — no extra vertical space). After a short debounce the query hits `/kitchen/combined/search` (text match, then meaning/embedding only if text is empty). The rows stay on screen while that request is in flight; a spinner sits in the filter field. Desktop exposes the same list via the sidebar "Ingredients" modal, with a search field at the top of the dialog that hits the same endpoint and shows its spinner inside the field. Handoff (§8) still sums compatible units into a buyable headline, splits incompatible units into separate lines, and pins merged groups to the top for Split/override.
 
 ---
 
