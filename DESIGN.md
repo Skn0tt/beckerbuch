@@ -93,7 +93,12 @@ the stored amounts). kptncook step text
 uses `<timer>` placeholders plus a parallel `timers` array (minutes);
 we expand those to durations (`5 Min.`, `3–5 Min.`, `bis zu 10 Min.`)
 before pre-filling the form. A `fetch_recipe` MCP
-tool exposes the same import path (both sources) for agents. Fetching
+tool exposes the same import path (both sources) for agents. Saving
+goes through `kochbuch_add_recipe`, which stores the returned `photo`
+object (`contentType` and `base64`) unchanged. A public image URL can
+still be fetched via `photoUrl` when the bytes are not already in
+hand. `kochbuch_edit_recipe` accepts the same photo object when
+replacing a cover. Fetching
 arbitrary user-supplied URLs is guarded against SSRF (http(s) only;
 private/loopback/link-local addresses are refused).
 

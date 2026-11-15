@@ -18,7 +18,11 @@ type FetchResult = {
   baseQuantity: number;
   sourceUrl: string | null;
   steps: string;
-  ingredients: Array<{ amount: string | null; unit: string | null; item: string }>;
+  ingredients: Array<{
+    amount: string | null;
+    unit: string | null;
+    item: string;
+  }>;
   photo: { contentType: string; base64: string } | null;
   note?: string;
 };
@@ -92,12 +96,85 @@ test.describe("MCP fetch_recipe", () => {
     try {
       const callResult = await client.callTool({
         name: "fetch_recipe",
-        arguments: { input: MOCK_RECIPES.cinnamonBuns.uid, includePhoto: false },
+        arguments: {
+          input: MOCK_RECIPES.cinnamonBuns.uid,
+          includePhoto: false,
+        },
       });
       expect(callResult.isError).toBeFalsy();
       const data = jsonFromToolResult<FetchResult>(callResult);
       expect(data.name).toBe("Zimtschnecken");
       expect(data.photo).toBeNull();
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("add_recipe stores the cover fetch_recipe already downloaded", async ({
+    page,
+    flat,
+  }) => {
+    await login(page, flat.user);
+    const oauth = await runOAuthFlow(page);
+    if (!oauth.ok) throw new Error("oauth flow failed");
+    const client = await mcpClient(oauth.tokens.accessToken);
+
+    try {
+      const fetched = await client.callTool({
+        name: "fetch_recipe",
+        arguments: { input: SHARE_URL },
+      });
+      expect(fetched.isError).toBeFalsy();
+      const data = jsonFromToolResult<FetchResult>(fetched);
+      expect(data.photo).not.toBeNull();
+      expect(data.note ?? "").not.toMatch(/cannot be carried/i);
+      expect(data.note).toContain("photo argument");
+
+      const added = await client.callTool({
+        name: "kochbuch_add_recipe",
+        arguments: {
+          name: data.name,
+          baseQuantity: data.baseQuantity,
+          steps: data.steps,
+          sourceUrl: data.sourceUrl,
+          ingredients: data.ingredients.map((ingredient) => ({
+            ...(ingredient.amount ? { amount: ingredient.amount } : {}),
+            ...(ingredient.unit ? { unit: ingredient.unit } : {}),
+            item: ingredient.item,
+          })),
+          photo: data.photo,
+        },
+      });
+      expect(added.isError, JSON.stringify(added.content)).toBeFalsy();
+      const { id } = jsonFromToolResult<{ id: string; url: string }>(added);
+
+      const got = await client.callTool({
+        name: "kochbuch_get_recipe",
+        arguments: { id },
+      });
+      expect(got.isError).toBeFalsy();
+      const photoUrl = jsonFromToolResult<{ photoUrl: string | null }>(
+        got,
+      ).photoUrl;
+      expect(photoUrl).toContain(`/r/${id}/photo`);
+      const img = await page.request.get(photoUrl!);
+      expect(img.ok()).toBeTruthy();
+      expect(img.headers()["content-type"]).toContain("image/jpeg");
+      expect(
+        Buffer.from(await img.body()).equals(
+          Buffer.from(data.photo!.base64, "base64"),
+        ),
+      ).toBe(true);
+
+      // The canned kptncook cover is a 1×1 JPEG that Chromium does not
+      // decode, so the grid check is the photo img (not the grey initial).
+      await page.goto("/");
+      const cover = page.getByRole("img", { name: "Zimtschnecken" });
+      await expect(cover).toBeVisible();
+      await expect(cover).toHaveAttribute(
+        "src",
+        new RegExp(`/recipes/${id}/photo`),
+      );
     } finally {
       await client.close();
     }
