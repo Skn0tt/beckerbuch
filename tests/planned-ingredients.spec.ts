@@ -92,14 +92,15 @@ test("ingredients tab: merges duplicate ingredients into one combined row", asyn
 
   await page.goto("/kitchen?lane=ingredients");
 
-  // The two tomato ingredients should be combined into a single summed row.
+  // One row titled with the ingredient. Amounts stay on the source lines.
   const merged = page
     .getByTestId("combined-row")
-    .filter({ has: page.getByText("600 g tomato", { exact: true }) });
+    .filter({ has: page.getByText("tomato", { exact: true }) });
   await expect(merged).toHaveCount(1);
   await expect(merged).toHaveAttribute("data-merged", "true");
-  await expect(merged.getByText(/Pasta al pomodoro/)).toBeVisible();
-  await expect(merged.getByText(/Tomato soup/)).toBeVisible();
+  await expect(merged.getByText(/300 g tomato\s*—\s*Pasta al pomodoro/)).toBeVisible();
+  await expect(merged.getByText(/300 g tomatos\s*—\s*Tomato soup/)).toBeVisible();
+  await expect(merged.getByText("600 g tomato")).toHaveCount(0);
 });
 
 test("ingredients tab: re-merges over what's still to cook after a recipe is cooked", async ({
@@ -124,13 +125,14 @@ test("ingredients tab: re-merges over what's still to cook after a recipe is coo
   await page.getByRole("button", { name: "Confirm finalise draft" }).click();
   await expect(page).toHaveURL(`/h/${flat.id}`);
 
-  // All three tomato ingredients merge into 800 g.
+  // All three tomato lines share one row titled "tomato".
   await page.goto("/kitchen?lane=ingredients");
-  await expect(
-    page.getByTestId("combined-row").filter({
-      has: page.getByText("800 g tomato", { exact: true }),
-    }),
-  ).toHaveCount(1);
+  const before = page
+    .getByTestId("combined-row")
+    .filter({ has: page.getByText("tomato", { exact: true }) });
+  await expect(before).toHaveCount(1);
+  await expect(before.getByText(/Bruschetta/)).toBeVisible();
+  await expect(before.getByText(/200 g tomato/)).toBeVisible();
 
   // Cook Bruschetta — it leaves the in-stock set.
   await page.goto(bruschettaUrl);
@@ -142,16 +144,17 @@ test("ingredients tab: re-merges over what's still to cook after a recipe is coo
   // returns — a reliable signal the action completed.
   await expect(page.getByRole("button", { name: "+ Add to draft" })).toBeVisible();
 
-  // The planned-ingredients view re-merges over the two remaining recipes.
+  // The planned-ingredients view re-groups over the two remaining recipes.
   await page.goto("/kitchen?lane=ingredients");
   const merged = page
     .getByTestId("combined-row")
-    .filter({ has: page.getByText("600 g tomato", { exact: true }) });
+    .filter({ has: page.getByText("tomato", { exact: true }) });
   await expect(merged).toHaveCount(1);
   await expect(merged).toHaveAttribute("data-merged", "true");
-  await expect(merged.getByText(/Pasta al pomodoro/)).toBeVisible();
-  await expect(merged.getByText(/Tomato soup/)).toBeVisible();
+  await expect(merged.getByText(/300 g tomato\s*—\s*Pasta al pomodoro/)).toBeVisible();
+  await expect(merged.getByText(/300 g tomatos\s*—\s*Tomato soup/)).toBeVisible();
   await expect(merged.getByText(/Bruschetta/)).toHaveCount(0);
+  await expect(merged.getByText(/200 g tomato/)).toHaveCount(0);
 });
 
 test("ingredients tab: shows recipes from every in-stock finalise batch, not just the latest", async ({
@@ -209,9 +212,10 @@ test("ingredients tab: keeps unit-incompatible lines on one ingredient row", asy
   const rows = page.getByTestId("combined-row");
   await expect(rows).toHaveCount(1);
   const flour = rows.filter({
-    has: page.getByText("200 g + 2 cups flour", { exact: true }),
+    has: page.getByText("flour", { exact: true }),
   });
   await expect(flour).toHaveCount(1);
+  await expect(flour.getByText("200 g + 2 cups")).toHaveCount(0);
   await expect(flour).toHaveAttribute("data-merged", "true");
   await expect(flour.getByText(/200 g flour\s*—\s*Bread/)).toBeVisible();
   await expect(flour.getByText(/2 cups flour\s*—\s*Pancakes/)).toBeVisible();

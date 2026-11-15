@@ -491,22 +491,13 @@ is covered by `tests/units.spec.ts` plus E2E in
 
 **Planned ingredients uses the same clusters and a different
 assembly** (`dedup(..., { incompatibleUnits: "keep" })`, issue #80).
-The view answers "what is still spoken for, and by which recipe?",
-not "what single quantity do I buy?". Rules:
-
-- One group per cluster, even when unit families differ. `200 g flour`
-  and `2 cups flour` stay one row headlined `200 g + 2 cups flour`,
-  with each recipe's original line as a source. `amount` and `unit`
-  are null — there is no single quantity.
-- Amounts still sum inside one family, with the same readable unit as
-  the shopping list (`500 g` + `1 kg` → `1.5 kg`). A family that has
-  several lines inside a mixed row is summed the same way
-  (`200 g` + `300 g` + `2 cups` → `500 g + 2 cups flour`); a family
-  with one line keeps that recipe's own amount.
-- Headline fragments are ordered mass, volume, spoons, count, then
-  other families by key, so the line does not depend on row order.
-- The handoff snapshot is unchanged: it calls `dedup` with the default
-  `split`.
+The view answers "what is still spoken for, and by which recipe?".
+One group per cluster, titled with the item name only. Each recipe's
+amount stays on its source line, including when the units cannot be
+added (`flour` with `200 g flour — Bread` and `2 cups flour —
+Pancakes`). A single unit family still stores the summed `amount` and
+`unit` on the group; mixed families leave both null. The handoff
+snapshot is unchanged: it calls `dedup` with the default `split`.
 
 Covered by the planned cases in `tests/units.spec.ts` and
 `tests/planned-ingredients.spec.ts`.

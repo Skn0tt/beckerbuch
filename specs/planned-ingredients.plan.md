@@ -6,7 +6,7 @@ The Ingredients lane summarizes ingredient needs from **every recipe currently i
 
 This is a deliberately different data source from the handoff / shopping page (`/h/$flatId`), which scopes to the **latest finalise batch only** — the trip you're about to shop for — and renders the persisted dedup snapshot on the `flats` row so manual split / unsplit edits survive. The Ingredients lane shares none of that snapshot machinery.
 
-Compatible amounts still collapse to one summed headline (`600 g tomato`) with each recipe's original line underneath. Unit families that cannot be added do **not** follow the shopping list: mass and cups of the same ingredient stay on one row (`200 g + 2 cups flour`) instead of silently splitting into two unrelated lines. The per-recipe amounts stay on the source lines. The handoff page still splits those into separate buyable rows.
+A merged row is titled with the ingredient name only. Each recipe's amount stays on the source line underneath, whether or not those amounts can be added (`300 g tomato` and `300 g tomatos` under `tomato`; `200 g flour` and `2 cups flour` under `flour`). The handoff page still sums compatible units into a buyable headline and splits incompatible units into separate rows.
 
 The kitchen surfaces (mobile `/kitchen?lane=ingredients` tab and the desktop sidebar "Planned ingredients" modal) render the combined list **read-only** — a plain summary of what is still spoken for, with no split / unsplit / regenerate affordances (those live only on the handoff page). Both surfaces load the combined list on demand from a dedicated resource route (`/kitchen/combined`, fetched via `useFetcher().load()` when the tab is opened / the modal opens), showing a spinner while it resolves. That route is never part of a page's loader chain and is never reached from a `<Link>`, so it is never prefetched on hover.
 
@@ -53,9 +53,10 @@ Because the view is read-only it holds **no snapshot and performs no writes**. E
   2. Open the kitchen and finalise the draft.
     - expect: Finalising redirects to `/h/<flat id>`.
   3. Open `/kitchen?lane=ingredients`.
-    - expect: Exactly one combined row shows the summed `600 g tomato`.
+    - expect: Exactly one combined row is titled `tomato` (no summed amount).
     - expect: That row is marked merged (`data-merged="true"`).
-    - expect: Both `Pasta al pomodoro` and `Tomato soup` appear as sources.
+    - expect: The source lines are `300 g tomato` — Pasta al pomodoro and
+      `300 g tomatos` — Tomato soup.
 
 #### 1.4. ingredients-tab-re-merges-over-whats-still-to-cook-after-a-recipe-is-cooked
 
@@ -68,14 +69,14 @@ Because the view is read-only it holds **no snapshot and performs no writes**. E
   2. Open the kitchen and finalise the draft.
     - expect: Finalising redirects to `/h/<flat id>`.
   3. Open `/kitchen?lane=ingredients`.
-    - expect: One combined row shows the summed `800 g tomato`.
+    - expect: One row titled `tomato` lists all three recipes, including
+      `200 g tomato` — Bruschetta.
   4. Open the `Bruschetta` recipe page and mark it cooked.
     - expect: The `+ Add to draft` affordance returns (it left In stock).
   5. Re-open `/kitchen?lane=ingredients`.
-    - expect: Exactly one combined row shows the re-summed `600 g tomato`.
-    - expect: That row is still marked merged (`data-merged="true"`).
+    - expect: Exactly one row is still titled `tomato` and marked merged.
     - expect: `Pasta al pomodoro` and `Tomato soup` appear as sources.
-    - expect: The cooked `Bruschetta` no longer appears.
+    - expect: The cooked `Bruschetta` and its `200 g tomato` no longer appear.
 
 #### 1.5. ingredients-tab-shows-recipes-from-every-in-stock-finalise-batch
 
@@ -103,11 +104,10 @@ everything currently in stock.
 **Steps:**
   1. Log in and finalise `Pancakes` (`2 cups flour`) and `Bread` (`200 g flour`).
   2. Open `/kitchen?lane=ingredients`.
-    - expect: Exactly one combined row, marked merged, headlined
-      `200 g + 2 cups flour`.
+    - expect: Exactly one combined row, marked merged, titled `flour`
+      with no amounts in the title.
     - expect: Both source lines (`200 g flour` — Bread, `2 cups flour` —
       Pancakes) are visible.
-    - expect: The two amounts are not split into separate rows.
 
 #### 1.7. ingredients-tab-lists-rows-alphabetically-by-item-name
 

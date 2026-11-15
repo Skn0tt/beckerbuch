@@ -376,7 +376,7 @@ test.describe("postProcess family split", () => {
       },
     );
     expect(groups).toHaveLength(1);
-    expect(groups[0].displayText).toBe("200 g + 2 cups flour");
+    expect(groups[0].displayText).toBe("flour");
     expect(groups[0].amount).toBeNull();
     expect(groups[0].unit).toBeNull();
     expect(groups[0].item).toBe("flour");
@@ -390,7 +390,7 @@ test.describe("postProcess family split", () => {
     ]);
   });
 
-  test("planned: compatible masses still sum", () => {
+  test("planned: compatible masses keep the sum off the title", () => {
     const input: DedupInput = {
       items: [
         {
@@ -417,9 +417,13 @@ test.describe("postProcess family split", () => {
       },
     );
     expect(groups).toHaveLength(1);
-    expect(groups[0].displayText).toBe("1.5 kg sugar");
+    expect(groups[0].displayText).toBe("sugar");
     expect(groups[0].amount).toBe("1.5");
     expect(groups[0].unit).toBe("kg");
+    expect(groups[0].sources.map((s) => s.displayText)).toEqual([
+      "500 g sugar",
+      "1 kg sugar",
+    ]);
   });
 
   test("planned: summed family plus an incompatible line", () => {
@@ -454,7 +458,8 @@ test.describe("postProcess family split", () => {
       { incompatibleUnits: "keep" },
     );
     expect(groups).toHaveLength(1);
-    expect(groups[0].displayText).toBe("500 g + 2 cups flour");
+    expect(groups[0].displayText).toBe("flour");
+    expect(groups[0].amount).toBeNull();
     expect(groups[0].sources.map((s) => s.recipeName)).toEqual([
       "Pancakes",
       "Bread",
@@ -489,7 +494,7 @@ test.describe("postProcess family split", () => {
       },
     );
     expect(groups).toHaveLength(1);
-    expect(groups[0].displayText).toBe("1 tsp + 1 pinch salt");
+    expect(groups[0].displayText).toBe("salt");
     expect(groups[0].amount).toBeNull();
   });
 
@@ -520,7 +525,7 @@ test.describe("postProcess family split", () => {
       },
     );
     expect(groups).toHaveLength(1);
-    expect(groups[0].displayText).toBe("200 g + 3 Peperoni");
+    expect(groups[0].displayText).toBe("Peperoni");
   });
 
   test("3 Peperoni + 1 Stück Peperoni → 4 Peperoni", () => {

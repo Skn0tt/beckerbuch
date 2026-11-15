@@ -14,11 +14,10 @@
  * - Shopping-list handoff (`split`, the default): one buyable line per
  *   unit family. `200 g flour` and `2 cups flour` become two rows,
  *   because Bring! needs a quantity you can actually purchase.
- * - Planned ingredients (`keep`): one row per ingredient, so you can see
- *   everything still spoken for. Amounts still sum inside a family
- *   (`300 g` + `300 g` → `600 g`); families that cannot be added stay
- *   on that same row as `200 g + 2 cups flour`, with each recipe's
- *   original line underneath. There is no single `amount`/`unit`.
+ * - Planned ingredients (`keep`): one row per ingredient. The title is
+ *   the item name only — the lines underneath already carry each
+ *   recipe's amount, including when those amounts cannot be added
+ *   (`200 g flour` and `2 cups flour` stay on the flour row).
  *
  * Embeddings are cached in the `ingredient_embeddings` table (see
  * {@link embedTexts}) so we don't re-pay/re-wait across recipes and
@@ -198,64 +197,24 @@ function bucketByFamily(
 }
 
 /**
- * Headline order when a planned-ingredients row spans families.
- * Weight, then volume, then spoons, then a count, then qualitative
- * and unknown units by their family key. Independent of input order
- * so the line does not flip when the database returns rows differently.
+ * One planned-ingredients row. The title is the item name; each
+ * recipe's amount stays on its source line. A single unit family
+ * still records the summed amount (unused by the title). Mixed
+ * families have no single amount.
  */
-function compareFamilies(a: string, b: string): number {
-  const rank = (family: string): number => {
-    if (family === "mass") return 0;
-    if (family === "volume") return 1;
-    if (family === "tsp_tbsp") return 2;
-    if (family === "count") return 3;
-    if (family.startsWith("q:")) return 4;
-    return 5;
-  };
-  const byRank = rank(a) - rank(b);
-  if (byRank !== 0) return byRank;
-  return a.localeCompare(b);
-}
-
-function formatQuantity(amount: string | null, unit: string | null): string {
-  return [amount, unit].filter((part) => part != null && part !== "").join(" ");
-}
-
-/**
- * One planned-ingredients row for a cluster whose units cannot be
- * added. Each family with a single line keeps that recipe's amount;
- * a family with several lines uses the same readable sum as the
- * shopping list. `amount` and `unit` stay null — there is no one
- * quantity.
- */
-function mixedFamilyGroup(
-  items: DedupInputItem[],
-  buckets: Map<string, DedupInputItem[]>,
-): DedupGroup {
-  const itemName = pickItemName(items);
-  const ordered = [...buckets.entries()].sort((a, b) =>
-    compareFamilies(a[0], b[0]),
-  );
-  const fragments: string[] = [];
-  for (const [, bucket] of ordered) {
-    const quantity =
-      bucket.length === 1
-        ? { amount: bucket[0].amount, unit: bucket[0].unit }
-        : sumCompatibleAmounts(
-            bucket.map((it) => ({ amount: it.amount, unit: it.unit })),
-          );
-    const text = formatQuantity(quantity.amount, quantity.unit);
-    if (text) fragments.push(text);
+function plannedGroup(items: DedupInputItem[]): DedupGroup {
+  const buckets = bucketByFamily(items);
+  if (buckets.size === 1) {
+    const group = mergedGroup(items);
+    return { ...group, displayText: group.item };
   }
-
+  const itemName = pickItemName(items);
   return {
     id: randomUUID(),
     item: itemName,
     unit: null,
     amount: null,
-    displayText: fragments.length
-      ? `${fragments.join(" + ")} ${itemName}`
-      : itemName,
+    displayText: itemName,
     sources: items.map(sourceOf),
   };
 }
@@ -304,15 +263,16 @@ export function postProcess(
       continue;
     }
 
-    // Bucket by unit family. Shopping list (`split`) emits one group
-    // per family. Planned ingredients (`keep`) leaves a mixed cluster
-    // as a single row.
-    const buckets = bucketByFamily(claimedItems);
-    if (keepIncompatible && buckets.size > 1) {
-      groups.push(mixedFamilyGroup(claimedItems, buckets));
+    // Planned ingredients: one row titled with the item name. Amounts
+    // live on the source lines, including when units cannot be added.
+    if (keepIncompatible) {
+      groups.push(plannedGroup(claimedItems));
       for (const it of claimedItems) seen.add(it.id);
       continue;
     }
+
+    // Shopping list: one buyable group per unit family.
+    const buckets = bucketByFamily(claimedItems);
 
     for (const bucket of buckets.values()) {
       if (bucket.length === 1) {

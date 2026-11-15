@@ -13,11 +13,11 @@
  *     stock** (finalised, not yet cooked), regardless of finalise batch — the
  *     same lane as the kitchen stock list. It's read-only (no manual edits),
  *     so it ignores the snapshot and just clusters the current in-stock
- *     ingredients by embedding similarity on the fly. Unlike the handoff,
- *     a cluster that mixes unit families stays one row (`200 g + 2 cups
- *     flour`) instead of splitting into separate buyable lines. Ordered
- *     A–Z by representative item name (handoff pins merges to the top for
- *     Split/override). See {@link loadCombinedList}.
+ *     ingredients by embedding similarity on the fly. A cluster stays one
+ *     row titled with the item name; each recipe's amount is on the line
+ *     below, even when the units cannot be added. Ordered A–Z by that
+ *     name (handoff pins merges to the top for Split/override). See
+ *     {@link loadCombinedList}.
  */
 import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "../db/client";
@@ -103,9 +103,9 @@ export async function computeCombinedList(
  * persisted dedup snapshot on the flat row — that snapshot exists only to
  * preserve manual edits on the handoff page. Here we cluster the current
  * in-stock ingredients by embedding similarity on the fly, then assembles
- * groups with `incompatibleUnits: "keep"` (see lib/dedup.ts): compatible
- * amounts still sum, but mass and cups of the same ingredient stay on one
- * row. Embeddings are cached (see lib/embeddings.ts), so this is a couple of
+ * groups with `incompatibleUnits: "keep"` (see lib/dedup.ts): the row title
+ * is the item name, and each recipe's amount stays on its source line.
+ * Embeddings are cached (see lib/embeddings.ts), so this is a couple of
  * reads plus in-memory clustering, and it never writes. On any embedding
  * failure `dedup` degrades to an all-singletons list.
  *
