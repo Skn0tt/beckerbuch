@@ -95,7 +95,7 @@ test.describe("generic recipe import", () => {
         expect(data.steps).toContain(recipe.stepMarker);
 
         // Cover photo imported.
-        expect(data.photo).toMatch(/^data:image\/[a-z0-9.+-]+;base64,.+/);
+        expect(data.photo).toBe(recipe.imageUrl);
         expect(data.note).toMatch(/photo argument/);
       } finally {
         await client.close();

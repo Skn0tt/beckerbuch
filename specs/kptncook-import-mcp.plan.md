@@ -25,7 +25,7 @@ The MCP `fetch_recipe` tool exposes the same kptncook import normalization to ex
     - expect: Ingredients equal `250 g Mehl`, `150 ml Milch`, and `2 Eier`.
     - expect: Steps are the three mocked instructions with `<timer>` expanded to `15 Min.`, `30–40 Min.`, and `bis zu 25 Min.`.
     - expect: Steps do not contain a `<timer>` placeholder.
-    - expect: Photo is a JPEG data URL.
+    - expect: Photo is the cover's https URL, with no API key.
     - expect: The note tells the client to pass that photo string as the `photo` argument.
 
 #### 1.2. works-with-a-bare-uid
@@ -50,11 +50,11 @@ The MCP `fetch_recipe` tool exposes the same kptncook import normalization to ex
     - expect: The tool result is not an error.
     - expect: A photo is returned.
     - expect: The note does not say the photo cannot be carried through, and it tells the caller to pass the photo argument.
-  3. Call `kochbuch_add_recipe` with the fetched fields, including that photo data URL.
+  3. Call `kochbuch_add_recipe` with the fetched fields, including that https photo URL.
     - expect: The tool result is not an error.
   4. Call `kochbuch_get_recipe` and fetch the photo URL.
     - expect: The photo URL contains `/r/<id>/photo`.
-    - expect: The response is `image/jpeg` and the bytes match the fetched photo.
+    - expect: The response is `image/jpeg` and the bytes match the cover image.
   5. Open the home page.
     - expect: An image named `Zimtschnecken` is visible.
     - expect: Its src points at `/recipes/<id>/photo`.

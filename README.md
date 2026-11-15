@@ -56,9 +56,9 @@ itself, and walk you through the consent screen (you'll need to be
 signed in to your flat first). After approval it can call:
 
 - `kochbuch_add_recipe` — name, baseQuantity, ingredients, steps,
-  optional sourceUrl, and a required `photo` string: a data URL (pass
-  `fetch_recipe`'s photo through) or an https URL. A call without one
-  is rejected.
+  optional sourceUrl, and a required `photo` string: `fetch_recipe`'s
+  https URL, passed through unchanged, or a data URL. A call without
+  one is rejected.
 - `kochbuch_search_recipes` — free-text search over the flat's collection
 - `kochbuch_get_recipe` — fetch one recipe by id
 - `kochbuch_edit_recipe` — patch name / quantities / ingredients / steps

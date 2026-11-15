@@ -66,7 +66,7 @@ const addRecipeInput = {
     ),
   sourceUrl: z.string().url().optional().describe("Where the recipe came from"),
   photo: photoParam.describe(
-    "Required. Pass fetch_recipe's photo through unchanged, or an https URL of the image.",
+    "Required. Pass fetch_recipe's https URL through unchanged, or a data URL.",
   ),
 };
 
@@ -445,7 +445,7 @@ async function handle(request: Request): Promise<Response> {
     {
       title: "Add a recipe",
       description:
-        "Add a new recipe to the authenticated user's flat. photo is required: a data URL or an https URL. Pass fetch_recipe's photo through unchanged. A call without a photo is rejected and nothing is saved. Returns the recipe id and a URL to view it.",
+        "Add a new recipe to the authenticated user's flat. photo is required: pass fetch_recipe's https URL through unchanged, or a data URL. A call without a photo is rejected and nothing is saved. Returns the recipe id and a URL to view it.",
       inputSchema: addRecipeInput,
     },
     async (args) => {
@@ -561,7 +561,7 @@ async function handle(request: Request): Promise<Response> {
     {
       title: "Fetch a recipe from a URL",
       description:
-        "Resolve a recipe into a normalized payload that can be passed to kochbuch_add_recipe. Accepts any recipe page URL that exposes schema.org JSON-LD metadata (most recipe sites and food blogs), as well as kptncook share URLs, uids (7-8 chars), or oids (24 hex chars). Does not store anything — the agent should review and call kochbuch_add_recipe to actually save it. When photo is a data URL, pass that string unchanged as kochbuch_add_recipe's photo. If photo is null, add still requires a data URL or an https URL. kptncook imports require KPTNCOOK_API_KEY to be configured server-side.",
+        "Resolve a recipe into a normalized payload that can be passed to kochbuch_add_recipe. Accepts any recipe page URL that exposes schema.org JSON-LD metadata (most recipe sites and food blogs), as well as kptncook share URLs, uids (7-8 chars), or oids (24 hex chars). Does not store anything — the agent should review and call kochbuch_add_recipe to actually save it. When photo is an https URL, pass that string unchanged as kochbuch_add_recipe's photo. If photo is null, add still requires a photo. kptncook imports require KPTNCOOK_API_KEY to be configured server-side.",
       inputSchema: {
         input: z
           .string()
@@ -574,7 +574,7 @@ async function handle(request: Request): Promise<Response> {
           .boolean()
           .default(true)
           .describe(
-            "Fetch the cover. When present, photo is a data URL to pass to kochbuch_add_recipe.",
+            "Include the cover. When present, photo is the cover's https URL.",
           ),
       },
     },
@@ -590,10 +590,8 @@ async function handle(request: Request): Promise<Response> {
         sourceUrl: r.sourceUrl,
         steps: r.steps,
         ingredients: r.ingredients,
-        photo: r.photo
-          ? `data:${r.photo.contentType.split(";")[0].trim().toLowerCase()};base64,${Buffer.from(r.photo.bytes).toString("base64")}`
-          : null,
-        note: r.photo
+        photo: r.photoUrl ?? null,
+        note: r.photoUrl
           ? "Pass these fields to kochbuch_add_recipe. Pass photo through unchanged as the photo argument so the cover is stored."
           : "No cover was found. kochbuch_add_recipe still requires a photo: a data URL or an https URL.",
       });

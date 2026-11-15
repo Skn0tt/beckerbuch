@@ -36,6 +36,44 @@ function getApiKey(): string | null {
   return key && key.length > 0 ? key : null;
 }
 
+/** https URL safe to hand to a client. Drops a kptncook API key if one is present. */
+export function publicHttpsPhotoUrl(raw: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:") return null;
+  parsed.searchParams.delete("kptnkey");
+  parsed.hash = "";
+  return parsed.toString();
+}
+
+/**
+ * kptncook image URLs need the API key to download. Add it only at fetch
+ * time so the key never appears in a tool result.
+ */
+export function authorizeKptncookPhotoUrl(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.hostname !== "mobile.kptncook.com" ||
+    !parsed.pathname.startsWith("/images/")
+  ) {
+    return url;
+  }
+  const key = getApiKey();
+  if (!key) return url;
+  parsed.searchParams.set("kptnkey", key);
+  return parsed.toString();
+}
+
 export type KptncookId = { type: "oid" | "uid"; value: string };
 
 /**
@@ -266,20 +304,20 @@ export function mapKptncookRecipe(raw: unknown): KptncookImport | null {
   };
 }
 
-function coverImageUrl(raw: unknown, apiKey: string): string | null {
+function coverImageHref(raw: unknown): string | null {
   if (!raw || typeof raw !== "object") return null;
   const list = (raw as Record<string, unknown>).imageList;
   if (!Array.isArray(list)) return null;
   // Prefer cover; fall back to the first image with a URL.
   const candidates = list.filter(
     (entry): entry is Record<string, unknown> =>
-      !!entry && typeof entry === "object" && typeof (entry as Record<string, unknown>).url === "string",
+      !!entry &&
+      typeof entry === "object" &&
+      typeof (entry as Record<string, unknown>).url === "string",
   );
   const cover = candidates.find((entry) => entry.type === "cover") ?? candidates[0];
   if (!cover) return null;
-  const url = cover.url as string;
-  const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}kptnkey=${encodeURIComponent(apiKey)}`;
+  return publicHttpsPhotoUrl(cover.url as string);
 }
 
 async function fetchKptncookPhoto(
@@ -405,9 +443,10 @@ export async function importKptncookRecipe(
   }
 
   if (includePhoto) {
-    const photoUrl = coverImageUrl(raw, apiKey);
+    const photoUrl = coverImageHref(raw);
     if (photoUrl) {
-      const photo = await fetchKptncookPhoto(photoUrl);
+      recipe.photoUrl = photoUrl;
+      const photo = await fetchKptncookPhoto(authorizeKptncookPhotoUrl(photoUrl));
       if (photo) recipe.photo = photo;
     }
   }

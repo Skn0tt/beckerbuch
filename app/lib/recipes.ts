@@ -8,6 +8,7 @@ import {
   storePhotoBytes,
   validatePhotoBytes,
 } from "../blobs";
+import { authorizeKptncookPhotoUrl } from "./kptncook";
 import { buildTsQuery, updateSearchVector } from "../search";
 
 type Tx = Parameters<
@@ -430,7 +431,7 @@ async function fetchPhotoFromUrl(
   const timeout = setTimeout(() => controller.abort(), PHOTO_FETCH_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetch(parsed, {
+    response = await fetch(authorizeKptncookPhotoUrl(parsed.toString()), {
       signal: controller.signal,
       redirect: "follow",
     });
