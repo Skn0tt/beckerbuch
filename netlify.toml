@@ -4,3 +4,14 @@
   # before merge. See TECH.md §12.
   command = "node scripts/migrate.mjs && npm run build"
   publish = "build/client"
+
+# Netlify Server runs on the same Node major as the build and requires 24+.
+[build.environment]
+  NODE_VERSION = "24"
+
+# Early-access regions are cmh (Ohio, the platform default) and fra.
+# Frankfurt is the region next to this household. If the Neon database
+# is in the US, switch this to "cmh": cross-region queries are the
+# reason edge functions were rejected. See TECH.md §2.
+[server]
+  region = "fra"

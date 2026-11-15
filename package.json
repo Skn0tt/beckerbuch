@@ -2,6 +2,12 @@
   "name": "kochbuch",
   "private": true,
   "type": "module",
+  "imports": {
+    "#server-build": {
+      "types": "./netlify/server/server-build-stub.ts",
+      "default": "./build/server/server-build.js"
+    }
+  },
   "scripts": {
     "test": "playwright test",
     "db:generate": "drizzle-kit generate",
@@ -20,6 +26,7 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@netlify/blobs": "^10.7.7",
     "@netlify/database": "^1.0.0",
+    "@netlify/server": "^0.1.6",
     "@react-router/node": "7.15.1",
     "@react-router/serve": "7.15.1",
     "argon2": "^0.44.0",
@@ -38,7 +45,6 @@
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@netlify/vite-plugin": "^2.12.9",
-    "@netlify/vite-plugin-react-router": "^3.1.1",
     "@playwright/test": "^1.60.0",
     "@react-router/dev": "7.15.1",
     "@testcontainers/postgresql": "^12.0.1",
