@@ -433,10 +433,17 @@ function IngredientsLane() {
               value={query}
               size="xs"
               tabIndex={filterOpen ? 0 : -1}
+              aria-busy={searchPending || undefined}
               onChange={(e) => setQuery(e.currentTarget.value)}
               onBlur={() => {
                 if (query.trim() === "") setFilterOpen(false);
               }}
+              rightSectionPointerEvents="none"
+              rightSection={
+                searchPending ? (
+                  <Loader size="xs" aria-label="Filtering planned ingredients" />
+                ) : undefined
+              }
               styles={{ root: { width: "100%" } }}
             />
           </div>
@@ -447,10 +454,6 @@ function IngredientsLane() {
         <Text c="dimmed">
           No planned ingredients — finalise the draft to start cooking.
         </Text>
-      ) : searchPending ? (
-        <Center py="md">
-          <Loader size="sm" aria-label="Filtering planned ingredients" />
-        </Center>
       ) : groups.length === 0 ? (
         <Text c="dimmed" data-testid="ingredients-filter-empty">
           No matches

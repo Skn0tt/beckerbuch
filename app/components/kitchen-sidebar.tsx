@@ -4,7 +4,6 @@ import {
   Avatar,
   Button,
   Card,
-  Center,
   Group,
   List,
   Loader,
@@ -890,33 +889,37 @@ function PlannedIngredientsPanel() {
     snapshotFresh,
   } = usePlannedIngredientSearch();
 
-  if (loading) {
-    return (
-      <Center py="xl">
-        <Loader aria-label="Computing planned ingredients" />
-      </Center>
-    );
-  }
+  const busy = loading || searchPending;
 
   return (
     <Stack gap="sm">
-      {!stockEmpty && (
+      {(loading || !stockEmpty) && (
         <TextInput
           type="search"
           placeholder="Search ingredients…"
           aria-label="Search planned ingredients"
           value={query}
+          aria-busy={busy || undefined}
           onChange={(e) => setQuery(e.currentTarget.value)}
+          rightSectionPointerEvents="none"
+          rightSection={
+            busy ? (
+              <Loader
+                size="xs"
+                aria-label={
+                  loading
+                    ? "Computing planned ingredients"
+                    : "Searching planned ingredients"
+                }
+              />
+            ) : undefined
+          }
         />
       )}
-      {stockEmpty ? (
+      {loading ? null : stockEmpty ? (
         <Text size="sm" c="dimmed">
           No planned ingredients — finalise the draft to start cooking.
         </Text>
-      ) : searchPending ? (
-        <Center py="md">
-          <Loader size="sm" aria-label="Searching planned ingredients" />
-        </Center>
       ) : groups.length === 0 ? (
         <Text size="sm" c="dimmed" data-testid="ingredients-search-empty">
           No matches

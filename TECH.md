@@ -521,8 +521,10 @@ On mobile (`/kitchen?lane=ingredients`) a tucked-away filter
 (icon → expands left over the heading on the same row) debounces the
 query and calls `/kitchen/combined/search` — **text** match first
 (FTS + trigram), then **meaning** (embedding cosine) only if text is
-empty. The desktop sidebar modal shows the same list with a search
-field at the top of the dialog, hitting that same endpoint.
+empty. The rows stay put while a query is in flight; the spinner
+sits in the field. The desktop sidebar modal shows the same list
+with a search field at the top of the dialog, hitting that same
+endpoint the same way.
 Writes (`split`, `unsplit`, `regenerate`) are public and keyed on
 the flat UUID, consistent with the rest of the handoff page's
 trust model.

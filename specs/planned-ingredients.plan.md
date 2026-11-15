@@ -160,6 +160,8 @@ everything currently in stock.
     - expect: A `Search planned ingredients` field is visible above the rows.
     - expect: Both the tomato and apple rows are listed.
   3. Search for `apple`.
-    - expect: Only the apple row remains.
+    - expect: While the request is in flight the existing rows stay and a
+      `Searching planned ingredients` spinner is inside the search field.
+    - expect: Only the apple row remains once the request settles.
     - expect: Searching for a non-match shows `No matches`.
     - expect: Clearing the search restores both rows.

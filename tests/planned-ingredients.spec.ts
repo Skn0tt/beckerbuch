@@ -339,7 +339,21 @@ test("desktop modal: search narrows planned ingredients and clears back to full"
   const rows = dialog.getByTestId("combined-row");
   await expect(rows).toHaveCount(2);
 
+  let releaseSearch: () => void = () => {};
+  const searchHeld = new Promise<void>((resolve) => {
+    releaseSearch = resolve;
+  });
+  await page.route("**/kitchen/combined/search.data**", async (route) => {
+    await searchHeld;
+    await route.continue();
+  });
+
   await search.fill("apple");
+  await expect(dialog.getByLabel("Searching planned ingredients")).toBeVisible();
+  await expect(rows).toHaveCount(2);
+  await expect(dialog.getByText("600 g tomato")).toBeVisible();
+  releaseSearch();
+
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("apple");
   await expect(dialog.getByText("tomato")).toHaveCount(0);
