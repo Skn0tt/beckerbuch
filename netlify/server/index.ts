@@ -1,11 +1,5 @@
 import { createRequestHandler, type ServerBuild } from "react-router";
-import {
-  onHealthCheck,
-  onShutdown,
-  onStart,
-  type Config,
-} from "@netlify/server";
-import { closePool, getPool, peekPool } from "../../app/db/pool";
+import type { Config } from "@netlify/server";
 import * as serverBuildNs from "#server-build";
 
 // `@netlify/vite-plugin-react-router` publishes a function on `/*`.
@@ -19,29 +13,6 @@ const handleRequest = createRequestHandler(
 );
 
 const startedAt = new Date().toISOString();
-
-onStart(async () => {
-  await getPool().query("select 1");
-});
-
-onShutdown(async ({ drained }) => {
-  await drained;
-  await closePool();
-});
-
-onHealthCheck(() => {
-  const pool = peekPool();
-  if (!pool) return;
-  const max = pool.options.max || 10;
-  const inUse = pool.totalCount - pool.idleCount;
-  return {
-    utilization: { db_pool: inUse / max },
-    namedMetrics: {
-      db_pool_waiting: pool.waitingCount,
-      db_pool_total: pool.totalCount,
-    },
-  };
-});
 
 export default async function handler(request: Request) {
   const response = await handleRequest(request);

@@ -1,16 +1,13 @@
+import { onHealthCheck, onShutdown, onStart } from "@netlify/server";
 import { Pool } from "pg";
 import { getDatabaseUrl } from "./url";
 
-// The Netlify Server entry and the React Router server build are
-// separate module graphs in one process. A module-level variable
-// would give each graph its own pool; globalThis is the one they share.
-const POOL_KEY = "cookbook.pgPool";
+// One module, one pool. Vite inlines this file into the server build,
+// so the Netlify entry must not import it: that would be a second copy.
+// Hooks are registered here, while that build is loaded, and close over
+// this binding.
 
-type Host = typeof globalThis & { [POOL_KEY]?: Pool };
-
-function host(): Host {
-  return globalThis as Host;
-}
+let pool: Pool | null = null;
 
 /**
  * Idle clients are closed at 20s. Netlify Server drops an outbound
@@ -18,23 +15,35 @@ function host(): Host {
  * keepalive does not count, so the pool has to retire them first.
  */
 export function getPool(): Pool {
-  const current = host()[POOL_KEY];
-  if (current) return current;
-  const pool = new Pool({
+  if (pool) return pool;
+  pool = new Pool({
     connectionString: getDatabaseUrl(),
     idleTimeoutMillis: 20_000,
   });
-  host()[POOL_KEY] = pool;
   return pool;
 }
 
-export function peekPool(): Pool | undefined {
-  return host()[POOL_KEY];
-}
+onStart(async () => {
+  await getPool().query("select 1");
+});
 
-export async function closePool(): Promise<void> {
-  const pool = peekPool();
+onShutdown(async ({ drained }) => {
+  await drained;
   if (!pool) return;
-  delete host()[POOL_KEY];
-  await pool.end();
-}
+  const current = pool;
+  pool = null;
+  await current.end();
+});
+
+onHealthCheck(() => {
+  if (!pool) return;
+  const max = pool.options.max || 10;
+  const inUse = pool.totalCount - pool.idleCount;
+  return {
+    utilization: { db_pool: inUse / max },
+    namedMetrics: {
+      db_pool_waiting: pool.waitingCount,
+      db_pool_total: pool.totalCount,
+    },
+  };
+});
