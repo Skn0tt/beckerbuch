@@ -8,7 +8,7 @@ This is a deliberately different data source from the handoff / shopping page (`
 
 A merged row is titled with the ingredient name only. Each recipe's amount stays on the source line underneath, whether or not those amounts can be added (`300 g tomato` and `300 g tomatos` under `tomato`; `200 g flour` and `2 cups flour` under `flour`). The handoff page still sums compatible units into a buyable headline and splits incompatible units into separate rows.
 
-The kitchen surfaces (mobile `/kitchen?lane=ingredients` tab and the desktop sidebar "Planned ingredients" modal) render the combined list **read-only** — a plain summary of what is still spoken for, with no split / unsplit / regenerate affordances (those live only on the handoff page). Both surfaces load the combined list on demand from a dedicated resource route (`/kitchen/combined`, fetched via `useFetcher().load()` when the tab is opened / the modal opens), showing a spinner while it resolves. That route is never part of a page's loader chain and is never reached from a `<Link>`, so it is never prefetched on hover.
+The kitchen surfaces (mobile `/kitchen?lane=ingredients` tab and the desktop sidebar "Planned ingredients" modal) render the combined list **read-only** — a plain summary of what is still spoken for, with no split / unsplit / regenerate affordances (those live only on the handoff page). Both surfaces load the combined list on demand from a dedicated resource route (`/kitchen/combined`, fetched via `useFetcher().load()` when the tab is opened / the modal opens), showing a spinner while it resolves. That route is never part of a page's loader chain and is never reached from a `<Link>`, so it is never prefetched on hover. Both surfaces also search through `/kitchen/combined/search`: mobile expands a filter over the heading, and the desktop modal has a search field at the top of the dialog.
 
 Because the view is read-only it holds **no snapshot and performs no writes**. Every read clusters the current in-stock ingredients by embedding similarity on the fly (embeddings are cached in `ingredient_embeddings`, so this is a couple of reads plus in-memory clustering — no LLM call and no snapshot to go stale). This means re-merging happens automatically: cook a recipe and the next read simply clusters over the smaller in-stock set. Clustering is best-effort — on any embedding failure the surface falls back to an unmerged all-singletons list. Finalise and the handoff page's Regenerate still write the latest-batch snapshot eagerly as before; that snapshot no longer feeds the Ingredients lane at all.
 
@@ -163,3 +163,20 @@ everything currently in stock.
      `/kitchen?lane=ingredients`.
   2. Filter to `Avcad` (not an FTS prefix of `avocado`).
     - expect: Only the avocado row remains (text stage via trigram).
+
+#### 1.12. desktop-modal-search-narrows-the-list
+
+**File:** `tests/planned-ingredients.spec.ts`
+
+**Steps:**
+  1. Log in at a desktop viewport, finalise recipes that yield a merged
+     tomato row and an `apple` singleton, and open the collection.
+  2. Open the sidebar **Ingredients** button (Planned ingredients modal).
+    - expect: A `Search planned ingredients` field is visible above the rows.
+    - expect: Both the tomato and apple rows are listed.
+  3. Search for `apple`.
+    - expect: While the request is in flight the existing rows stay and a
+      `Searching planned ingredients` spinner is inside the search field.
+    - expect: Only the apple row remains once the request settles.
+    - expect: Searching for a non-match shows `No matches`.
+    - expect: Clearing the search restores both rows.

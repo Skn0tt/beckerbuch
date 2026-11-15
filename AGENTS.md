@@ -161,8 +161,8 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 ## Stack at a glance
 
 React Router 7 + TypeScript, Mantine, Drizzle + `pg`, argon2id,
-Postgres 16 (Testcontainers in tests, Neon in prod), Netlify Functions,
-Playwright E2E.
+Postgres 16 (Testcontainers in tests, Neon in prod), Netlify Server
+(Node 24), Playwright E2E.
 
 ## Cursor Cloud specific instructions
 

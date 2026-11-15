@@ -2,10 +2,17 @@ import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import type { db as dbFactory } from "../db/client";
 import { ingredients, recipes } from "../db/schema";
-import { deletePhoto, storePhotoBytes, validatePhotoBytes } from "../blobs";
+import {
+  PHOTO_MAX_BYTES,
+  deletePhoto,
+  storePhotoBytes,
+  validatePhotoBytes,
+} from "../blobs";
 import { buildTsQuery, updateSearchVector } from "../search";
 
-type Tx = Parameters<Parameters<ReturnType<typeof dbFactory>["transaction"]>[0]>[0];
+type Tx = Parameters<
+  Parameters<ReturnType<typeof dbFactory>["transaction"]>[0]
+>[0];
 
 /** An ingredient row destined for the DB, optionally carrying an existing id. */
 export type SyncIngredientRow = {
@@ -45,7 +52,9 @@ export async function syncIngredients(
   const existingIds = new Set(existing.map((r) => r.id));
 
   const submittedIds = new Set(
-    rows.map((r) => r.id).filter((id): id is string => !!id && existingIds.has(id)),
+    rows
+      .map((r) => r.id)
+      .filter((id): id is string => !!id && existingIds.has(id)),
   );
 
   const toDelete = [...existingIds].filter((id) => !submittedIds.has(id));
@@ -115,7 +124,9 @@ export type CreateRecipeInput = {
   photo?: { bytes: Uint8Array; contentType: string };
 };
 
-export async function createRecipe(input: CreateRecipeInput): Promise<{ id: string }> {
+export async function createRecipe(
+  input: CreateRecipeInput,
+): Promise<{ id: string }> {
   const recipeId = await db().transaction(async (tx) => {
     const [row] = await tx
       .insert(recipes)
@@ -171,7 +182,9 @@ export async function searchRecipes(input: {
 }): Promise<RecipeListItem[]> {
   const tsq = buildTsQuery(input.query.trim());
   const limit =
-    input.limit === undefined ? undefined : Math.max(1, Math.min(input.limit, 50));
+    input.limit === undefined
+      ? undefined
+      : Math.max(1, Math.min(input.limit, 50));
 
   if (tsq) {
     const rankExpr = sql<number>`ts_rank_cd(${recipes.searchVector}, to_tsquery('simple', ${tsq}))`;
@@ -266,7 +279,10 @@ export async function editRecipe(input: {
     throw new Error("photo and removePhoto cannot be used together.");
   }
 
-  const current = await getRecipeForFlat({ flatId: input.flatId, id: input.id });
+  const current = await getRecipeForFlat({
+    flatId: input.flatId,
+    id: input.id,
+  });
   if (!current) return null;
 
   let nextPhotoKey: string | null | undefined = undefined;
@@ -303,7 +319,9 @@ export async function editRecipe(input: {
         ...(input.patch.baseQuantity !== undefined
           ? { baseQuantity: input.patch.baseQuantity }
           : {}),
-        ...(input.patch.steps !== undefined ? { steps: input.patch.steps } : {}),
+        ...(input.patch.steps !== undefined
+          ? { steps: input.patch.steps }
+          : {}),
         ...(sourceUrlChanged
           ? {
               sourceUrl: input.patch.sourceUrl ?? null,
@@ -336,10 +354,42 @@ export type FetchPhotoResult =
   | { ok: false; error: string };
 
 /**
- * Fetch a remote image URL with a hard timeout and size cap, then run
- * it through the shared validator. Used by the MCP add_recipe tool.
+ * Decode a cover the caller already has — the `photo` object
+ * `fetch_recipe` returns — and run it through the same size and MIME
+ * checks as a fetched URL. The bytes stay as bytes; nothing is re-hosted.
  */
-export async function fetchPhotoFromUrl(url: string): Promise<FetchPhotoResult> {
+export function photoFromBase64(
+  contentType: string,
+  base64: string,
+): FetchPhotoResult {
+  const compact = base64.replace(/\s/g, "");
+  if (!compact) return { ok: false, error: "Photo file is empty." };
+  // Standard base64 only. A data-URL prefix or prose is not a photo.
+  if (compact.length % 4 === 1 || !/^[A-Za-z0-9+/]+={0,2}$/.test(compact)) {
+    return { ok: false, error: "Photo base64 is not valid." };
+  }
+  const maxBase64Len = Math.ceil(PHOTO_MAX_BYTES / 3) * 4;
+  if (compact.length > maxBase64Len) {
+    return {
+      ok: false,
+      error: `Photo is too large (max ${PHOTO_MAX_BYTES / 1024 / 1024} MB).`,
+    };
+  }
+
+  const bytes = new Uint8Array(Buffer.from(compact, "base64"));
+  const v = validatePhotoBytes(bytes.byteLength, contentType.trim());
+  if (!v.ok) return { ok: false, error: v.error };
+  return { ok: true, bytes, contentType: v.contentType };
+}
+
+/**
+ * Fetch a remote image URL with a hard timeout and size cap, then run
+ * it through the shared validator. Used when an MCP client has a public
+ * image URL and not the bytes themselves.
+ */
+export async function fetchPhotoFromUrl(
+  url: string,
+): Promise<FetchPhotoResult> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -354,7 +404,10 @@ export async function fetchPhotoFromUrl(url: string): Promise<FetchPhotoResult> 
   const timeout = setTimeout(() => controller.abort(), PHOTO_FETCH_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetch(parsed, { signal: controller.signal, redirect: "follow" });
+    response = await fetch(parsed, {
+      signal: controller.signal,
+      redirect: "follow",
+    });
   } catch (err) {
     clearTimeout(timeout);
     const msg = err instanceof Error ? err.message : "fetch failed";

@@ -345,6 +345,61 @@ test("ingredients tab: empty FTS falls back to embedding synonyms", async ({
   await expect(page.getByText("apple")).toHaveCount(0);
 });
 
+test("desktop modal: search narrows planned ingredients and clears back to full", async ({
+  page,
+  flat,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await login(page, flat.user);
+
+  await createRecipeWithIngredient(page, "Tomato pasta", "300", "g", "tomato");
+  await createRecipeWithIngredient(page, "Tomato soup", "300", "g", "tomatos");
+  await createRecipeWithIngredient(page, "Fruit salad", "2", "", "apple");
+
+  await page.goto("/kitchen");
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(`/h/${flat.id}`);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Ingredients" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Planned ingredients" }),
+  ).toBeVisible();
+
+  const dialog = page.getByRole("dialog", { name: "Planned ingredients" });
+  const search = dialog.getByLabel("Search planned ingredients");
+  await expect(search).toBeVisible();
+  const rows = dialog.getByTestId("combined-row");
+  await expect(rows).toHaveCount(2);
+
+  let releaseSearch: () => void = () => {};
+  const searchHeld = new Promise<void>((resolve) => {
+    releaseSearch = resolve;
+  });
+  await page.route("**/kitchen/combined/search.data**", async (route) => {
+    await searchHeld;
+    await route.continue();
+  });
+
+  await search.fill("apple");
+  await expect(dialog.getByLabel("Searching planned ingredients")).toBeVisible();
+  await expect(rows).toHaveCount(2);
+  await expect(dialog.getByText("tomato", { exact: true })).toBeVisible();
+  releaseSearch();
+
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("apple");
+  await expect(dialog.getByText("tomato")).toHaveCount(0);
+
+  await search.fill("nope");
+  await expect(dialog.getByTestId("ingredients-search-empty")).toBeVisible();
+  await expect(rows).toHaveCount(0);
+
+  await search.fill("");
+  await expect(rows).toHaveCount(2);
+});
+
 test("ingredients tab: trigram fallback catches typos", async ({
   page,
   flat,
