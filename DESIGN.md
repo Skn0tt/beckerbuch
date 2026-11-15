@@ -72,7 +72,7 @@ Each recipe holds:
 - **Source URL** — where we got it (blog, video, etc.).
 - **Photo** — one image. Optional in the form. A recipe added through
   MCP must include one `photo`: the cover's https URL, a data URL, or
-  a file the chat app attached (ChatGPT, Claude, or Grok).
+  a ChatGPT file `{download_url, file_id}`.
 
 Recipes are owned by the flat. Anyone in the flat can create, edit, and
 delete them. There is no per-recipe ownership in v1.
@@ -98,7 +98,7 @@ before pre-filling the form. A `fetch_recipe` MCP
 tool exposes the same import path (both sources) for agents. Saving
 that import goes through `kochbuch_add_recipe`, which requires a
 `photo`: the https URL `fetch_recipe` returns, a data URL when the
-import had no image, or a file the chat app attached.
+import had no image, or a ChatGPT file `{download_url, file_id}`.
 `kochbuch_edit_recipe` takes the same value when replacing a cover.
 Fetching
 arbitrary user-supplied URLs is guarded against SSRF (http(s) only;

@@ -352,7 +352,7 @@ test.describe("MCP server", () => {
     ).toBeVisible();
   });
 
-  test("add_recipe stores a photo passed as a host file", async ({
+  test("add_recipe stores a photo passed as a ChatGPT file", async ({
     page,
     flat,
     mocks,
@@ -365,20 +365,8 @@ test.describe("MCP server", () => {
     );
     await mockHttpsPhoto(
       mocks,
-      "https://photos.example/claude.png",
-      TINY_PNG,
-      "image/png",
-    );
-    await mockHttpsPhoto(
-      mocks,
-      "https://photos.example/grok.png",
-      TINY_PNG,
-      "image/png",
-    );
-    await mockHttpsPhoto(
-      mocks,
-      "https://photos.example/grok-obj.png",
-      TINY_PNG,
+      "https://photos.example/openai-edit.png",
+      RED_PNG,
       "image/png",
     );
     await login(page, flat.user);
@@ -389,60 +377,25 @@ test.describe("MCP server", () => {
     const listed = await client.listTools();
     for (const name of ["kochbuch_add_recipe", "kochbuch_edit_recipe"]) {
       const tool = listed.tools.find((entry) => entry.name === name);
-      expect(tool?._meta).toMatchObject({
-        "openai/fileParams": ["photo"],
-        "anthropic/fileInputs": ["photo"],
-        "xai/fileParams": ["photo"],
-      });
+      expect(tool?._meta).toEqual({ "openai/fileParams": ["photo"] });
     }
 
-    async function storedPng(name: string, photo: unknown) {
-      const callResult = await client.callTool({
-        name: "kochbuch_add_recipe",
-        arguments: {
-          name,
-          baseQuantity: 1,
-          ingredients: [{ item: "water" }],
-          photo,
+    const callResult = await client.callTool({
+      name: "kochbuch_add_recipe",
+      arguments: {
+        name: "OpenAI File",
+        baseQuantity: 1,
+        ingredients: [{ item: "water" }],
+        photo: {
+          download_url: "https://photos.example/openai.png",
+          file_id: "file_openai",
+          mime_type: "image/png",
+          file_name: "cover.png",
         },
-      });
-      expect(callResult.isError, textFromToolResult(callResult)).toBeFalsy();
-      const id = recipeRefFromToolResult(callResult).id;
-      const got = await client.callTool({
-        name: "kochbuch_get_recipe",
-        arguments: { id },
-      });
-      const photoUrl = jsonFromToolResult<{ photoUrl: string | null }>(got)
-        .photoUrl;
-      expect(photoUrl).toContain(`/r/${id}/photo`);
-      const img = await page.request.get(photoUrl!);
-      expect(img.headers()["content-type"]).toContain("image/png");
-      expect(Buffer.from(await img.body()).equals(TINY_PNG)).toBe(true);
-      return id;
-    }
-
-    const openaiId = await storedPng("OpenAI File", {
-      download_url: "https://photos.example/openai.png",
-      file_id: "file_openai",
-      mime_type: "image/png",
-      file_name: "cover.png",
-    });
-    await storedPng("Claude URL", {
-      source: { type: "url", url: "https://photos.example/claude.png" },
-    });
-    await storedPng("Claude Bytes", {
-      source: {
-        type: "base64",
-        media_type: "image/png",
-        data: TINY_PNG.toString("base64"),
       },
     });
-    await storedPng("Grok URL", {
-      image_url: "https://photos.example/grok.png",
-    });
-    await storedPng("Grok Object", {
-      image_url: { url: "https://photos.example/grok-obj.png" },
-    });
+    expect(callResult.isError, textFromToolResult(callResult)).toBeFalsy();
+    const id = recipeRefFromToolResult(callResult).id;
 
     const missing = await client.callTool({
       name: "kochbuch_add_recipe",
@@ -454,24 +407,29 @@ test.describe("MCP server", () => {
       },
     });
     expect(missing.isError).toBe(true);
-    expect(textFromToolResult(missing)).toBe(
-      "photo file needs an https URL or image bytes.",
-    );
 
     const edited = await client.callTool({
       name: "kochbuch_edit_recipe",
       arguments: {
-        id: openaiId,
+        id,
         photo: {
-          source: {
-            type: "base64",
-            media_type: "image/png",
-            data: TINY_PNG.toString("base64"),
-          },
+          download_url: "https://photos.example/openai-edit.png",
+          file_id: "file_edit",
         },
       },
     });
     expect(edited.isError, textFromToolResult(edited)).toBeFalsy();
+
+    const got = await client.callTool({
+      name: "kochbuch_get_recipe",
+      arguments: { id },
+    });
+    const photoUrl = jsonFromToolResult<{ photoUrl: string | null }>(got)
+      .photoUrl;
+    expect(photoUrl).toContain(`/r/${id}/photo`);
+    const img = await page.request.get(photoUrl!);
+    expect(img.headers()["content-type"]).toContain("image/png");
+    expect(Buffer.from(await img.body()).equals(RED_PNG)).toBe(true);
     await client.close();
 
     await page.goto("/");

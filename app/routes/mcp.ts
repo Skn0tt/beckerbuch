@@ -43,43 +43,27 @@ const photoString = z
   .min(1)
   .describe("An https URL, or a data URL (data:image/jpeg;base64,...).");
 
-const hostPhotoFile = z
+const chatGptPhotoFile = z
   .object({
-    download_url: z.string().optional(),
-    file_id: z.string().optional(),
+    download_url: z.string().trim().min(1),
+    file_id: z.string().trim().min(1),
     mime_type: z.string().optional(),
     file_name: z.string().optional(),
-    url: z.string().optional(),
-    image_url: z
-      .union([z.string(), z.object({ url: z.string() })])
-      .optional(),
-    media_type: z.string().optional(),
-    mimeType: z.string().optional(),
-    data: z.string().optional(),
-    source: z
-      .object({
-        type: z.string().optional(),
-        url: z.string().optional(),
-        media_type: z.string().optional(),
-        data: z.string().optional(),
-      })
-      .optional(),
   })
+  .strict()
   .describe(
-    "A file the chat attached. ChatGPT sends download_url and file_id. Claude sends source. Grok sends image_url.",
+    "A file ChatGPT attached. ChatGPT fills download_url and file_id.",
   );
 
 const photoParam = z
-  .union([photoString, hostPhotoFile])
+  .union([photoString, chatGptPhotoFile])
   .describe(
-    "Required. Pass fetch_recipe's https URL through unchanged, a data URL, or a file the chat attached.",
+    "Required. Pass fetch_recipe's https URL through unchanged, a data URL, or a ChatGPT file {download_url, file_id}.",
   );
 
-/** Hosts that attach a chat file fill `photo` instead of the model copying bytes. */
+/** ChatGPT fills `photo` from an attached file instead of the model copying bytes. */
 const photoFileMeta = {
   "openai/fileParams": ["photo"],
-  "anthropic/fileInputs": ["photo"],
-  "xai/fileParams": ["photo"],
 };
 
 const addRecipeInput = {
@@ -481,7 +465,7 @@ async function handle(request: Request): Promise<Response> {
     {
       title: "Add a recipe",
       description:
-        "Add a new recipe to the authenticated user's flat. photo is required: pass fetch_recipe's https URL through unchanged, a data URL, or a file the chat attached (ChatGPT download_url, Claude source, or Grok image_url). A call without a photo is rejected and nothing is saved. Returns the recipe id and a URL to view it.",
+        "Add a new recipe to the authenticated user's flat. photo is required: pass fetch_recipe's https URL through unchanged, a data URL, or a ChatGPT file {download_url, file_id}. A call without a photo is rejected and nothing is saved. Returns the recipe id and a URL to view it.",
       inputSchema: addRecipeInput,
       _meta: photoFileMeta,
     },
@@ -558,7 +542,7 @@ async function handle(request: Request): Promise<Response> {
     {
       title: "Edit a recipe",
       description:
-        "Patch fields on an existing recipe in the authenticated user's flat. Returns the recipe id and a URL to view it. Replace the cover with photo (an https URL, a data URL, or a file the chat attached). Pass removePhoto to clear it. Use only one of those.",
+        "Patch fields on an existing recipe in the authenticated user's flat. Returns the recipe id and a URL to view it. Replace the cover with photo (an https URL, a data URL, or a ChatGPT file {download_url, file_id}). Pass removePhoto to clear it. Use only one of those.",
       inputSchema: editRecipeInput,
       _meta: photoFileMeta,
     },
