@@ -26,7 +26,7 @@ The MCP `fetch_recipe` tool exposes the same kptncook import normalization to ex
     - expect: Steps are the three mocked instructions with `<timer>` expanded to `15 Min.`, `30–40 Min.`, and `bis zu 25 Min.`.
     - expect: Steps do not contain a `<timer>` placeholder.
     - expect: A JPEG photo is returned with non-empty base64 data.
-    - expect: The note tells the client to pass that photo back as `photoSource` `bytes`.
+    - expect: The note tells the client to pass that photo object as the `photo` argument.
 
 #### 1.2. works-with-a-bare-uid
 
@@ -40,7 +40,26 @@ The MCP `fetch_recipe` tool exposes the same kptncook import normalization to ex
     - expect: No photo is returned.
     - expect: The note says a photo is still required.
 
-#### 1.3. returns-an-error-result-for-an-unparseable-input
+#### 1.3. add-recipe-stores-the-cover-fetch-recipe-already-downloaded
+
+**File:** `tests/kptncook-import-mcp.spec.ts`
+
+**Steps:**
+  1. With kptncook mocks enabled, log in, approve OAuth, and connect an MCP client.
+  2. Call `fetch_recipe` with the mocked kptncook share URL.
+    - expect: The tool result is not an error.
+    - expect: A photo is returned.
+    - expect: The note does not say the photo cannot be carried through, and it tells the caller to pass the photo argument.
+  3. Call `kochbuch_add_recipe` with the fetched fields, including that photo object.
+    - expect: The tool result is not an error.
+  4. Call `kochbuch_get_recipe` and fetch the photo URL.
+    - expect: The photo URL contains `/r/<id>/photo`.
+    - expect: The response is `image/jpeg` and the bytes match the fetched photo.
+  5. Open the home page.
+    - expect: An image named `Zimtschnecken` is visible.
+    - expect: Its src points at `/recipes/<id>/photo`.
+
+#### 1.4. returns-an-error-result-for-an-unparseable-input
 
 **File:** `tests/kptncook-import-mcp.spec.ts`
 

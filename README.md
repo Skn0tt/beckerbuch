@@ -56,13 +56,14 @@ itself, and walk you through the consent screen (you'll need to be
 signed in to your flat first). After approval it can call:
 
 - `kochbuch_add_recipe` — name, baseQuantity, ingredients, steps,
-  optional sourceUrl, and a required `photoSource`: `bytes` (pass
-  `photoBase64` + `photoContentType`, including the cover from
-  `fetch_recipe`) or `url` (server fetches `photoUrl`). A call with
-  no `photoSource` is rejected.
+  optional sourceUrl, and a required photo: `photo`
+  (`{ contentType, base64 }`, the object `fetch_recipe` returns) or
+  `photoUrl` (server fetches a public image). A call with neither is
+  rejected.
 - `kochbuch_search_recipes` — free-text search over the flat's collection
 - `kochbuch_get_recipe` — fetch one recipe by id
 - `kochbuch_edit_recipe` — patch name / quantities / ingredients / steps
+  / photo (same bytes object, or photoUrl, or removePhoto)
 - `kochbuch_get_plan` — current Draft + In stock entries and household
   members (cook roster)
 - `kochbuch_update_plan` — mutate the plan (add/remove draft, portions,
@@ -73,5 +74,5 @@ signed in to your flat first). After approval it can call:
   recipe names are denormalized onto `cooked` (cooked history only — not
   the live plan)
 - `fetch_recipe` — resolve a URL / kptncook id into a normalized payload
-  (does not store; pass the result to `kochbuch_add_recipe` to save,
-  including the photo bytes when one is returned)
+  (does not store; pass the result, including `photo`, to
+  `kochbuch_add_recipe` to save the recipe and its cover)

@@ -1,12 +1,23 @@
 /**
- * Embedding-based deduplication of shopping-list ingredients across
- * recipes (issues #7, #63).
+ * Embedding-based deduplication of ingredient lines across recipes
+ * (issues #7, #63, #80).
  *
  * We embed each ingredient's *item* text, cluster the items by cosine
  * similarity, and treat each cluster as a set of lines referring to the
  * same ingredient. All unit-compat checking, amount arithmetic, and
  * display formatting happens in the shared {@link postProcess} below,
  * so clustering's only job is producing the groupings.
+ *
+ * Two surfaces share that clustering and then assemble groups differently
+ * ({@link DedupOptions.incompatibleUnits}):
+ *
+ * - Shopping-list handoff (`split`, the default): one buyable line per
+ *   unit family. `200 g flour` and `2 cups flour` become two rows,
+ *   because Bring! needs a quantity you can actually purchase.
+ * - Planned ingredients (`keep`): one row per ingredient. The title is
+ *   the item name only — the lines underneath already carry each
+ *   recipe's amount, including when those amounts cannot be added
+ *   (`200 g flour` and `2 cups flour` stay on the flour row).
  *
  * Embeddings are cached in the `ingredient_embeddings` table (see
  * {@link embedTexts}) so we don't re-pay/re-wait across recipes and
@@ -36,6 +47,18 @@ export type DedupInput = {
 /** Minimal contract fed into {@link postProcess}: which ids merge. */
 export type RawMerges = {
   merges: { ids: string[] }[];
+};
+
+/**
+ * How a cluster that mixes unit families is turned into groups.
+ *
+ * `split` is the shopping list. `keep` is the planned-ingredients view.
+ * See the module comment.
+ */
+export type IncompatibleUnits = "split" | "keep";
+
+export type DedupOptions = {
+  incompatibleUnits?: IncompatibleUnits;
 };
 
 export type DedupResult = {
@@ -112,20 +135,26 @@ function pickItemName(sources: DedupInputItem[]): string {
 // Group construction.
 // ---------------------------------------------------------------------------
 
+function sourceOf(item: DedupInputItem): DedupGroup["sources"][number] {
+  return {
+    id: item.id,
+    displayText: formatIngredient(
+      { amount: item.amount, unit: item.unit, item: item.item },
+      1,
+    ),
+    recipeName: item.recipeName,
+  };
+}
+
 function singletonGroup(item: DedupInputItem): DedupGroup {
-  const displayText = formatIngredient(
-    { amount: item.amount, unit: item.unit, item: item.item },
-    1,
-  );
+  const source = sourceOf(item);
   return {
     id: randomUUID(),
     item: item.item,
     unit: item.unit,
     amount: item.amount,
-    displayText,
-    sources: [
-      { id: item.id, displayText, recipeName: item.recipeName },
-    ],
+    displayText: source.displayText,
+    sources: [source],
   };
 }
 
@@ -150,14 +179,43 @@ function mergedGroup(items: DedupInputItem[]): DedupGroup {
     unit: summed.unit,
     amount: summed.amount,
     displayText,
-    sources: items.map((it) => ({
-      id: it.id,
-      displayText: formatIngredient(
-        { amount: it.amount, unit: it.unit, item: it.item },
-        1,
-      ),
-      recipeName: it.recipeName,
-    })),
+    sources: items.map(sourceOf),
+  };
+}
+
+function bucketByFamily(
+  items: DedupInputItem[],
+): Map<string, DedupInputItem[]> {
+  const buckets = new Map<string, DedupInputItem[]>();
+  for (const it of items) {
+    const family = unitFamily(it.unit);
+    const list = buckets.get(family) ?? [];
+    list.push(it);
+    buckets.set(family, list);
+  }
+  return buckets;
+}
+
+/**
+ * One planned-ingredients row. The title is the item name; each
+ * recipe's amount stays on its source line. A single unit family
+ * still records the summed amount (unused by the title). Mixed
+ * families have no single amount.
+ */
+function plannedGroup(items: DedupInputItem[]): DedupGroup {
+  const buckets = bucketByFamily(items);
+  if (buckets.size === 1) {
+    const group = mergedGroup(items);
+    return { ...group, displayText: group.item };
+  }
+  const itemName = pickItemName(items);
+  return {
+    id: randomUUID(),
+    item: itemName,
+    unit: null,
+    amount: null,
+    displayText: itemName,
+    sources: items.map(sourceOf),
   };
 }
 
@@ -165,15 +223,18 @@ function mergedGroup(items: DedupInputItem[]): DedupGroup {
 // Post-processor — takes raw merges and the original input, returns the
 // final list of DedupGroups (including singletons for unmerged ids).
 //
-// Defensively splits incompatible-unit merges and drops nonsense
-// suggestions (unknown ids, ids in multiple merges). Never throws on
+// Drops nonsense suggestions (unknown ids, ids in multiple merges).
+// Unit-incompatible members are split into their own groups unless
+// `incompatibleUnits: "keep"` (planned ingredients). Never throws on
 // bad input — always returns a usable result.
 // ---------------------------------------------------------------------------
 
 export function postProcess(
   input: DedupInput,
   raw: RawMerges,
+  options?: DedupOptions,
 ): DedupGroup[] {
+  const keepIncompatible = options?.incompatibleUnits === "keep";
   const byId = new Map<string, DedupInputItem>();
   for (const item of input.items) byId.set(item.id, item);
 
@@ -202,15 +263,16 @@ export function postProcess(
       continue;
     }
 
-    // Split by unit family. Compatible units stay merged; incompatible
-    // ones become their own groups (bounded by family count).
-    const buckets = new Map<string, DedupInputItem[]>();
-    for (const it of claimedItems) {
-      const family = unitFamily(it.unit);
-      const list = buckets.get(family) ?? [];
-      list.push(it);
-      buckets.set(family, list);
+    // Planned ingredients: one row titled with the item name. Amounts
+    // live on the source lines, including when units cannot be added.
+    if (keepIncompatible) {
+      groups.push(plannedGroup(claimedItems));
+      for (const it of claimedItems) seen.add(it.id);
+      continue;
     }
+
+    // Shopping list: one buyable group per unit family.
+    const buckets = bucketByFamily(claimedItems);
 
     for (const bucket of buckets.values()) {
       if (bucket.length === 1) {
@@ -259,7 +321,10 @@ async function clusterByEmbedding(
   return { merges };
 }
 
-export async function dedup(input: DedupInput): Promise<DedupResult> {
+export async function dedup(
+  input: DedupInput,
+  options?: DedupOptions,
+): Promise<DedupResult> {
   // Nothing to dedupe.
   if (input.items.length === 0) {
     return { groups: [], model: "none" };
@@ -292,7 +357,7 @@ export async function dedup(input: DedupInput): Promise<DedupResult> {
     };
   }
 
-  const groups = postProcess(input, raw);
+  const groups = postProcess(input, raw, options);
   return { groups, model: backendName };
 }
 

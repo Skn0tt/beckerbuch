@@ -96,8 +96,11 @@ we expand those to durations (`5 Min.`, `3–5 Min.`, `bis zu 10 Min.`)
 before pre-filling the form. A `fetch_recipe` MCP
 tool exposes the same import path (both sources) for agents. Saving
 that import goes through `kochbuch_add_recipe`, which requires a
-photo: pass the returned cover bytes, or a public image URL when the
-import had no image. Fetching
+photo: pass the returned `photo` object (`contentType` and `base64`)
+unchanged, or a public image URL via `photoUrl` when the import had
+no image. `kochbuch_edit_recipe` accepts the same photo object when
+replacing a cover, and leaves the current cover alone when `photo`
+is null. Fetching
 arbitrary user-supplied URLs is guarded against SSRF (http(s) only;
 private/loopback/link-local addresses are refused).
 

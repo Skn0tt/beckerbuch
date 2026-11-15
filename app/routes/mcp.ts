@@ -8,12 +8,12 @@ import {
   editRecipe,
   fetchPhotoFromUrl,
   getRecipeForFlat,
+  photoFromBase64,
   searchRecipes,
   type FlatRecipe,
   type RecipeListItem,
 } from "../lib/recipes";
 import { importRecipe } from "../lib/recipe-import";
-import { photoFromBase64 } from "../lib/recipe-photo";
 import { exportAnalysisTables } from "../lib/analysis-export";
 import { getPlanForMcp } from "../lib/kitchen-data";
 import {
@@ -37,6 +37,29 @@ const ingredientSchema = z.object({
   item: z.string().trim().min(1).max(200),
 });
 
+// The same object fetch_recipe returns. Null is accepted so a client can
+// pass the field through when the source page had no cover. On add, null
+// is not a photo: the call still needs bytes or photoUrl. On edit, null
+// leaves the current cover alone.
+const photoBytesSchema = z
+  .object({
+    contentType: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .describe("MIME type, for example image/jpeg"),
+    base64: z
+      .string()
+      .min(1)
+      .describe("Image bytes as standard base64, without a data-URL prefix"),
+  })
+  .describe(
+    "Cover already downloaded. Pass the photo object from fetch_recipe through unchanged. Do not re-host or describe the image.",
+  )
+  .nullable()
+  .optional();
+
 const addRecipeInput = {
   name: z.string().trim().min(1).max(200).describe("Recipe name"),
   baseQuantity: z
@@ -58,29 +81,15 @@ const addRecipeInput = {
       "Free-text cooking steps. Give the amounts of kitchen staples (salt, pepper, sugar, oil) inline here rather than listing them as ingredients.",
     ),
   sourceUrl: z.string().url().optional().describe("Where the recipe came from"),
-  photoSource: z
-    .enum(["bytes", "url"])
-    .describe(
-      'Required — a recipe cannot be saved without a photo. "bytes": pass photoBase64 and photoContentType from fetch_recipe\'s photo (do this whenever that photo is present; do not drop the cover). "url": pass photoUrl, a public http(s) image. Do not omit this field.',
-    ),
+  photo: photoBytesSchema.describe(
+    "Required on add unless photoUrl is set. Pass the photo object from fetch_recipe through unchanged. Null is not a photo. Do not drop a cover you were given.",
+  ),
   photoUrl: z
     .string()
     .url()
     .optional()
     .describe(
-      'Public image URL. Required when photoSource is "url"; the server fetches and stores it.',
-    ),
-  photoBase64: z
-    .string()
-    .optional()
-    .describe(
-      'Standard base64 image bytes, no data: prefix. Required when photoSource is "bytes". Use fetch_recipe photo.base64.',
-    ),
-  photoContentType: z
-    .enum(["image/jpeg", "image/png", "image/webp"])
-    .optional()
-    .describe(
-      'Required when photoSource is "bytes". Use fetch_recipe photo.contentType.',
+      "Public image URL for the server to fetch. On add, pass this or photo — a recipe is not saved without one. Use photo when the bytes are already in hand.",
     ),
 };
 
@@ -139,11 +148,14 @@ const editRecipeInput = {
     .nullable()
     .optional()
     .describe("Replace the source URL; pass null to clear it"),
+  photo: photoBytesSchema,
   photoUrl: z
     .string()
     .url()
     .optional()
-    .describe("Fetch and replace the recipe photo from this public image URL"),
+    .describe(
+      "Fetch and replace the recipe photo from this public image URL. Use photo instead when the bytes are already in hand.",
+    ),
   removePhoto: z
     .boolean()
     .default(false)
@@ -152,7 +164,7 @@ const editRecipeInput = {
 };
 
 const PLAN_SHAPE_DOC =
-  'Returns JSON: { draft: PlanEntry[], stock: PlanEntry[], members: { id, displayName }[] }. ' +
+  "Returns JSON: { draft: PlanEntry[], stock: PlanEntry[], members: { id, displayName }[] }. " +
   "PlanEntry: { id (instance id), recipeId, recipeName, portions, position, cook: { id, displayName } | null, note }. " +
   "cook.displayName is null if that member left the flat. " +
   "Use members[].id as cookId for set_cook / add_to_draft. Use entry id as instanceId for mutations. " +
@@ -183,7 +195,9 @@ const updatePlanInput = {
     .min(1)
     .max(1000)
     .optional()
-    .describe("Portions (1–1000). For add_to_draft / set_portions (draft only)"),
+    .describe(
+      "Portions (1–1000). For add_to_draft / set_portions (draft only)",
+    ),
   cookId: UUID_SCHEMA.nullable()
     .optional()
     .describe(
@@ -255,8 +269,14 @@ async function applyPlanUpdate(
       };
     }
     case "remove_from_draft": {
-      if (!args.instanceId || !INSTANCE_UUID.safeParse(args.instanceId).success) {
-        return { ok: false, error: "instanceId is required and must be a UUID." };
+      if (
+        !args.instanceId ||
+        !INSTANCE_UUID.safeParse(args.instanceId).success
+      ) {
+        return {
+          ok: false,
+          error: "instanceId is required and must be a UUID.",
+        };
       }
       const result = await removeFromDraft({
         flatId,
@@ -266,8 +286,14 @@ async function applyPlanUpdate(
       return { ok: true, action: args.action, instanceId: args.instanceId };
     }
     case "set_portions": {
-      if (!args.instanceId || !INSTANCE_UUID.safeParse(args.instanceId).success) {
-        return { ok: false, error: "instanceId is required and must be a UUID." };
+      if (
+        !args.instanceId ||
+        !INSTANCE_UUID.safeParse(args.instanceId).success
+      ) {
+        return {
+          ok: false,
+          error: "instanceId is required and must be a UUID.",
+        };
       }
       if (args.portions === undefined) {
         return { ok: false, error: "portions is required." };
@@ -281,8 +307,14 @@ async function applyPlanUpdate(
       return { ok: true, action: args.action, instanceId: args.instanceId };
     }
     case "set_cook": {
-      if (!args.instanceId || !INSTANCE_UUID.safeParse(args.instanceId).success) {
-        return { ok: false, error: "instanceId is required and must be a UUID." };
+      if (
+        !args.instanceId ||
+        !INSTANCE_UUID.safeParse(args.instanceId).success
+      ) {
+        return {
+          ok: false,
+          error: "instanceId is required and must be a UUID.",
+        };
       }
       if (args.cookId === undefined) {
         return {
@@ -302,8 +334,14 @@ async function applyPlanUpdate(
       return { ok: true, action: args.action, instanceId: args.instanceId };
     }
     case "set_note": {
-      if (!args.instanceId || !INSTANCE_UUID.safeParse(args.instanceId).success) {
-        return { ok: false, error: "instanceId is required and must be a UUID." };
+      if (
+        !args.instanceId ||
+        !INSTANCE_UUID.safeParse(args.instanceId).success
+      ) {
+        return {
+          ok: false,
+          error: "instanceId is required and must be a UUID.",
+        };
       }
       if (args.note === undefined) {
         return {
@@ -343,8 +381,14 @@ async function applyPlanUpdate(
       return { ok: true, action: args.action };
     }
     case "back_to_draft": {
-      if (!args.instanceId || !INSTANCE_UUID.safeParse(args.instanceId).success) {
-        return { ok: false, error: "instanceId is required and must be a UUID." };
+      if (
+        !args.instanceId ||
+        !INSTANCE_UUID.safeParse(args.instanceId).success
+      ) {
+        return {
+          ok: false,
+          error: "instanceId is required and must be a UUID.",
+        };
       }
       const result = await backToDraft({
         flatId,
@@ -354,8 +398,14 @@ async function applyPlanUpdate(
       return { ok: true, action: args.action, instanceId: args.instanceId };
     }
     case "mark_cooked": {
-      if (!args.instanceId || !INSTANCE_UUID.safeParse(args.instanceId).success) {
-        return { ok: false, error: "instanceId is required and must be a UUID." };
+      if (
+        !args.instanceId ||
+        !INSTANCE_UUID.safeParse(args.instanceId).success
+      ) {
+        return {
+          ok: false,
+          error: "instanceId is required and must be a UUID.",
+        };
       }
       const result = await markCooked({
         flatId,
@@ -368,6 +418,80 @@ async function applyPlanUpdate(
     default:
       return { ok: false, error: "Unknown action." };
   }
+}
+
+type RecipePhotoArgs = {
+  photo?: { contentType: string; base64: string } | null;
+  photoUrl?: string;
+  removePhoto?: boolean;
+};
+
+/**
+ * One cover source. `photo` is bytes the client already has (the object
+ * from fetch_recipe). `photoUrl` is a public URL the server fetches.
+ * `removePhoto` clears the current cover. Passing more than one is an error.
+ */
+async function resolveRecipePhoto(args: RecipePhotoArgs): Promise<
+  | {
+      ok: true;
+      photo?: { bytes: Uint8Array; contentType: string };
+      removePhoto: boolean;
+    }
+  | { ok: false; error: string }
+> {
+  const hasPhoto = args.photo != null;
+  const hasUrl = typeof args.photoUrl === "string" && args.photoUrl.length > 0;
+  const remove = args.removePhoto === true;
+  const chosen = [
+    hasPhoto ? "photo" : null,
+    hasUrl ? "photoUrl" : null,
+    remove ? "removePhoto" : null,
+  ].filter((name): name is string => name !== null);
+
+  if (chosen.length > 1) {
+    if (
+      chosen.length === 2 &&
+      chosen[0] === "photoUrl" &&
+      chosen[1] === "removePhoto"
+    ) {
+      return {
+        ok: false,
+        error: "photoUrl and removePhoto cannot be used together.",
+      };
+    }
+    if (chosen.length === 2) {
+      return {
+        ok: false,
+        error: `${chosen[0]} and ${chosen[1]} cannot be used together.`,
+      };
+    }
+    return {
+      ok: false,
+      error: "photo, photoUrl, and removePhoto cannot be used together.",
+    };
+  }
+
+  if (hasPhoto && args.photo) {
+    const decoded = photoFromBase64(args.photo.contentType, args.photo.base64);
+    if (!decoded.ok) return decoded;
+    return {
+      ok: true,
+      photo: { bytes: decoded.bytes, contentType: decoded.contentType },
+      removePhoto: false,
+    };
+  }
+
+  if (hasUrl && args.photoUrl) {
+    const fetched = await fetchPhotoFromUrl(args.photoUrl);
+    if (!fetched.ok) return fetched;
+    return {
+      ok: true,
+      photo: { bytes: fetched.bytes, contentType: fetched.contentType },
+      removePhoto: false,
+    };
+  }
+
+  return { ok: true, removePhoto: remove };
 }
 
 async function handle(request: Request): Promise<Response> {
@@ -386,7 +510,7 @@ async function handle(request: Request): Promise<Response> {
     {
       title: "Add a recipe",
       description:
-        "Add a new recipe to the authenticated user's flat. photoSource is required: every recipe is saved with a photo (the fetch_recipe cover as bytes, or a photoUrl). Returns the recipe id and a URL to view it.",
+        "Add a new recipe to the authenticated user's flat. A photo is required: pass fetch_recipe's photo object as photo, or photoUrl for a public image. A call with neither is rejected and nothing is saved. Returns the recipe id and a URL to view it.",
       inputSchema: addRecipeInput,
     },
     async (args) => {
@@ -399,8 +523,14 @@ async function handle(request: Request): Promise<Response> {
         }
       }
 
-      const photo = await resolveAddPhoto(args);
-      if (!photo.ok) return toolError(photo.error);
+      const resolved = await resolveRecipePhoto(args);
+      if (!resolved.ok) return toolError(resolved.error);
+      if (!resolved.photo) {
+        return toolError(
+          "A photo is required. Pass photo (the object from fetch_recipe) or photoUrl (a public image URL).",
+        );
+      }
+      const photo = resolved.photo;
 
       const { id } = await createRecipe({
         flatId: ctx.flat.id,
@@ -446,8 +576,12 @@ async function handle(request: Request): Promise<Response> {
       inputSchema: getRecipeInput,
     },
     async (args) => {
-      if (!UUID_SCHEMA.safeParse(args.id).success) return toolError("Recipe id must be a UUID.");
-      const recipe = await getRecipeForFlat({ flatId: ctx.flat.id, id: args.id });
+      if (!UUID_SCHEMA.safeParse(args.id).success)
+        return toolError("Recipe id must be a UUID.");
+      const recipe = await getRecipeForFlat({
+        flatId: ctx.flat.id,
+        id: args.id,
+      });
       if (!recipe) return toolError("Recipe not found.");
       return jsonResult(recipePayload(recipe, request));
     },
@@ -458,33 +592,34 @@ async function handle(request: Request): Promise<Response> {
     {
       title: "Edit a recipe",
       description:
-        "Patch fields on an existing recipe in the authenticated user's flat. Returns the recipe id and a URL to view it.",
+        "Patch fields on an existing recipe in the authenticated user's flat. Returns the recipe id and a URL to view it. Replace the cover with photo (bytes already in hand) or photoUrl (a public image URL). Pass removePhoto to clear it. Use only one of those.",
       inputSchema: editRecipeInput,
     },
     async (args) => {
-      if (!UUID_SCHEMA.safeParse(args.id).success) return toolError("Recipe id must be a UUID.");
-      if (args.photoUrl && args.removePhoto) {
-        return toolError("photoUrl and removePhoto cannot be used together.");
-      }
+      if (!UUID_SCHEMA.safeParse(args.id).success)
+        return toolError("Recipe id must be a UUID.");
 
-      let photo: { bytes: Uint8Array; contentType: string } | undefined;
-      if (args.photoUrl) {
-        const fetched = await fetchPhotoFromUrl(args.photoUrl);
-        if (!fetched.ok) return toolError(fetched.error);
-        photo = { bytes: fetched.bytes, contentType: fetched.contentType };
-      }
+      const resolved = await resolveRecipePhoto(args);
+      if (!resolved.ok) return toolError(resolved.error);
+      const photo = resolved.photo;
 
       const recipe = await editRecipe({
         flatId: ctx.flat.id,
         id: args.id,
         patch: {
           ...(args.name !== undefined ? { name: args.name } : {}),
-          ...(args.baseQuantity !== undefined ? { baseQuantity: args.baseQuantity } : {}),
+          ...(args.baseQuantity !== undefined
+            ? { baseQuantity: args.baseQuantity }
+            : {}),
           ...(args.steps !== undefined ? { steps: args.steps } : {}),
-          ...(args.sourceUrl !== undefined ? { sourceUrl: args.sourceUrl } : {}),
-          ...(args.ingredients ? { ingredients: normalizeIngredients(args.ingredients) } : {}),
+          ...(args.sourceUrl !== undefined
+            ? { sourceUrl: args.sourceUrl }
+            : {}),
+          ...(args.ingredients
+            ? { ingredients: normalizeIngredients(args.ingredients) }
+            : {}),
           ...(photo ? { photo } : {}),
-          ...(args.removePhoto ? { removePhoto: true } : {}),
+          ...(resolved.removePhoto ? { removePhoto: true } : {}),
         },
       });
       if (!recipe) return toolError("Recipe not found.");
@@ -497,7 +632,7 @@ async function handle(request: Request): Promise<Response> {
     {
       title: "Fetch a recipe from a URL",
       description:
-        'Resolve a recipe into a normalized payload that can be passed to kochbuch_add_recipe. Accepts any recipe page URL that exposes schema.org JSON-LD metadata (most recipe sites and food blogs), as well as kptncook share URLs, uids (7-8 chars), or oids (24 hex chars). Does not store anything — the agent should review and call kochbuch_add_recipe to actually save it. When photo is present, pass it through as photoSource "bytes" with photoBase64 and photoContentType; do not drop the cover. kptncook imports require KPTNCOOK_API_KEY to be configured server-side.',
+        "Resolve a recipe into a normalized payload that can be passed to kochbuch_add_recipe. Accepts any recipe page URL that exposes schema.org JSON-LD metadata (most recipe sites and food blogs), as well as kptncook share URLs, uids (7-8 chars), or oids (24 hex chars). Does not store anything — the agent should review and call kochbuch_add_recipe to actually save it. When the result includes a photo, pass that object unchanged as kochbuch_add_recipe's photo argument so the cover is stored. If photo is null, add still requires a photo via photoUrl or a photo object. kptncook imports require KPTNCOOK_API_KEY to be configured server-side.",
       inputSchema: {
         input: z
           .string()
@@ -531,8 +666,8 @@ async function handle(request: Request): Promise<Response> {
             }
           : null,
         note: r.photo
-          ? 'Pass these fields to kochbuch_add_recipe with photoSource "bytes", photoBase64 set to photo.base64, and photoContentType set to photo.contentType. Do not drop the cover.'
-          : 'No cover was found. kochbuch_add_recipe still requires a photo: pass photoSource "bytes" with image bytes, or photoSource "url" with a public image URL.',
+          ? "Pass these fields to kochbuch_add_recipe. Pass this photo object unchanged as the photo argument so the cover is stored."
+          : 'No cover was found. kochbuch_add_recipe still requires a photo: pass photo with image bytes, or photoUrl with a public image URL.',
       });
     },
   );
@@ -590,6 +725,9 @@ async function handle(request: Request): Promise<Response> {
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
+    // Default is 4 MiB. A cover at the 5 MB photo cap is ~6.7 MB of base64,
+    // so the bytes from fetch_recipe would be refused before validation.
+    maxRequestBodySize: 8 * 1024 * 1024,
   });
   await server.connect(transport);
   try {
@@ -645,33 +783,10 @@ function toolError(message: string) {
 
 function jsonResult(payload: unknown) {
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
+    content: [
+      { type: "text" as const, text: JSON.stringify(payload, null, 2) },
+    ],
   };
-}
-
-async function resolveAddPhoto(args: {
-  photoSource: "bytes" | "url";
-  photoUrl?: string;
-  photoBase64?: string;
-  photoContentType?: "image/jpeg" | "image/png" | "image/webp";
-}): Promise<
-  | { ok: true; bytes: Uint8Array; contentType: string }
-  | { ok: false; error: string }
-> {
-  if (args.photoSource === "url") {
-    if (!args.photoUrl) {
-      return { ok: false, error: 'photoUrl is required when photoSource is "url".' };
-    }
-    return fetchPhotoFromUrl(args.photoUrl);
-  }
-  if (!args.photoBase64 || !args.photoContentType) {
-    return {
-      ok: false,
-      error:
-        'photoBase64 and photoContentType are required when photoSource is "bytes". Pass fetch_recipe\'s photo.base64 and photo.contentType, or photoSource "url" with a public image URL.',
-    };
-  }
-  return photoFromBase64(args.photoBase64, args.photoContentType);
 }
 
 function normalizeIngredients(
@@ -734,7 +849,10 @@ function unauthorized(request: Request): Response {
   // RFC 9728 §3.1 / §5.3: the resource_metadata URL is path-suffixed with
   // the resource path. Our resource is at /mcp.
   return new Response(
-    JSON.stringify({ error: "unauthorized", error_description: "Bearer token required" }),
+    JSON.stringify({
+      error: "unauthorized",
+      error_description: "Bearer token required",
+    }),
     {
       status: 401,
       headers: {

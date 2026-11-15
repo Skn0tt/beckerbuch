@@ -500,12 +500,26 @@ Snapshot lifecycle:
 | `count` | 1 | empty / null unit |
 | `u:<key>` | 1 | any unrecognized unit string |
 
-Mass and volume never cross (so `200 g flour` + `2 cups flour` stay
-separate). Synonyms and plurals are normalized before lookup
-(`cups`→`cup`, `grams`→`g`). After summing, display prefers a
-readable unit (e.g. `1500 g` → `1.5 kg`, `48 tsp` → `16 tbsp`;
-cup+ml mixtures display in ml). Logic is covered by
-`tests/units.spec.ts` plus E2E in `tests/handoff-dedup.spec.ts`.
+Mass and volume never cross on the **shopping-list handoff** (so
+`200 g flour` + `2 cups flour` stay separate buyable lines). Synonyms
+and plurals are normalized before lookup (`cups`→`cup`, `grams`→`g`).
+After summing, display prefers a readable unit (e.g. `1500 g` →
+`1.5 kg`, `48 tsp` → `16 tbsp`; cup+ml mixtures display in ml). Logic
+is covered by `tests/units.spec.ts` plus E2E in
+`tests/handoff-dedup.spec.ts`.
+
+**Planned ingredients uses the same clusters and a different
+assembly** (`dedup(..., { incompatibleUnits: "keep" })`, issue #80).
+The view answers "what is still spoken for, and by which recipe?".
+One group per cluster, titled with the item name only. Each recipe's
+amount stays on its source line, including when the units cannot be
+added (`flour` with `200 g flour — Bread` and `2 cups flour —
+Pancakes`). A single unit family still stores the summed `amount` and
+`unit` on the group; mixed families leave both null. The handoff
+snapshot is unchanged: it calls `dedup` with the default `split`.
+
+Covered by the planned cases in `tests/units.spec.ts` and
+`tests/planned-ingredients.spec.ts`.
 
 Embeddings are cached in the `ingredient_embeddings` table, keyed by
 `(model, text)` where `text` is a normalized form of the item string
@@ -540,7 +554,10 @@ On mobile (`/kitchen?lane=ingredients`) a tucked-away filter
 (icon → expands left over the heading on the same row) debounces the
 query and calls `/kitchen/combined/search` — **text** match first
 (FTS + trigram), then **meaning** (embedding cosine) only if text is
-empty. The desktop sidebar modal has no filter (browser find is enough).
+empty. The rows stay put while a query is in flight; the spinner
+sits in the field. The desktop sidebar modal shows the same list
+with a search field at the top of the dialog, hitting that same
+endpoint the same way.
 Writes (`split`, `unsplit`, `regenerate`) are public and keyed on
 the flat UUID, consistent with the rest of the handoff page's
 trust model.
@@ -656,10 +673,13 @@ Marking a stock entry as cooked is the symmetric one-liner:
   in EDR, which can dim the rest of the page so the photo overpowers
   SDR whites. `app/styles.css` clamps `<img>` to SDR with
   `dynamic-range-limit: standard` rather than re-encoding on upload.
-- MCP `kochbuch_add_recipe` requires `photoSource`, so a client cannot
-  save a recipe and quietly skip the picture. `bytes` stores base64
-  from `fetch_recipe` (the imported cover). `url` fetches a public
-  http(s) image. A failed fetch does not save the recipe. The web
+- MCP `kochbuch_add_recipe` requires a photo, so a client cannot
+  save a recipe and quietly skip the picture. `photo` stores the
+  `{ contentType, base64 }` object from `fetch_recipe`. `photoUrl`
+  fetches a public http(s) image. Passing neither, or `photo: null`
+  with no URL, does not save the recipe. A failed fetch does not
+  save it either. Edit can replace the cover the same way, clear it
+  with `removePhoto`, or leave it alone when `photo` is null. The web
   form still allows a recipe with no photo.
 
 ---
