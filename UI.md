@@ -129,7 +129,7 @@ main pane; glance at Draft + In stock in the sidebar.
 - Sidebar Draft: per-recipe target-quantity stepper, designated-cook chip (click to assign/clear), reorder via drag.
 - "Combined list preview" expands/collapses a deduplicated `(item, unit)` view of the merged ingredients. See DESIGN.md §4.2.
 - "Finalise →" opens **Finalise confirmation** (§7).
-- Sidebar In stock: per-recipe **Cooked** action removes it and writes a history entry (DESIGN.md §4.5/4.6).
+- Sidebar In stock: per-recipe **Cooked** action removes it and writes a history entry (DESIGN.md §4.5/4.6). **Ingredients** opens the Planned ingredients modal: the same read-only combined list as the mobile Ingredients lane, with a search field at the top.
 - "« Collapse sidebar" collapses to the thin rail (§10).
 - ⚙ opens the menu shown in *Layout philosophy*: Flat settings (§9), Sign out.
 
@@ -343,7 +343,7 @@ MOBILE — Ingredients (planned, all in-stock)
 - "Finalise →" opens **Finalise confirmation** (§7) as a sheet.
 - In stock: `[ ✓ Cooked ]` is a deliberately big tap target (kitchen-with-greasy-hands ergonomics). Tap → "Marked cooked. **Undo**" toast for ~5s before writing to history.
 - Empty draft: shows a friendly empty state with `[ Browse recipes → ]` jumping to the Recipes tab.
-- **Ingredients** lane: read-only combined list over every in-stock recipe (not just the latest finalise batch). Rows are A–Z by representative item name. A subtle search icon expands a filter **left over the “Planned ingredients” heading** (same row — no extra vertical space). After a short debounce the query hits `/kitchen/combined/search` (text match, then meaning/embedding only if text is empty). Desktop exposes the same list via the sidebar "Ingredients" modal without a filter (browser find). Handoff (§8) still pins merged groups to the top for Split/override.
+- **Ingredients** lane: read-only combined list over every in-stock recipe (not just the latest finalise batch). Rows are A–Z by representative item name. A subtle search icon expands a filter **left over the “Planned ingredients” heading** (same row — no extra vertical space). After a short debounce the query hits `/kitchen/combined/search` (text match, then meaning/embedding only if text is empty). The rows stay on screen while that request is in flight; a spinner sits in the filter field. Desktop exposes the same list via the sidebar "Ingredients" modal, with a search field at the top of the dialog that hits the same endpoint and shows its spinner inside the field. Handoff (§8) still pins merged groups to the top for Split/override.
 
 ---
 

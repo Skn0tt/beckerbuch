@@ -6,7 +6,8 @@ import type { CombinedList } from "../lib/combined-list";
 export type PlannedIngredientsSearch = CombinedList & { q: string };
 
 /**
- * Debounced FTS filter for the kitchen Planned ingredients lane.
+ * Debounced search for the kitchen Planned ingredients surfaces
+ * (mobile filter and the desktop sidebar search field).
  * Query param `q` is tokenised with the same prefix tsquery as recipe
  * search; empty/missing `q` returns the full in-stock combined list.
  * Echoes `q` so the client can ignore stale responses.
