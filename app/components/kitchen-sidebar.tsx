@@ -46,7 +46,7 @@ import { csrfFieldName } from "../auth/csrf-shared";
 import { CsrfField } from "../auth/csrf-field";
 import { UserAvatar } from "./user-avatar";
 import { CombinedList } from "./combined-list";
-import type { loader as combinedLoader } from "../routes/kitchen.combined";
+import { usePlannedIngredientSearch } from "./planned-ingredient-search";
 import type { KitchenEntry, KitchenMember } from "../lib/kitchen-data";
 
 type Lane = "draft" | "stock";
@@ -874,6 +874,66 @@ export function SortableLane({
 }
 
 /**
+ * Body of the desktop "Planned ingredients" modal. Search field stays
+ * visible whenever there is something in stock; the query is the same
+ * debounced `/kitchen/combined/search` the mobile lane uses.
+ */
+function PlannedIngredientsPanel() {
+  const {
+    query,
+    setQuery,
+    loading,
+    stockEmpty,
+    searchPending,
+    groups,
+    rejectedIds,
+    snapshotFresh,
+  } = usePlannedIngredientSearch();
+
+  if (loading) {
+    return (
+      <Center py="xl">
+        <Loader aria-label="Computing planned ingredients" />
+      </Center>
+    );
+  }
+
+  return (
+    <Stack gap="sm">
+      {!stockEmpty && (
+        <TextInput
+          type="search"
+          placeholder="Search ingredients…"
+          aria-label="Search planned ingredients"
+          value={query}
+          onChange={(e) => setQuery(e.currentTarget.value)}
+        />
+      )}
+      {stockEmpty ? (
+        <Text size="sm" c="dimmed">
+          No planned ingredients — finalise the draft to start cooking.
+        </Text>
+      ) : searchPending ? (
+        <Center py="md">
+          <Loader size="sm" aria-label="Searching planned ingredients" />
+        </Center>
+      ) : groups.length === 0 ? (
+        <Text size="sm" c="dimmed" data-testid="ingredients-search-empty">
+          No matches
+        </Text>
+      ) : (
+        <CombinedList
+          combinedGroups={groups}
+          rejectedIds={rejectedIds}
+          snapshotFresh={snapshotFresh}
+          showSingletonSource
+        />
+      )}
+    </Stack>
+  );
+}
+
+/**
  * Compact Draft + In-stock + Finalise tree. Rendered as the right
  * sidebar on the desktop home page; the /kitchen route uses the
  * individual cards directly with its own lane switcher.
@@ -896,15 +956,6 @@ export function KitchenSidebar({
 }) {
   const [ingredientsOpen, { open: openIngredients, close: closeIngredients }] =
     useDisclosure(false);
-
-  // The combined list is fetched on demand (never prefetched) so viewing it can
-  // lazily re-run the LLM dedup when stale. See routes/kitchen.combined.ts.
-  const combinedFetcher = useFetcher<typeof combinedLoader>();
-  const combined = combinedFetcher.data;
-  const openIngredientsModal = () => {
-    openIngredients();
-    combinedFetcher.load("/kitchen/combined");
-  };
 
   // Layout intent: the sidebar as a whole scrolls when content overflows
   // the viewport. The two lanes flow naturally one after the other rather
@@ -957,7 +1008,7 @@ export function KitchenSidebar({
           <Button
             variant="subtle"
             size="xs"
-            onClick={openIngredientsModal}
+            onClick={openIngredients}
           >
             Ingredients
           </Button>
@@ -982,24 +1033,7 @@ export function KitchenSidebar({
         onClose={closeIngredients}
         title="Planned ingredients"
       >
-        {combined === undefined ? (
-          <Center py="xl">
-            <Loader aria-label="Computing planned ingredients" />
-          </Center>
-        ) : (
-          <CombinedList
-            combinedGroups={combined.combinedGroups}
-            rejectedIds={combined.rejectedIds}
-            snapshotFresh={combined.snapshotFresh}
-            showSingletonSource
-            emptyState={
-              <Text size="sm" c="dimmed">
-                No planned ingredients — finalise the draft to start
-                cooking.
-              </Text>
-            }
-          />
-        )}
+        {ingredientsOpen && <PlannedIngredientsPanel />}
       </Modal>
     </Stack>
   );

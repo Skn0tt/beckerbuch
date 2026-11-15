@@ -11,14 +11,12 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { useDebouncedValue } from "@mantine/hooks";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { useEffect, useRef, useState } from "react";
-import { Link, redirect, useFetcher, useNavigate } from "react-router";
+import { Link, redirect, useNavigate } from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/kitchen";
-import type { loader as combinedLoader } from "./kitchen.combined";
-import type { loader as combinedSearchLoader } from "./kitchen.combined.search";
+import { usePlannedIngredientSearch } from "../components/planned-ingredient-search";
 import { db } from "../db/client";
 import { recipeInstances } from "../db/schema";
 import { requireFlatMember } from "../auth/require";
@@ -336,58 +334,34 @@ export default function Kitchen({ loaderData }: Route.ComponentProps) {
  * embedding dedup over the current in-stock set. Shows a spinner until it
  * resolves. Filter icon expands an input; after debounce the query hits
  * `/kitchen/combined/search` (Postgres FTS on ingredient items + recipe
- * names). Desktop Planned ingredients uses the sidebar modal and browser
- * find instead.
+ * names). The desktop sidebar modal uses the same search behind a visible
+ * field — see `PlannedIngredientsPanel` in kitchen-sidebar.
  */
 function IngredientsLane() {
-  const listFetcher = useFetcher<typeof combinedLoader>();
-  const searchFetcher = useFetcher<typeof combinedSearchLoader>();
+  const {
+    query,
+    setQuery,
+    loading,
+    stockEmpty,
+    searchPending,
+    groups,
+    rejectedIds,
+    snapshotFresh,
+  } = usePlannedIngredientSearch();
   const [filterOpen, setFilterOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [debouncedQuery] = useDebouncedValue(query, 300);
   const filterInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (listFetcher.state === "idle" && listFetcher.data === undefined) {
-      listFetcher.load("/kitchen/combined");
-    }
-  }, [listFetcher]);
 
   useEffect(() => {
     if (filterOpen) filterInputRef.current?.focus();
   }, [filterOpen]);
 
-  const settledQ = debouncedQuery.trim();
-  useEffect(() => {
-    if (settledQ === "") return;
-    searchFetcher.load(
-      `/kitchen/combined/search?q=${encodeURIComponent(settledQ)}`,
-    );
-    // searchFetcher identity changes every render; only re-run on settledQ.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settledQ]);
-
-  const list = listFetcher.data;
-  if (list === undefined) {
+  if (loading) {
     return (
       <Center py="xl">
         <Loader aria-label="Computing planned ingredients" />
       </Center>
     );
   }
-
-  const stockEmpty = list.combinedGroups.length === 0;
-  const filtering = settledQ !== "";
-  const searchFresh =
-    searchFetcher.state === "idle" &&
-    searchFetcher.data !== undefined &&
-    searchFetcher.data.q === settledQ;
-  const searchPending = filtering && !searchFresh;
-  const display =
-    filtering && searchFresh && searchFetcher.data
-      ? searchFetcher.data
-      : list;
-  const groups = display.combinedGroups;
 
   return (
     <Stack gap="xs" data-testid="planned-ingredients-lane">
@@ -484,8 +458,8 @@ function IngredientsLane() {
       ) : (
         <CombinedList
           combinedGroups={groups}
-          rejectedIds={display.rejectedIds}
-          snapshotFresh={display.snapshotFresh}
+          rejectedIds={rejectedIds}
+          snapshotFresh={snapshotFresh}
           showSingletonSource
         />
       )}
