@@ -71,7 +71,7 @@ Each recipe holds:
 - **Steps** — free-form instructions.
 - **Source URL** — where we got it (blog, video, etc.).
 - **Photo** — one image. Optional in the form. A recipe added through
-  MCP must include one: the imported cover, or a public image URL.
+  MCP must include one `photo` string: a data URL, or an https URL.
 
 Recipes are owned by the flat. Anyone in the flat can create, edit, and
 delete them. There is no per-recipe ownership in v1.
@@ -96,11 +96,9 @@ we expand those to durations (`5 Min.`, `3–5 Min.`, `bis zu 10 Min.`)
 before pre-filling the form. A `fetch_recipe` MCP
 tool exposes the same import path (both sources) for agents. Saving
 that import goes through `kochbuch_add_recipe`, which requires a
-photo: pass the returned `photo` object (`contentType` and `base64`)
-unchanged, or a public image URL via `photoUrl` when the import had
-no image. `kochbuch_edit_recipe` accepts the same photo object when
-replacing a cover, and leaves the current cover alone when `photo`
-is null. Fetching
+`photo` string: the data URL `fetch_recipe` returns, or an https URL
+when the import had no image. `kochbuch_edit_recipe` takes the same
+string when replacing a cover. Fetching
 arbitrary user-supplied URLs is guarded against SSRF (http(s) only;
 private/loopback/link-local addresses are refused).
 

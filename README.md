@@ -56,14 +56,13 @@ itself, and walk you through the consent screen (you'll need to be
 signed in to your flat first). After approval it can call:
 
 - `kochbuch_add_recipe` — name, baseQuantity, ingredients, steps,
-  optional sourceUrl, and a required photo: `photo`
-  (`{ contentType, base64 }`, the object `fetch_recipe` returns) or
-  `photoUrl` (server fetches a public image). A call with neither is
-  rejected.
+  optional sourceUrl, and a required `photo` string: a data URL (pass
+  `fetch_recipe`'s photo through) or an https URL. A call without one
+  is rejected.
 - `kochbuch_search_recipes` — free-text search over the flat's collection
 - `kochbuch_get_recipe` — fetch one recipe by id
 - `kochbuch_edit_recipe` — patch name / quantities / ingredients / steps
-  / photo (same bytes object, or photoUrl, or removePhoto)
+  / photo (the same data URL or https URL, or removePhoto)
 - `kochbuch_get_plan` — current Draft + In stock entries and household
   members (cook roster)
 - `kochbuch_update_plan` — mutate the plan (add/remove draft, portions,

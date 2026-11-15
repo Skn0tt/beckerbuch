@@ -23,7 +23,7 @@ type FetchResult = {
     unit: string | null;
     item: string;
   }>;
-  photo: { contentType: string; base64: string } | null;
+  photo: string | null;
   note?: string;
 };
 
@@ -79,9 +79,7 @@ test.describe("MCP fetch_recipe", () => {
         ].join("\n\n"),
       );
       expect(data.steps).not.toMatch(/<timer>/);
-      expect(data.photo).not.toBeNull();
-      expect(data.photo!.contentType).toBe("image/jpeg");
-      expect(data.photo!.base64.length).toBeGreaterThan(0);
+      expect(data.photo).toMatch(/^data:image\/jpeg;base64,.+/);
       expect(data.note).toMatch(/photo argument/);
     } finally {
       await client.close();
@@ -164,7 +162,7 @@ test.describe("MCP fetch_recipe", () => {
       expect(img.headers()["content-type"]).toContain("image/jpeg");
       expect(
         Buffer.from(await img.body()).equals(
-          Buffer.from(data.photo!.base64, "base64"),
+          Buffer.from(data.photo!.slice(data.photo!.indexOf(",") + 1), "base64"),
         ),
       ).toBe(true);
 

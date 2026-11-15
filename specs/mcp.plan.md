@@ -17,7 +17,7 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
 **Steps:**
   1. Log in, approve the OAuth consent screen, and connect an MCP client.
     - expect: The consent page shows `Authorize access` and OAuth succeeds.
-  2. Call `kochbuch_add_recipe` with `MCP Pancakes`, base quantity 4, ingredients `200 g flour`, `300 ml milk`, `salt`, steps `Mix and fry.`, and a PNG `photo` object.
+  2. Call `kochbuch_add_recipe` with `MCP Pancakes`, base quantity 4, ingredients `200 g flour`, `300 ml milk`, `salt`, steps `Mix and fry.`, and a PNG data URL as `photo`.
     - expect: The tool result is not an error.
     - expect: The result contains only an id and URL.
     - expect: The URL contains `/recipes/<id>`.
@@ -25,25 +25,26 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
     - expect: `MCP Pancakes` is visible.
     - expect: An image named `MCP Pancakes` is visible.
 
-#### 1.2. add-recipe-with-photourl-stores-the-image
+#### 1.2. add-recipe-with-an-https-photo-stores-the-image
 
 **File:** `tests/mcp.spec.ts`
 
 **Steps:**
-  1. Start a tiny image server, then log in, approve OAuth, and connect an MCP client.
-  2. Call `kochbuch_add_recipe` with `MCP Photo Recipe` and a valid PNG `photoUrl`.
+  1. Mock an https PNG, then log in, approve OAuth, and connect an MCP client.
+  2. Call `kochbuch_add_recipe` with `MCP Photo Recipe` and that https URL as `photo`.
     - expect: The tool result is not an error.
   3. Open the app home page and click `MCP Photo Recipe`.
     - expect: An image named `MCP Photo Recipe` is visible.
 
-#### 1.3. add-recipe-rejects-non-image-photourl
+#### 1.3. add-recipe-rejects-a-non-image-https-photo
 
 **File:** `tests/mcp.spec.ts`
 
 **Steps:**
-  1. Start a tiny text server, then log in, approve OAuth, and connect an MCP client.
-  2. Call `kochbuch_add_recipe` with `Should Not Exist` and a text-file `photoUrl`.
+  1. Mock an https text file, then log in, approve OAuth, and connect an MCP client.
+  2. Call `kochbuch_add_recipe` with `Should Not Exist` and that https URL as `photo`.
     - expect: The tool result is an error.
+    - expect: The tool text says the photo must be a JPEG, PNG, or WebP.
   3. Open the home page.
     - expect: `Should Not Exist` is not visible.
 
@@ -53,7 +54,7 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
 
 **Steps:**
   1. Log in, approve OAuth, and connect an MCP client.
-  2. Call `kochbuch_add_recipe` with `MCP Bytes Photo` and a PNG `photo` object (`contentType` + `base64`).
+  2. Call `kochbuch_add_recipe` with `MCP Bytes Photo` and a PNG data URL as `photo`.
     - expect: The tool result is not an error and contains an id and URL.
   3. Call `kochbuch_get_recipe` and fetch the photo URL.
     - expect: The photo URL contains `/r/<id>/photo`.
@@ -79,7 +80,7 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
 
 **Steps:**
   1. Log in, approve OAuth, and connect an MCP client.
-  2. Call `kochbuch_add_recipe` with `Should Not Exist Bytes` and a `text/plain` photo.
+  2. Call `kochbuch_add_recipe` with `Should Not Exist Bytes` and a `text/plain` data URL.
     - expect: The tool result is an error.
     - expect: The tool text is `Photo must be a JPEG, PNG, or WebP image.`.
   3. Open the home page.
@@ -91,26 +92,29 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
 
 **Steps:**
   1. Log in, approve OAuth, and connect an MCP client.
-  2. Call `kochbuch_add_recipe` with `Bad Base64` and a non-base64 photo string.
+  2. Call `kochbuch_add_recipe` with `Bad Base64` and a data URL whose payload is not base64.
     - expect: The tool result is an error.
     - expect: The tool text is `Photo base64 is not valid.`.
-  3. Call `kochbuch_add_recipe` with `Huge Photo` and a base64 string over the 5 MB photo cap (still under the MCP body limit).
+  3. Call `kochbuch_add_recipe` with `Huge Photo` and a data URL over the 5 MB photo cap (still under the MCP body limit).
     - expect: The tool result is an error.
     - expect: The tool text is `Photo is too large (max 5 MB).`.
   4. Open the home page.
     - expect: `Bad Base64` and `Huge Photo` are not visible.
 
-#### 1.8. add-recipe-rejects-photo-and-photourl-together
+#### 1.8. add-recipe-rejects-a-photo-that-is-not-a-data-url-or-https
 
 **File:** `tests/mcp.spec.ts`
 
 **Steps:**
   1. Log in, approve OAuth, and connect an MCP client.
-  2. Call `kochbuch_add_recipe` with `Should Not Exist Both`, a PNG `photo`, and a `photoUrl`.
+  2. Call `kochbuch_add_recipe` with `Http Photo` and an `http://` photo.
     - expect: The tool result is an error.
-    - expect: The tool text is `photo and photoUrl cannot be used together.`.
-  3. Open the home page.
-    - expect: `Should Not Exist Both` is not visible.
+    - expect: The tool text says photo must be a data URL or an https URL.
+  3. Call `kochbuch_add_recipe` with `Plain Photo` and a photo that is plain text.
+    - expect: The tool result is an error.
+    - expect: The tool text says photo must be a data URL or an https URL.
+  4. Open the home page.
+    - expect: `Http Photo` and `Plain Photo` are not visible.
 
 #### 1.9. add-recipe-rejects-empty-ingredients
 
@@ -118,7 +122,7 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
 
 **Steps:**
   1. Log in, approve OAuth, and connect an MCP client.
-  2. Call `kochbuch_add_recipe` with name `Empty`, base quantity 1, a PNG `photo`, and an empty ingredient list.
+  2. Call `kochbuch_add_recipe` with name `Empty`, base quantity 1, a PNG data URL, and an empty ingredient list.
     - expect: The tool result is an error.
 
 #### 1.10. add-recipe-rejects-a-call-with-no-photo
@@ -127,7 +131,7 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
 
 **Steps:**
   1. Log in, approve OAuth, and connect an MCP client.
-  2. Call `kochbuch_add_recipe` with `No Photo` and no `photo` or `photoUrl`.
+  2. Call `kochbuch_add_recipe` with `No Photo` and no `photo`.
     - expect: The tool result is an error.
     - expect: The tool text says a photo is required.
   3. Call `kochbuch_add_recipe` with `Generated` and `photoSource: "generate"`.
@@ -214,8 +218,8 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
 **File:** `tests/mcp.spec.ts`
 
 **Steps:**
-  1. Start a tiny image server, then log in, approve OAuth, connect an MCP client, and add `Photo Patch` with a photo.
-  2. Call `kochbuch_edit_recipe` with a valid photo URL.
+  1. Mock an https PNG, then log in, approve OAuth, connect an MCP client, and add `Photo Patch` with a photo.
+  2. Call `kochbuch_edit_recipe` with that https URL as `photo`.
     - expect: The tool result is not an error and references the recipe id and URL.
   3. Call `kochbuch_get_recipe`.
     - expect: The tool result is not an error.
@@ -233,10 +237,10 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
 **File:** `tests/mcp.spec.ts`
 
 **Steps:**
-  1. Log in, approve OAuth, connect an MCP client, and add `Bytes Patch` without a photo.
-  2. Call `kochbuch_edit_recipe` with a PNG `photo` object.
+  1. Log in, approve OAuth, connect an MCP client, and add `Bytes Patch`.
+  2. Call `kochbuch_edit_recipe` with a PNG data URL as `photo`.
     - expect: The tool result is not an error and references the recipe id and URL.
-  3. Call `kochbuch_edit_recipe` again with the same name and `photo: null`.
+  3. Call `kochbuch_edit_recipe` again with the same name and no `photo`.
     - expect: The tool result is not an error.
   4. Call `kochbuch_get_recipe` and fetch the photo URL.
     - expect: The photo URL contains `/r/<id>/photo`.
@@ -250,13 +254,10 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
 
 **Steps:**
   1. Log in, approve OAuth, connect an MCP client, and add `Private Recipe`.
-  2. Call `kochbuch_edit_recipe` with both `photoUrl` and `removePhoto`.
-    - expect: The tool result is an error.
-    - expect: The tool text is `photoUrl and removePhoto cannot be used together.`.
-  3. Call `kochbuch_edit_recipe` with both `photo` and `removePhoto`.
+  2. Call `kochbuch_edit_recipe` with both `photo` and `removePhoto`.
     - expect: The tool result is an error.
     - expect: The tool text is `photo and removePhoto cannot be used together.`.
-  4. Create and authorize a second isolated flat, then try editing the first flat's recipe.
+  3. Create and authorize a second isolated flat, then try editing the first flat's recipe.
     - expect: The tool result is an error.
     - expect: The tool text is `Recipe not found.`.
 

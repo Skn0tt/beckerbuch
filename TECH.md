@@ -673,14 +673,12 @@ Marking a stock entry as cooked is the symmetric one-liner:
   in EDR, which can dim the rest of the page so the photo overpowers
   SDR whites. `app/styles.css` clamps `<img>` to SDR with
   `dynamic-range-limit: standard` rather than re-encoding on upload.
-- MCP `kochbuch_add_recipe` requires a photo, so a client cannot
-  save a recipe and quietly skip the picture. `photo` stores the
-  `{ contentType, base64 }` object from `fetch_recipe`. `photoUrl`
-  fetches a public http(s) image. Passing neither, or `photo: null`
-  with no URL, does not save the recipe. A failed fetch does not
-  save it either. Edit can replace the cover the same way, clear it
-  with `removePhoto`, or leave it alone when `photo` is null. The web
-  form still allows a recipe with no photo.
+- MCP `kochbuch_add_recipe` requires `photo`, a data URL or an https
+  URL, so a client cannot save a recipe and quietly skip the picture.
+  `fetch_recipe` returns that data URL. A failed fetch or invalid
+  image does not save the recipe. Edit takes the same string, clears
+  the cover with `removePhoto`, or leaves it alone when `photo` is
+  omitted. The web form still allows a recipe with no photo.
 
 ---
 

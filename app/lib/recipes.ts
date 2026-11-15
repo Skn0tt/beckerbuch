@@ -353,18 +353,20 @@ export type FetchPhotoResult =
   | { ok: true; bytes: Uint8Array; contentType: string }
   | { ok: false; error: string };
 
-/**
- * Decode a cover the caller already has — the `photo` object
- * `fetch_recipe` returns — and run it through the same size and MIME
- * checks as a fetched URL. The bytes stay as bytes; nothing is re-hosted.
- */
-export function photoFromBase64(
+const DATA_URL = /^data:([^;,]+);base64,([\s\S]*)$/i;
+
+function normalizeImageMime(contentType: string): string {
+  const type = contentType.split(";")[0].trim().toLowerCase();
+  if (type === "image/jpg") return "image/jpeg";
+  return type;
+}
+
+function photoFromBase64(
   contentType: string,
   base64: string,
 ): FetchPhotoResult {
   const compact = base64.replace(/\s/g, "");
   if (!compact) return { ok: false, error: "Photo file is empty." };
-  // Standard base64 only. A data-URL prefix or prose is not a photo.
   if (compact.length % 4 === 1 || !/^[A-Za-z0-9+/]+={0,2}$/.test(compact)) {
     return { ok: false, error: "Photo base64 is not valid." };
   }
@@ -377,27 +379,51 @@ export function photoFromBase64(
   }
 
   const bytes = new Uint8Array(Buffer.from(compact, "base64"));
-  const v = validatePhotoBytes(bytes.byteLength, contentType.trim());
+  const v = validatePhotoBytes(bytes.byteLength, contentType);
   if (!v.ok) return { ok: false, error: v.error };
   return { ok: true, bytes, contentType: v.contentType };
 }
 
 /**
- * Fetch a remote image URL with a hard timeout and size cap, then run
- * it through the shared validator. Used when an MCP client has a public
- * image URL and not the bytes themselves.
+ * The one photo value MCP add/edit accept: a base64 data URL, or an
+ * https URL the server fetches. Anything else is rejected.
  */
-export async function fetchPhotoFromUrl(
+export async function resolvePhoto(photo: string): Promise<FetchPhotoResult> {
+  const value = photo.trim();
+  const dataUrl = DATA_URL.exec(value);
+  if (dataUrl) {
+    return photoFromBase64(normalizeImageMime(dataUrl[1]), dataUrl[2]);
+  }
+  if (value.toLowerCase().startsWith("data:")) {
+    return { ok: false, error: "Photo data URL must be base64." };
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return { ok: false, error: "photo must be a data URL or an https URL." };
+  }
+  if (parsed.protocol !== "https:") {
+    return { ok: false, error: "photo must be a data URL or an https URL." };
+  }
+  return fetchPhotoFromUrl(value);
+}
+
+/**
+ * Fetch an https image with a hard timeout and size cap, then run it
+ * through the shared validator.
+ */
+async function fetchPhotoFromUrl(
   url: string,
 ): Promise<FetchPhotoResult> {
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    return { ok: false, error: "photoUrl is not a valid URL." };
+    return { ok: false, error: "photo is not a valid URL." };
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return { ok: false, error: "photoUrl must be http(s)." };
+  if (parsed.protocol !== "https:") {
+    return { ok: false, error: "photo must be an https URL." };
   }
 
   const controller = new AbortController();
@@ -411,12 +437,12 @@ export async function fetchPhotoFromUrl(
   } catch (err) {
     clearTimeout(timeout);
     const msg = err instanceof Error ? err.message : "fetch failed";
-    return { ok: false, error: `Could not fetch photoUrl: ${msg}.` };
+    return { ok: false, error: `Could not fetch photo: ${msg}.` };
   }
   clearTimeout(timeout);
 
   if (!response.ok) {
-    return { ok: false, error: `photoUrl returned HTTP ${response.status}.` };
+    return { ok: false, error: `photo returned HTTP ${response.status}.` };
   }
 
   const declaredLen = Number(response.headers.get("content-length") ?? "");
