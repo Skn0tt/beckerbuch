@@ -70,7 +70,9 @@ Each recipe holds:
   quantity.
 - **Steps** — free-form instructions.
 - **Source URL** — where we got it (blog, video, etc.).
-- **Photo** — one image, optional.
+- **Photo** — one image. Optional in the form. A recipe added through
+  MCP always has one: the caller passes the imported cover or a public
+  image URL, or the server generates a photo of the dish.
 
 Recipes are owned by the flat. Anyone in the flat can create, edit, and
 delete them. There is no per-recipe ownership in v1.
@@ -93,7 +95,10 @@ the stored amounts). kptncook step text
 uses `<timer>` placeholders plus a parallel `timers` array (minutes);
 we expand those to durations (`5 Min.`, `3–5 Min.`, `bis zu 10 Min.`)
 before pre-filling the form. A `fetch_recipe` MCP
-tool exposes the same import path (both sources) for agents. Fetching
+tool exposes the same import path (both sources) for agents. Saving
+that import goes through `kochbuch_add_recipe`, which requires a
+photo: pass the returned cover bytes, or `generate` only when the
+import had no image. Fetching
 arbitrary user-supplied URLs is guarded against SSRF (http(s) only;
 private/loopback/link-local addresses are refused).
 

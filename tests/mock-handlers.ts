@@ -336,3 +336,66 @@ export function geminiEmbeddingHandler(
     await route.fulfill({ status: 200, json: { embeddings } });
   };
 }
+
+// --------------------------------------------------------------------
+// Gemini recipe photos (generateContent → inline image)
+
+// 1×1 red pixel, so a generated photo is visible in the recipe layout.
+const TINY_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
+
+export type GeminiRecipePhotoOptions = {
+  fail?: boolean;
+  onRequest?: (prompt: string) => void;
+};
+
+/**
+ * Handler for Gemini image generation
+ * (`…/models/<model>:generateContent`). Returns a 1×1 PNG, or HTTP 500
+ * when `{ fail: true }`.
+ */
+export function geminiRecipePhotoHandler(
+  options: GeminiRecipePhotoOptions = {},
+): RouteHandler {
+  return async (route) => {
+    let prompt = "";
+    try {
+      const json = route.request().postDataJSON() as {
+        contents?: { parts?: { text?: string }[] }[];
+      };
+      const text = json?.contents?.[0]?.parts?.[0]?.text;
+      if (typeof text === "string") prompt = text;
+    } catch {
+      prompt = "";
+    }
+    options.onRequest?.(prompt);
+
+    if (options.fail) {
+      await route.fulfill({
+        status: 500,
+        json: { error: { message: "forced test failure" } },
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      json: {
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: "image/png",
+                    data: TINY_PNG_BASE64,
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+  };
+}

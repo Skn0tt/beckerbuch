@@ -78,6 +78,7 @@ test.describe("MCP fetch_recipe", () => {
       expect(data.photo).not.toBeNull();
       expect(data.photo!.contentType).toBe("image/jpeg");
       expect(data.photo!.base64.length).toBeGreaterThan(0);
+      expect(data.note).toMatch(/photoSource "bytes"/);
     } finally {
       await client.close();
     }
@@ -98,6 +99,7 @@ test.describe("MCP fetch_recipe", () => {
       const data = jsonFromToolResult<FetchResult>(callResult);
       expect(data.name).toBe("Zimtschnecken");
       expect(data.photo).toBeNull();
+      expect(data.note).toMatch(/photoSource "generate"/);
     } finally {
       await client.close();
     }

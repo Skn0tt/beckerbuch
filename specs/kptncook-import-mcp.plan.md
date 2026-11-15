@@ -26,6 +26,7 @@ The MCP `fetch_recipe` tool exposes the same kptncook import normalization to ex
     - expect: Steps are the three mocked instructions with `<timer>` expanded to `15 Min.`, `30–40 Min.`, and `bis zu 25 Min.`.
     - expect: Steps do not contain a `<timer>` placeholder.
     - expect: A JPEG photo is returned with non-empty base64 data.
+    - expect: The note tells the client to pass that photo back as `photoSource` `bytes`.
 
 #### 1.2. works-with-a-bare-uid
 
@@ -37,6 +38,7 @@ The MCP `fetch_recipe` tool exposes the same kptncook import normalization to ex
     - expect: The tool result is not an error.
     - expect: The recipe name is `Zimtschnecken`.
     - expect: No photo is returned.
+    - expect: The note tells the client to use `photoSource` `generate`.
 
 #### 1.3. returns-an-error-result-for-an-unparseable-input
 

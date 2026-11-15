@@ -98,6 +98,7 @@ test.describe("generic recipe import", () => {
         expect(data.photo).not.toBeNull();
         expect(data.photo!.contentType).toMatch(/^image\//);
         expect(data.photo!.base64.length).toBeGreaterThan(0);
+        expect(data.note).toMatch(/photoSource "bytes"/);
       } finally {
         await client.close();
       }

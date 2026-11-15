@@ -13,6 +13,7 @@ import {
   type RecipeListItem,
 } from "../lib/recipes";
 import { importRecipe } from "../lib/recipe-import";
+import { generateRecipePhoto, photoFromBase64 } from "../lib/recipe-photo";
 import { exportAnalysisTables } from "../lib/analysis-export";
 import { getPlanForMcp } from "../lib/kitchen-data";
 import {
@@ -57,11 +58,30 @@ const addRecipeInput = {
       "Free-text cooking steps. Give the amounts of kitchen staples (salt, pepper, sugar, oil) inline here rather than listing them as ingredients.",
     ),
   sourceUrl: z.string().url().optional().describe("Where the recipe came from"),
+  photoSource: z
+    .enum(["bytes", "url", "generate"])
+    .describe(
+      'Required — a recipe cannot be saved without a photo. "bytes": pass photoBase64 and photoContentType from fetch_recipe\'s photo (do this whenever that photo is present; do not drop the cover). "url": pass photoUrl, a public http(s) image. "generate": you have no image; the server creates a photo of the finished dish. Do not omit this field.',
+    ),
   photoUrl: z
     .string()
     .url()
     .optional()
-    .describe("Public image URL; server will fetch and store it"),
+    .describe(
+      'Public image URL. Required when photoSource is "url"; the server fetches and stores it.',
+    ),
+  photoBase64: z
+    .string()
+    .optional()
+    .describe(
+      'Standard base64 image bytes, no data: prefix. Required when photoSource is "bytes". Use fetch_recipe photo.base64.',
+    ),
+  photoContentType: z
+    .enum(["image/jpeg", "image/png", "image/webp"])
+    .optional()
+    .describe(
+      'Required when photoSource is "bytes". Use fetch_recipe photo.contentType.',
+    ),
 };
 
 const recipeIdSchema = UUID_SCHEMA.describe("Recipe id");
@@ -366,7 +386,7 @@ async function handle(request: Request): Promise<Response> {
     {
       title: "Add a recipe",
       description:
-        "Add a new recipe to the authenticated user's flat. Returns the recipe id and a URL to view it.",
+        "Add a new recipe to the authenticated user's flat. photoSource is required: every recipe is saved with a photo (the fetch_recipe cover as bytes, a photoUrl, or a generated dish photo). Returns the recipe id and a URL to view it.",
       inputSchema: addRecipeInput,
     },
     async (args) => {
@@ -379,12 +399,8 @@ async function handle(request: Request): Promise<Response> {
         }
       }
 
-      let photo: { bytes: Uint8Array; contentType: string } | undefined;
-      if (args.photoUrl) {
-        const fetched = await fetchPhotoFromUrl(args.photoUrl);
-        if (!fetched.ok) return toolError(fetched.error);
-        photo = { bytes: fetched.bytes, contentType: fetched.contentType };
-      }
+      const photo = await resolveAddPhoto(args);
+      if (!photo.ok) return toolError(photo.error);
 
       const { id } = await createRecipe({
         flatId: ctx.flat.id,
@@ -394,7 +410,7 @@ async function handle(request: Request): Promise<Response> {
         sourceHost,
         steps: args.steps ?? "",
         ingredients: normalizeIngredients(args.ingredients),
-        photo,
+        photo: { bytes: photo.bytes, contentType: photo.contentType },
       });
 
       return jsonResult(recipeRefPayload(id, request));
@@ -481,7 +497,7 @@ async function handle(request: Request): Promise<Response> {
     {
       title: "Fetch a recipe from a URL",
       description:
-        "Resolve a recipe into a normalized payload that can be passed to kochbuch_add_recipe. Accepts any recipe page URL that exposes schema.org JSON-LD metadata (most recipe sites and food blogs), as well as kptncook share URLs, uids (7-8 chars), or oids (24 hex chars). Does not store anything — the agent should review and call kochbuch_add_recipe to actually save it. kptncook imports require KPTNCOOK_API_KEY to be configured server-side.",
+        'Resolve a recipe into a normalized payload that can be passed to kochbuch_add_recipe. Accepts any recipe page URL that exposes schema.org JSON-LD metadata (most recipe sites and food blogs), as well as kptncook share URLs, uids (7-8 chars), or oids (24 hex chars). Does not store anything — the agent should review and call kochbuch_add_recipe to actually save it. When photo is present, pass it through as photoSource "bytes" with photoBase64 and photoContentType; do not drop the cover. kptncook imports require KPTNCOOK_API_KEY to be configured server-side.',
       inputSchema: {
         input: z
           .string()
@@ -514,8 +530,9 @@ async function handle(request: Request): Promise<Response> {
               base64: Buffer.from(r.photo.bytes).toString("base64"),
             }
           : null,
-        note:
-          "Pass these fields to kochbuch_add_recipe. The photo is returned as base64 for reference; kochbuch_add_recipe currently only accepts photoUrl, so the photo cannot be carried through automatically yet.",
+        note: r.photo
+          ? 'Pass these fields to kochbuch_add_recipe with photoSource "bytes", photoBase64 set to photo.base64, and photoContentType set to photo.contentType. Do not drop the cover.'
+          : 'Pass these fields to kochbuch_add_recipe with photoSource "generate" so the server creates a photo. photoSource is required.',
       });
     },
   );
@@ -630,6 +647,39 @@ function jsonResult(payload: unknown) {
   return {
     content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
   };
+}
+
+async function resolveAddPhoto(args: {
+  photoSource: "bytes" | "url" | "generate";
+  photoUrl?: string;
+  photoBase64?: string;
+  photoContentType?: "image/jpeg" | "image/png" | "image/webp";
+  name: string;
+  ingredients: Array<{ item: string }>;
+}): Promise<
+  | { ok: true; bytes: Uint8Array; contentType: string }
+  | { ok: false; error: string }
+> {
+  if (args.photoSource === "url") {
+    if (!args.photoUrl) {
+      return { ok: false, error: 'photoUrl is required when photoSource is "url".' };
+    }
+    return fetchPhotoFromUrl(args.photoUrl);
+  }
+  if (args.photoSource === "bytes") {
+    if (!args.photoBase64 || !args.photoContentType) {
+      return {
+        ok: false,
+        error:
+          'photoBase64 and photoContentType are required when photoSource is "bytes". Pass fetch_recipe\'s photo.base64 and photo.contentType, or use photoSource "generate" when you have no image.',
+      };
+    }
+    return photoFromBase64(args.photoBase64, args.photoContentType);
+  }
+  return generateRecipePhoto({
+    name: args.name,
+    items: args.ingredients.map((ingredient) => ingredient.item),
+  });
 }
 
 function normalizeIngredients(

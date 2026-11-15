@@ -656,6 +656,17 @@ Marking a stock entry as cooked is the symmetric one-liner:
   in EDR, which can dim the rest of the page so the photo overpowers
   SDR whites. `app/styles.css` clamps `<img>` to SDR with
   `dynamic-range-limit: standard` rather than re-encoding on upload.
+- MCP `kochbuch_add_recipe` requires `photoSource`, so a client cannot
+  save a recipe and quietly skip the picture. `bytes` stores base64
+  from `fetch_recipe` (the imported cover). `url` fetches a public
+  http(s) image. `generate` calls Gemini `gemini-2.5-flash-image`
+  (`RECIPE_PHOTO_MODEL`) with the recipe name and a few ingredient
+  names, then stores the returned JPEG/PNG/WebP. Auth is
+  `RECIPE_PHOTO_GEMINI_API_KEY`, falling back to `GEMINI_API_KEY`, then
+  `EMBEDDING_GEMINI_API_KEY`. The call aborts at 15s so the response
+  can still start inside Netlify Server's 20s status deadline. A failed
+  fetch or generation does not save the recipe. The web form still
+  allows a recipe with no photo.
 
 ---
 
