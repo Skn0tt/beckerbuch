@@ -38,7 +38,7 @@ The MCP `fetch_recipe` tool exposes the same kptncook import normalization to ex
     - expect: The tool result is not an error.
     - expect: The recipe name is `Zimtschnecken`.
     - expect: No photo is returned.
-    - expect: The note tells the client to use `photoSource` `generate`.
+    - expect: The note says a photo is still required.
 
 #### 1.3. returns-an-error-result-for-an-unparseable-input
 

@@ -13,7 +13,7 @@ import {
   type RecipeListItem,
 } from "../lib/recipes";
 import { importRecipe } from "../lib/recipe-import";
-import { generateRecipePhoto, photoFromBase64 } from "../lib/recipe-photo";
+import { photoFromBase64 } from "../lib/recipe-photo";
 import { exportAnalysisTables } from "../lib/analysis-export";
 import { getPlanForMcp } from "../lib/kitchen-data";
 import {
@@ -59,9 +59,9 @@ const addRecipeInput = {
     ),
   sourceUrl: z.string().url().optional().describe("Where the recipe came from"),
   photoSource: z
-    .enum(["bytes", "url", "generate"])
+    .enum(["bytes", "url"])
     .describe(
-      'Required — a recipe cannot be saved without a photo. "bytes": pass photoBase64 and photoContentType from fetch_recipe\'s photo (do this whenever that photo is present; do not drop the cover). "url": pass photoUrl, a public http(s) image. "generate": you have no image; the server creates a photo of the finished dish. Do not omit this field.',
+      'Required — a recipe cannot be saved without a photo. "bytes": pass photoBase64 and photoContentType from fetch_recipe\'s photo (do this whenever that photo is present; do not drop the cover). "url": pass photoUrl, a public http(s) image. Do not omit this field.',
     ),
   photoUrl: z
     .string()
@@ -386,7 +386,7 @@ async function handle(request: Request): Promise<Response> {
     {
       title: "Add a recipe",
       description:
-        "Add a new recipe to the authenticated user's flat. photoSource is required: every recipe is saved with a photo (the fetch_recipe cover as bytes, a photoUrl, or a generated dish photo). Returns the recipe id and a URL to view it.",
+        "Add a new recipe to the authenticated user's flat. photoSource is required: every recipe is saved with a photo (the fetch_recipe cover as bytes, or a photoUrl). Returns the recipe id and a URL to view it.",
       inputSchema: addRecipeInput,
     },
     async (args) => {
@@ -532,7 +532,7 @@ async function handle(request: Request): Promise<Response> {
           : null,
         note: r.photo
           ? 'Pass these fields to kochbuch_add_recipe with photoSource "bytes", photoBase64 set to photo.base64, and photoContentType set to photo.contentType. Do not drop the cover.'
-          : 'Pass these fields to kochbuch_add_recipe with photoSource "generate" so the server creates a photo. photoSource is required.',
+          : 'No cover was found. kochbuch_add_recipe still requires a photo: pass photoSource "bytes" with image bytes, or photoSource "url" with a public image URL.',
       });
     },
   );
@@ -650,12 +650,10 @@ function jsonResult(payload: unknown) {
 }
 
 async function resolveAddPhoto(args: {
-  photoSource: "bytes" | "url" | "generate";
+  photoSource: "bytes" | "url";
   photoUrl?: string;
   photoBase64?: string;
   photoContentType?: "image/jpeg" | "image/png" | "image/webp";
-  name: string;
-  ingredients: Array<{ item: string }>;
 }): Promise<
   | { ok: true; bytes: Uint8Array; contentType: string }
   | { ok: false; error: string }
@@ -666,20 +664,14 @@ async function resolveAddPhoto(args: {
     }
     return fetchPhotoFromUrl(args.photoUrl);
   }
-  if (args.photoSource === "bytes") {
-    if (!args.photoBase64 || !args.photoContentType) {
-      return {
-        ok: false,
-        error:
-          'photoBase64 and photoContentType are required when photoSource is "bytes". Pass fetch_recipe\'s photo.base64 and photo.contentType, or use photoSource "generate" when you have no image.',
-      };
-    }
-    return photoFromBase64(args.photoBase64, args.photoContentType);
+  if (!args.photoBase64 || !args.photoContentType) {
+    return {
+      ok: false,
+      error:
+        'photoBase64 and photoContentType are required when photoSource is "bytes". Pass fetch_recipe\'s photo.base64 and photo.contentType, or photoSource "url" with a public image URL.',
+    };
   }
-  return generateRecipePhoto({
-    name: args.name,
-    items: args.ingredients.map((ingredient) => ingredient.item),
-  });
+  return photoFromBase64(args.photoBase64, args.photoContentType);
 }
 
 function normalizeIngredients(

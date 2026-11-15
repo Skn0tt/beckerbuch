@@ -10,18 +10,17 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
 
 **Seed:** `tests/fixtures.ts` (flat fixture: provisions a fresh tenant + first user, leaves browser logged out)
 
-#### 1.1. add-recipe-generates-a-photo-when-asked
+#### 1.1. add-recipe-stores-a-photo-passed-as-bytes
 
 **File:** `tests/mcp.spec.ts`
 
 **Steps:**
   1. Log in, approve the OAuth consent screen, and connect an MCP client.
     - expect: The consent page shows `Authorize access` and OAuth succeeds.
-  2. Call `kochbuch_add_recipe` with `MCP Pancakes`, base quantity 4, ingredients `200 g flour`, `300 ml milk`, `salt`, steps `Mix and fry.`, and `photoSource: "generate"`.
+  2. Call `kochbuch_add_recipe` with `MCP Pancakes`, base quantity 4, ingredients `200 g flour`, `300 ml milk`, `salt`, steps `Mix and fry.`, `photoSource: "bytes"`, a PNG `photoBase64`, and `photoContentType: "image/png"`.
     - expect: The tool result is not an error.
     - expect: The result contains only an id and URL.
     - expect: The URL contains `/recipes/<id>`.
-    - expect: Exactly one image-generation request was made, and its prompt names the dish and an ingredient.
   3. Return to the app home page and open `MCP Pancakes`.
     - expect: `MCP Pancakes` is visible.
     - expect: An image named `MCP Pancakes` is visible.
@@ -34,7 +33,6 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
   1. Start a tiny image server, then log in, approve OAuth, and connect an MCP client.
   2. Call `kochbuch_add_recipe` with `MCP Photo Recipe`, `photoSource: "url"`, and a valid PNG photo URL.
     - expect: The tool result is not an error.
-    - expect: No image-generation request was made.
   3. Open the app home page and click `MCP Photo Recipe`.
     - expect: An image named `MCP Photo Recipe` is visible.
 
@@ -55,7 +53,7 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
 
 **Steps:**
   1. Log in, approve OAuth, and connect an MCP client.
-  2. Call `kochbuch_add_recipe` with name `Empty`, base quantity 1, `photoSource: "generate"`, and an empty ingredient list.
+  2. Call `kochbuch_add_recipe` with name `Empty`, base quantity 1, `photoSource: "bytes"`, a PNG, and an empty ingredient list.
     - expect: The tool result is an error.
 
 #### 1.5. add-recipe-rejects-a-missing-photosource
@@ -67,11 +65,14 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
   2. Call `kochbuch_add_recipe` with `No Photo Source` and no `photoSource`.
     - expect: The tool result is an error.
     - expect: The tool text mentions `photoSource`.
-    - expect: No image-generation request was made.
-  3. Open the home page.
+  3. Call `kochbuch_add_recipe` with `Generated` and `photoSource: "generate"`.
+    - expect: The tool result is an error.
+    - expect: The tool text mentions `photoSource`.
+  4. Open the home page.
     - expect: `No Photo Source` is not visible.
+    - expect: `Generated` is not visible.
 
-#### 1.6. add-recipe-stores-photo-bytes-without-generating
+#### 1.6. add-recipe-stores-photo-bytes
 
 **File:** `tests/mcp.spec.ts`
 
@@ -79,7 +80,6 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
   1. Log in, approve OAuth, and connect an MCP client.
   2. Call `kochbuch_add_recipe` with `Bytes Photo`, `photoSource: "bytes"`, a PNG `photoBase64`, and `photoContentType: "image/png"`.
     - expect: The tool result is not an error.
-    - expect: No image-generation request was made.
   3. Open the home page and click `Bytes Photo`.
     - expect: An image named `Bytes Photo` is visible.
 
@@ -95,21 +95,8 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
   3. Call `kochbuch_add_recipe` with `Missing Bytes` and `photoSource: "bytes"` but no image bytes.
     - expect: The tool result is an error.
     - expect: The tool text says `photoBase64` and `photoContentType` are required.
-    - expect: No image-generation request was made.
   4. Open the home page.
     - expect: `Missing Url` and `Missing Bytes` are not visible.
-
-#### 1.8. add-recipe-does-not-save-when-generation-fails
-
-**File:** `tests/mcp.spec.ts`
-
-**Steps:**
-  1. Mock Gemini image generation to return HTTP 500, then log in, approve OAuth, and connect an MCP client.
-  2. Call `kochbuch_add_recipe` with `Should Not Exist` and `photoSource: "generate"`.
-    - expect: The tool result is an error.
-    - expect: The tool text says a photo could not be generated.
-  3. Open the home page.
-    - expect: `Should Not Exist` is not visible.
 
 ### 2. MCP Search and Retrieval
 
@@ -143,7 +130,7 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
   1. Log in, approve OAuth, connect an MCP client, and add `MCP Soup` with base quantity 4, ingredients `1 l water` and `salt`, steps `Boil.`, and source URL `https://example.com/soup`.
   2. Call `kochbuch_get_recipe` for the new recipe.
     - expect: The tool result is not an error.
-    - expect: The returned id, name, base quantity, steps, source host, generated photo URL, and ingredients match the created recipe.
+    - expect: The returned id, name, base quantity, steps, source host, photo URL, and ingredients match the created recipe.
   3. Create and authorize a second isolated flat, then call `kochbuch_get_recipe` for the first flat's recipe.
     - expect: The tool result is an error.
     - expect: The tool text is `Recipe not found.`.
@@ -188,7 +175,7 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
 **File:** `tests/mcp.spec.ts`
 
 **Steps:**
-  1. Start a tiny image server, then log in, approve OAuth, connect an MCP client, and add `Photo Patch` (the server generates a photo).
+  1. Start a tiny image server, then log in, approve OAuth, connect an MCP client, and add `Photo Patch` with a photo.
   2. Call `kochbuch_edit_recipe` with a valid photo URL.
     - expect: The tool result is not an error and references the recipe id and URL.
   3. Call `kochbuch_get_recipe`.

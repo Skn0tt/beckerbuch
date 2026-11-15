@@ -5,7 +5,6 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { test, expect } from "./fixtures";
 import { login } from "./login";
-import { geminiRecipePhotoHandler } from "./mock-handlers";
 
 // Set per-test from the `baseURL` fixture. Lives at module scope so
 // the many helpers below don't all need plumbing — see beforeEach.
@@ -194,20 +193,26 @@ async function addRecipeViaMcp(
     ingredients?: Array<{ amount?: string; unit?: string; item: string }>;
     steps?: string;
     sourceUrl?: string;
-    photoSource?: "bytes" | "url" | "generate";
+    photoSource?: "bytes" | "url";
     photoUrl?: string;
     photoBase64?: string;
     photoContentType?: "image/jpeg" | "image/png" | "image/webp";
   },
 ): Promise<string> {
-  const photoSource =
-    args.photoSource ??
-    (args.photoBase64 ? "bytes" : args.photoUrl ? "url" : "generate");
+  const photoSource = args.photoSource ?? (args.photoUrl ? "url" : "bytes");
   const callResult = await client.callTool({
     name: "kochbuch_add_recipe",
     arguments: {
       baseQuantity: 1,
       ingredients: [{ item: "water" }],
+      // add_recipe rejects a missing photo. Callers that don't pass one
+      // still get a tiny PNG so the rest of the suite can create recipes.
+      ...(photoSource === "bytes"
+        ? {
+            photoBase64: TINY_PNG.toString("base64"),
+            photoContentType: "image/png" as const,
+          }
+        : {}),
       ...args,
       photoSource,
     },
@@ -265,28 +270,8 @@ function startTinyServer(handler: (path: string) => { status: number; body: Buff
   });
 }
 
-const GEMINI_RECIPE_PHOTO =
-  "https://generativelanguage.googleapis.com/**:generateContent";
-
-let photoGenCalls = 0;
-let lastPhotoPrompt = "";
-
 test.describe("MCP server", () => {
-  test.beforeEach(async ({ mocks }) => {
-    photoGenCalls = 0;
-    lastPhotoPrompt = "";
-    await mocks.route(
-      GEMINI_RECIPE_PHOTO,
-      geminiRecipePhotoHandler({
-        onRequest: (prompt) => {
-          photoGenCalls += 1;
-          lastPhotoPrompt = prompt;
-        },
-      }),
-    );
-  });
-
-  test("add_recipe generates a photo when asked", async ({ page, flat }) => {
+  test("add_recipe stores a photo passed as bytes", async ({ page, flat }) => {
     await login(page, flat.user);
     const result = await runOAuthFlow(page);
     if (!result.ok) throw new Error("flow failed");
@@ -303,15 +288,14 @@ test.describe("MCP server", () => {
           { item: "salt" },
         ],
         steps: "Mix and fry.",
-        photoSource: "generate",
+        photoSource: "bytes",
+        photoBase64: TINY_PNG.toString("base64"),
+        photoContentType: "image/png",
       },
     });
     expect(callResult.isError).toBeFalsy();
     const addBody = recipeRefFromToolResult(callResult);
     expect(addBody.url).toContain(`/recipes/${addBody.id}`);
-    expect(photoGenCalls).toBe(1);
-    expect(lastPhotoPrompt).toContain("MCP Pancakes");
-    expect(lastPhotoPrompt).toContain("flour");
     await client.close();
 
     await page.goto("/");
@@ -343,7 +327,6 @@ test.describe("MCP server", () => {
         },
       });
       expect(callResult.isError).toBeFalsy();
-      expect(photoGenCalls).toBe(0);
       await client.close();
 
       await page.goto("/");
@@ -399,7 +382,9 @@ test.describe("MCP server", () => {
         name: "Empty",
         baseQuantity: 1,
         ingredients: [],
-        photoSource: "generate",
+        photoSource: "bytes",
+        photoBase64: TINY_PNG.toString("base64"),
+        photoContentType: "image/png",
       },
     });
     expect(callResult.isError).toBe(true);
@@ -422,14 +407,26 @@ test.describe("MCP server", () => {
     });
     expect(callResult.isError).toBe(true);
     expect(textFromToolResult(callResult)).toMatch(/photoSource/);
-    expect(photoGenCalls).toBe(0);
+
+    const generated = await client.callTool({
+      name: "kochbuch_add_recipe",
+      arguments: {
+        name: "Generated",
+        baseQuantity: 1,
+        ingredients: [{ item: "water" }],
+        photoSource: "generate",
+      },
+    });
+    expect(generated.isError).toBe(true);
+    expect(textFromToolResult(generated)).toMatch(/photoSource/);
     await client.close();
 
     await page.goto("/");
     await expect(page.getByText("No Photo Source")).toHaveCount(0);
+    await expect(page.getByText("Generated")).toHaveCount(0);
   });
 
-  test("add_recipe stores photo bytes and does not generate", async ({ page, flat }) => {
+  test("add_recipe stores photo bytes", async ({ page, flat }) => {
     await login(page, flat.user);
     const result = await runOAuthFlow(page);
     if (!result.ok) throw new Error("flow failed");
@@ -447,7 +444,6 @@ test.describe("MCP server", () => {
       },
     });
     expect(callResult.isError).toBeFalsy();
-    expect(photoGenCalls).toBe(0);
     await client.close();
 
     await page.goto("/");
@@ -488,40 +484,11 @@ test.describe("MCP server", () => {
     expect(textFromToolResult(missingBytes)).toMatch(
       /photoBase64 and photoContentType are required/,
     );
-    expect(photoGenCalls).toBe(0);
     await client.close();
 
     await page.goto("/");
     await expect(page.getByText("Missing Url")).toHaveCount(0);
     await expect(page.getByText("Missing Bytes")).toHaveCount(0);
-  });
-
-  test("add_recipe does not save when photo generation fails", async ({
-    page,
-    flat,
-    mocks,
-  }) => {
-    await mocks.route(GEMINI_RECIPE_PHOTO, geminiRecipePhotoHandler({ fail: true }));
-    await login(page, flat.user);
-    const result = await runOAuthFlow(page);
-    if (!result.ok) throw new Error("flow failed");
-    const client = await mcpClient(result.tokens.accessToken);
-
-    const callResult = await client.callTool({
-      name: "kochbuch_add_recipe",
-      arguments: {
-        name: "Should Not Exist",
-        baseQuantity: 1,
-        ingredients: [{ item: "water" }],
-        photoSource: "generate",
-      },
-    });
-    expect(callResult.isError).toBe(true);
-    expect(textFromToolResult(callResult)).toMatch(/could not generate a recipe photo/i);
-    await client.close();
-
-    await page.goto("/");
-    await expect(page.getByText("Should Not Exist")).toHaveCount(0);
   });
 
   test("search_recipes returns matches, empty results, and respects limit", async ({
@@ -1097,7 +1064,9 @@ test.describe("MCP server", () => {
         name: "After Refresh",
         baseQuantity: 1,
         ingredients: [{ item: "tea" }],
-        photoSource: "generate",
+        photoSource: "bytes",
+        photoBase64: TINY_PNG.toString("base64"),
+        photoContentType: "image/png",
       },
     });
     expect(callResult.isError).toBeFalsy();

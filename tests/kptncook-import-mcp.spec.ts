@@ -99,7 +99,7 @@ test.describe("MCP fetch_recipe", () => {
       const data = jsonFromToolResult<FetchResult>(callResult);
       expect(data.name).toBe("Zimtschnecken");
       expect(data.photo).toBeNull();
-      expect(data.note).toMatch(/photoSource "generate"/);
+      expect(data.note).toMatch(/still requires a photo/);
     } finally {
       await client.close();
     }

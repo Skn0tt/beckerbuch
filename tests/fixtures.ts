@@ -127,12 +127,6 @@ const appTest = base.extend<AppTestFixtures, AppWorkerFixtures & MocksWorkerFixt
             // The OpenAI SDK refuses to construct without an API
             // key. The mock helper accepts any value.
             OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "test-openai-key",
-            // Recipe-photo generation refuses to run without a key.
-            // The mock helper accepts any value.
-            RECIPE_PHOTO_GEMINI_API_KEY:
-              process.env.RECIPE_PHOTO_GEMINI_API_KEY ??
-              process.env.GEMINI_API_KEY ??
-              "test-gemini-key",
             // `@netlify/blobs` reads this to route store ops to the
             // local BlobsServer above.
             NETLIFY_BLOBS_CONTEXT: blobsContext,
