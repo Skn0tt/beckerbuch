@@ -32,7 +32,7 @@ export type PhotoValidationResult =
 
 /**
  * Validate raw photo bytes. Used by both the upload-File path
- * (browser form) and the MCP photoUrl-fetch path.
+ * (browser form) and the MCP photo path.
  */
 export function validatePhotoBytes(
   size: number,

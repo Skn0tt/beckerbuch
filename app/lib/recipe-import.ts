@@ -3,7 +3,11 @@ import { isIP } from "node:net";
 import { parse as parseHtml } from "node-html-parser";
 import { validatePhotoBytes } from "../blobs";
 import { fetchWithTimeout } from "./http";
-import { importKptncookRecipe, parseKptncookId } from "./kptncook";
+import {
+  importKptncookRecipe,
+  parseKptncookId,
+  publicHttpsPhotoUrl,
+} from "./kptncook";
 import { isolateRecipeUrl } from "./recipe-url";
 
 /**
@@ -39,6 +43,8 @@ export type RecipeImport = {
   sourceHost: string | null;
   steps: string;
   ingredients: RecipeImportIngredient[];
+  /** Public https cover URL. Never includes a kptncook API key. */
+  photoUrl?: string;
   photo?: { bytes: Uint8Array; contentType: string };
 };
 
@@ -580,6 +586,8 @@ export async function importRecipeFromUrl(
           return photoSrc;
         }
       })();
+      const href = publicHttpsPhotoUrl(resolved);
+      if (href) recipe.photoUrl = href;
       const photo = await fetchPhoto(resolved);
       if (photo) recipe.photo = photo;
     }

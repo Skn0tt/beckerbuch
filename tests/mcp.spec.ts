@@ -1,10 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
-import { createServer, type Server } from "node:http";
+import { createServer } from "node:http";
 import type { APIRequestContext, Page } from "@playwright/test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { test, expect } from "./fixtures";
 import { login } from "./login";
+import type { Proxy } from "./playwright-mocks/src";
 
 // Set per-test from the `baseURL` fixture. Lives at module scope so
 // the many helpers below don't all need plumbing — see beforeEach.
@@ -20,6 +21,25 @@ const TINY_PNG = Buffer.from(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c63000100000005000156a4179f0000000049454e44ae426082",
   "hex",
 );
+
+function dataUrl(bytes: Buffer, type = "image/png"): string {
+  return `data:${type};base64,${bytes.toString("base64")}`;
+}
+
+function mockHttpsPhoto(
+  mocks: Proxy,
+  url: string,
+  body: Buffer | string,
+  type: string,
+) {
+  return mocks.route(url, async (route) => {
+    await route.fulfill({
+      status: 200,
+      body,
+      headers: { "content-type": type },
+    });
+  });
+}
 
 // 16×16 solid cover, so the home-grid photo is obvious in the browser.
 const RED_PNG = Buffer.from(
@@ -215,8 +235,7 @@ async function addRecipeViaMcp(
     ingredients?: Array<{ amount?: string; unit?: string; item: string }>;
     steps?: string;
     sourceUrl?: string;
-    photoUrl?: string;
-    photo?: { contentType: string; base64: string } | null;
+    photo?: string;
   },
 ): Promise<string> {
   const callResult = await client.callTool({
@@ -224,6 +243,9 @@ async function addRecipeViaMcp(
     arguments: {
       baseQuantity: 1,
       ingredients: [{ item: "water" }],
+      // add_recipe rejects a missing photo. Callers that don't pass one
+      // still get a tiny PNG so the rest of the suite can create recipes.
+      ...("photo" in args ? {} : { photo: dataUrl(TINY_PNG) }),
       ...args,
     },
   });
@@ -263,33 +285,8 @@ async function createIsolatedFlatAccessToken(
   return result.tokens.accessToken;
 }
 
-/**
- * Tiny in-process HTTP server, used as a known-good source for `photoUrl`
- * (and as a known-non-image source for the bad-photo case).
- */
-function startTinyServer(
-  handler: (path: string) => {
-    status: number;
-    body: Buffer | string;
-    type: string;
-  },
-): Promise<{ server: Server; baseUrl: string }> {
-  return new Promise((resolve) => {
-    const server = createServer((req, res) => {
-      const result = handler(req.url ?? "/");
-      res.writeHead(result.status, { "content-type": result.type });
-      res.end(result.body);
-    });
-    server.listen(0, "127.0.0.1", () => {
-      const addr = server.address();
-      if (!addr || typeof addr === "string") throw new Error("no addr");
-      resolve({ server, baseUrl: `http://127.0.0.1:${addr.port}` });
-    });
-  });
-}
-
 test.describe("MCP server", () => {
-  test("add_recipe happy path (no photo)", async ({ page, flat }) => {
+  test("add_recipe stores a photo passed as bytes", async ({ page, flat }) => {
     await login(page, flat.user);
     const result = await runOAuthFlow(page);
     if (!result.ok) throw new Error("flow failed");
@@ -306,6 +303,7 @@ test.describe("MCP server", () => {
           { item: "salt" },
         ],
         steps: "Mix and fry.",
+        photo: dataUrl(TINY_PNG),
       },
     });
     expect(callResult.isError).toBeFalsy();
@@ -315,71 +313,78 @@ test.describe("MCP server", () => {
 
     await page.goto("/");
     await expect(page.getByText("MCP Pancakes")).toBeVisible();
+    await page.getByText("MCP Pancakes").click();
+    await expect(page.getByRole("img", { name: /MCP Pancakes/i })).toBeVisible();
   });
 
-  test("add_recipe with photoUrl stores the image", async ({ page, flat }) => {
-    const { server, baseUrl } = await startTinyServer(() => ({
-      status: 200,
-      body: TINY_PNG,
-      type: "image/png",
-    }));
-    try {
-      await login(page, flat.user);
-      const result = await runOAuthFlow(page);
-      if (!result.ok) throw new Error("flow failed");
-      const client = await mcpClient(result.tokens.accessToken);
+  test("add_recipe with an https photo stores the image", async ({
+    page,
+    flat,
+    mocks,
+  }) => {
+    await mockHttpsPhoto(
+      mocks,
+      "https://photos.example/ok.png",
+      TINY_PNG,
+      "image/png",
+    );
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
 
-      const callResult = await client.callTool({
-        name: "kochbuch_add_recipe",
-        arguments: {
-          name: "MCP Photo Recipe",
-          baseQuantity: 2,
-          ingredients: [{ item: "water" }],
-          photoUrl: `${baseUrl}/img.png`,
-        },
-      });
-      expect(callResult.isError).toBeFalsy();
-      await client.close();
+    const callResult = await client.callTool({
+      name: "kochbuch_add_recipe",
+      arguments: {
+        name: "MCP Photo Recipe",
+        baseQuantity: 2,
+        ingredients: [{ item: "water" }],
+        photo: "https://photos.example/ok.png",
+      },
+    });
+    expect(callResult.isError).toBeFalsy();
+    await client.close();
 
-      await page.goto("/");
-      await page.getByText("MCP Photo Recipe").click();
-      await expect(
-        page.getByRole("img", { name: /MCP Photo Recipe/i }),
-      ).toBeVisible();
-    } finally {
-      await new Promise((r) => server.close(() => r(null)));
-    }
+    await page.goto("/");
+    await page.getByText("MCP Photo Recipe").click();
+    await expect(
+      page.getByRole("img", { name: /MCP Photo Recipe/i }),
+    ).toBeVisible();
   });
 
-  test("add_recipe rejects non-image photoUrl", async ({ page, flat }) => {
-    const { server, baseUrl } = await startTinyServer(() => ({
-      status: 200,
-      body: "not an image",
-      type: "text/plain",
-    }));
-    try {
-      await login(page, flat.user);
-      const result = await runOAuthFlow(page);
-      if (!result.ok) throw new Error("flow failed");
-      const client = await mcpClient(result.tokens.accessToken);
+  test("add_recipe rejects a non-image https photo", async ({
+    page,
+    flat,
+    mocks,
+  }) => {
+    await mockHttpsPhoto(
+      mocks,
+      "https://photos.example/note.txt",
+      "not an image",
+      "text/plain",
+    );
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
 
-      const callResult = await client.callTool({
-        name: "kochbuch_add_recipe",
-        arguments: {
-          name: "Should Not Exist",
-          baseQuantity: 1,
-          ingredients: [{ item: "x" }],
-          photoUrl: `${baseUrl}/not-image.txt`,
-        },
-      });
-      expect(callResult.isError).toBe(true);
-      await client.close();
+    const callResult = await client.callTool({
+      name: "kochbuch_add_recipe",
+      arguments: {
+        name: "Should Not Exist",
+        baseQuantity: 1,
+        ingredients: [{ item: "x" }],
+        photo: "https://photos.example/note.txt",
+      },
+    });
+    expect(callResult.isError).toBe(true);
+    expect(textFromToolResult(callResult)).toBe(
+      "Photo must be a JPEG, PNG, or WebP image.",
+    );
+    await client.close();
 
-      await page.goto("/");
-      await expect(page.getByText("Should Not Exist")).toHaveCount(0);
-    } finally {
-      await new Promise((r) => server.close(() => r(null)));
-    }
+    await page.goto("/");
+    await expect(page.getByText("Should Not Exist")).toHaveCount(0);
   });
 
   test("add_recipe with photo bytes stores the image", async ({
@@ -397,10 +402,7 @@ test.describe("MCP server", () => {
         name: "MCP Bytes Photo",
         baseQuantity: 2,
         ingredients: [{ item: "water" }],
-        photo: {
-          contentType: "image/png",
-          base64: RED_PNG.toString("base64"),
-        },
+        photo: dataUrl(RED_PNG),
       },
     });
     expect(callResult.isError).toBeFalsy();
@@ -434,32 +436,27 @@ test.describe("MCP server", () => {
       .toBe(true);
   });
 
-  test("add_recipe accepts a null photo and stores no image", async ({
-    page,
-    flat,
-  }) => {
+  test("add_recipe rejects a null photo", async ({ page, flat }) => {
     await login(page, flat.user);
     const result = await runOAuthFlow(page);
     if (!result.ok) throw new Error("flow failed");
     const client = await mcpClient(result.tokens.accessToken);
 
-    const recipeId = await addRecipeViaMcp(client, {
-      name: "No Cover",
-      photo: null,
+    const callResult = await client.callTool({
+      name: "kochbuch_add_recipe",
+      arguments: {
+        name: "No Cover",
+        baseQuantity: 1,
+        ingredients: [{ item: "water" }],
+        photo: null,
+      },
     });
-    const got = await client.callTool({
-      name: "kochbuch_get_recipe",
-      arguments: { id: recipeId },
-    });
-    expect(got.isError).toBeFalsy();
-    expect(
-      jsonFromToolResult<{ photoUrl: string | null }>(got).photoUrl,
-    ).toBeNull();
+    expect(callResult.isError).toBe(true);
+    expect(textFromToolResult(callResult)).toMatch(/photo/i);
     await client.close();
 
     await page.goto("/");
-    await expect(page.getByRole("img", { name: "No Cover" })).toHaveCount(0);
-    await expect(page.getByText("No Cover")).toBeVisible();
+    await expect(page.getByText("No Cover")).toHaveCount(0);
   });
 
   test("add_recipe rejects non-image photo bytes", async ({ page, flat }) => {
@@ -474,10 +471,7 @@ test.describe("MCP server", () => {
         name: "Should Not Exist Bytes",
         baseQuantity: 1,
         ingredients: [{ item: "x" }],
-        photo: {
-          contentType: "text/plain",
-          base64: Buffer.from("not an image").toString("base64"),
-        },
+        photo: dataUrl(Buffer.from("not an image"), "text/plain"),
       },
     });
     expect(callResult.isError).toBe(true);
@@ -505,7 +499,7 @@ test.describe("MCP server", () => {
         name: "Bad Base64",
         baseQuantity: 1,
         ingredients: [{ item: "x" }],
-        photo: { contentType: "image/png", base64: "not base64!!!" },
+        photo: "data:image/png;base64,not base64!!!",
       },
     });
     expect(invalid.isError).toBe(true);
@@ -522,7 +516,7 @@ test.describe("MCP server", () => {
         name: "Huge Photo",
         baseQuantity: 1,
         ingredients: [{ item: "x" }],
-        photo: { contentType: "image/png", base64: oversizedBase64 },
+        photo: `data:image/png;base64,${oversizedBase64}`,
       },
     });
     expect(oversized.isError).toBe(true);
@@ -536,7 +530,7 @@ test.describe("MCP server", () => {
     await expect(page.getByText("Huge Photo")).toHaveCount(0);
   });
 
-  test("add_recipe rejects photo and photoUrl together", async ({
+  test("add_recipe rejects a photo that is not a data URL or https", async ({
     page,
     flat,
   }) => {
@@ -545,27 +539,29 @@ test.describe("MCP server", () => {
     if (!result.ok) throw new Error("flow failed");
     const client = await mcpClient(result.tokens.accessToken);
 
-    const callResult = await client.callTool({
-      name: "kochbuch_add_recipe",
-      arguments: {
-        name: "Should Not Exist Both",
-        baseQuantity: 1,
-        ingredients: [{ item: "x" }],
-        photo: {
-          contentType: "image/png",
-          base64: TINY_PNG.toString("base64"),
+    for (const [name, photo] of [
+      ["Http Photo", "http://example.com/a.png"],
+      ["Plain Photo", "not a photo"],
+    ] as const) {
+      const callResult = await client.callTool({
+        name: "kochbuch_add_recipe",
+        arguments: {
+          name,
+          baseQuantity: 1,
+          ingredients: [{ item: "x" }],
+          photo,
         },
-        photoUrl: "https://example.com/photo.png",
-      },
-    });
-    expect(callResult.isError).toBe(true);
-    expect(textFromToolResult(callResult)).toBe(
-      "photo and photoUrl cannot be used together.",
-    );
+      });
+      expect(callResult.isError).toBe(true);
+      expect(textFromToolResult(callResult)).toBe(
+        "photo must be a data URL or an https URL.",
+      );
+    }
     await client.close();
 
     await page.goto("/");
-    await expect(page.getByText("Should Not Exist Both")).toHaveCount(0);
+    await expect(page.getByText("Http Photo")).toHaveCount(0);
+    await expect(page.getByText("Plain Photo")).toHaveCount(0);
   });
 
   test("add_recipe rejects empty ingredients", async ({ page, flat }) => {
@@ -581,10 +577,46 @@ test.describe("MCP server", () => {
         name: "Empty",
         baseQuantity: 1,
         ingredients: [],
+        photo: dataUrl(TINY_PNG),
       },
     });
     expect(callResult.isError).toBe(true);
     await client.close();
+  });
+
+  test("add_recipe rejects a call with no photo", async ({ page, flat }) => {
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    const callResult = await client.callTool({
+      name: "kochbuch_add_recipe",
+      arguments: {
+        name: "No Photo",
+        baseQuantity: 1,
+        ingredients: [{ item: "water" }],
+      },
+    });
+    expect(callResult.isError).toBe(true);
+    expect(textFromToolResult(callResult)).toMatch(/photo/i);
+
+    const generated = await client.callTool({
+      name: "kochbuch_add_recipe",
+      arguments: {
+        name: "Generated",
+        baseQuantity: 1,
+        ingredients: [{ item: "water" }],
+        photoSource: "generate",
+      },
+    });
+    expect(generated.isError).toBe(true);
+    expect(textFromToolResult(generated)).toMatch(/photo/i);
+    await client.close();
+
+    await page.goto("/");
+    await expect(page.getByText("No Photo")).toHaveCount(0);
+    await expect(page.getByText("Generated")).toHaveCount(0);
   });
 
   test("search_recipes returns matches, empty results, and respects limit", async ({
@@ -721,7 +753,7 @@ test.describe("MCP server", () => {
     expect(recipe.baseQuantity).toBe(4);
     expect(recipe.steps).toBe("Boil.");
     expect(recipe.sourceHost).toBe("example.com");
-    expect(recipe.photoUrl).toBeNull();
+    expect(recipe.photoUrl).toContain(`/r/${recipeId}/photo`);
     expect(recipe.ingredients).toEqual([
       { amount: "1", unit: "l", item: "water" },
       { amount: null, unit: null, item: "salt" },
@@ -790,14 +822,18 @@ test.describe("MCP server", () => {
     await expect(page.getByText("1 cup rice")).toHaveCount(0);
   });
 
-  test("edit_recipe can add and remove a photo", async ({ page, flat }) => {
-    const { server, baseUrl } = await startTinyServer(() => ({
-      status: 200,
-      body: TINY_PNG,
-      type: "image/png",
-    }));
-    try {
-      await login(page, flat.user);
+  test("edit_recipe can add and remove a photo", async ({
+    page,
+    flat,
+    mocks,
+  }) => {
+    await mockHttpsPhoto(
+      mocks,
+      "https://photos.example/edit.png",
+      TINY_PNG,
+      "image/png",
+    );
+    await login(page, flat.user);
       const result = await runOAuthFlow(page);
       if (!result.ok) throw new Error("flow failed");
       const client = await mcpClient(result.tokens.accessToken);
@@ -809,7 +845,7 @@ test.describe("MCP server", () => {
 
       const addPhoto = await client.callTool({
         name: "kochbuch_edit_recipe",
-        arguments: { id: recipeId, photoUrl: `${baseUrl}/img.png` },
+        arguments: { id: recipeId, photo: "https://photos.example/edit.png" },
       });
       expect(addPhoto.isError).toBeFalsy();
       expect(recipeRefFromToolResult(addPhoto)).toEqual({
@@ -855,9 +891,6 @@ test.describe("MCP server", () => {
       await expect(page.getByRole("img", { name: /Photo Patch/i })).toHaveCount(
         0,
       );
-    } finally {
-      await new Promise((r) => server.close(() => r(null)));
-    }
   });
 
   test("edit_recipe replaces the cover from photo bytes", async ({
@@ -878,10 +911,7 @@ test.describe("MCP server", () => {
       name: "kochbuch_edit_recipe",
       arguments: {
         id: recipeId,
-        photo: {
-          contentType: "image/png",
-          base64: TINY_PNG.toString("base64"),
-        },
+        photo: dataUrl(TINY_PNG),
       },
     });
     expect(addPhoto.isError).toBeFalsy();
@@ -892,7 +922,7 @@ test.describe("MCP server", () => {
 
     const untouched = await client.callTool({
       name: "kochbuch_edit_recipe",
-      arguments: { id: recipeId, name: "Bytes Patch", photo: null },
+      arguments: { id: recipeId, name: "Bytes Patch" },
     });
     expect(untouched.isError).toBeFalsy();
 
@@ -929,27 +959,11 @@ test.describe("MCP server", () => {
       ingredients: [{ item: "water" }],
     });
 
-    const conflicting = await client.callTool({
-      name: "kochbuch_edit_recipe",
-      arguments: {
-        id: recipeId,
-        photoUrl: "https://example.com/photo.png",
-        removePhoto: true,
-      },
-    });
-    expect(conflicting.isError).toBe(true);
-    expect(textFromToolResult(conflicting)).toBe(
-      "photoUrl and removePhoto cannot be used together.",
-    );
-
     const conflictingBytes = await client.callTool({
       name: "kochbuch_edit_recipe",
       arguments: {
         id: recipeId,
-        photo: {
-          contentType: "image/png",
-          base64: TINY_PNG.toString("base64"),
-        },
+        photo: dataUrl(TINY_PNG),
         removePhoto: true,
       },
     });
@@ -1273,6 +1287,7 @@ test.describe("MCP server", () => {
         name: "After Refresh",
         baseQuantity: 1,
         ingredients: [{ item: "tea" }],
+        photo: dataUrl(TINY_PNG),
       },
     });
     expect(callResult.isError).toBeFalsy();

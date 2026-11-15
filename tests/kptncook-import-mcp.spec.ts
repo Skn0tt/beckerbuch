@@ -6,7 +6,7 @@ import {
   jsonFromToolResult,
   setMcpBaseUrl,
 } from "./mcp-helpers";
-import { MOCK_RECIPES } from "./mock-data";
+import { MOCK_RECIPES, TINY_JPEG } from "./mock-data";
 import {
   kptncookShareRedirectHandler,
   kptncookSearchHandler,
@@ -23,7 +23,7 @@ type FetchResult = {
     unit: string | null;
     item: string;
   }>;
-  photo: { contentType: string; base64: string } | null;
+  photo: string | null;
   note?: string;
 };
 
@@ -79,9 +79,11 @@ test.describe("MCP fetch_recipe", () => {
         ].join("\n\n"),
       );
       expect(data.steps).not.toMatch(/<timer>/);
-      expect(data.photo).not.toBeNull();
-      expect(data.photo!.contentType).toBe("image/jpeg");
-      expect(data.photo!.base64.length).toBeGreaterThan(0);
+      expect(data.photo).toBe(
+        "https://mobile.kptncook.com/images/buns-cover.jpg",
+      );
+      expect(data.photo).not.toContain("kptnkey");
+      expect(data.note).toMatch(/photo argument/);
     } finally {
       await client.close();
     }
@@ -105,6 +107,7 @@ test.describe("MCP fetch_recipe", () => {
       const data = jsonFromToolResult<FetchResult>(callResult);
       expect(data.name).toBe("Zimtschnecken");
       expect(data.photo).toBeNull();
+      expect(data.note).toMatch(/still requires a photo/);
     } finally {
       await client.close();
     }
@@ -160,11 +163,7 @@ test.describe("MCP fetch_recipe", () => {
       const img = await page.request.get(photoUrl!);
       expect(img.ok()).toBeTruthy();
       expect(img.headers()["content-type"]).toContain("image/jpeg");
-      expect(
-        Buffer.from(await img.body()).equals(
-          Buffer.from(data.photo!.base64, "base64"),
-        ),
-      ).toBe(true);
+      expect(Buffer.from(await img.body()).equals(TINY_JPEG)).toBe(true);
 
       // The canned kptncook cover is a 1×1 JPEG that Chromium does not
       // decode, so the grid check is the photo img (not the grey initial).

@@ -32,7 +32,7 @@ type FetchResult = {
     unit: string | null;
     item: string;
   }>;
-  photo: { contentType: string; base64: string } | null;
+  photo: string | null;
   note?: string;
 };
 
@@ -95,9 +95,8 @@ test.describe("generic recipe import", () => {
         expect(data.steps).toContain(recipe.stepMarker);
 
         // Cover photo imported.
-        expect(data.photo).not.toBeNull();
-        expect(data.photo!.contentType).toMatch(/^image\//);
-        expect(data.photo!.base64.length).toBeGreaterThan(0);
+        expect(data.photo).toBe(recipe.imageUrl);
+        expect(data.note).toMatch(/photo argument/);
       } finally {
         await client.close();
       }

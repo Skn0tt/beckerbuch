@@ -25,7 +25,8 @@ The generic importer lets MCP clients fetch public schema.org recipe pages, whil
     - expect: Every ingredient has a non-empty item.
     - expect: At least one ingredient has a parsed amount.
     - expect: Steps are non-empty.
-    - expect: A photo is returned with an image content type and non-empty base64.
+    - expect: Photo is the page's https image URL.
+    - expect: The note tells the client to pass that photo string as the `photo` argument.
 
 #### 1.2. fetch-recipe-imports-love-and-lemons-banana-bread
 
@@ -42,7 +43,8 @@ The generic importer lets MCP clients fetch public schema.org recipe pages, whil
     - expect: Every ingredient has a non-empty item.
     - expect: At least one ingredient has a parsed amount.
     - expect: Steps are non-empty.
-    - expect: A photo is returned with an image content type and non-empty base64.
+    - expect: Photo is the page's https image URL.
+    - expect: The note tells the client to pass that photo string as the `photo` argument.
 
 ### 2. Import Error Handling
 
