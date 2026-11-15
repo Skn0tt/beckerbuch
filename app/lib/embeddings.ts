@@ -149,11 +149,12 @@ async function requestOpenAiEmbeddings(
     apiKey: process.env.EMBEDDING_OPENAI_API_KEY ?? process.env.OPENAI_API_KEY,
   });
 
-  // Netlify Functions cap at ~30s; bail well before the platform does.
-  // A single deadline spans all chunks. On abort the call throws and
-  // dedup()'s outer catch falls back to all-singletons.
+  // Netlify Server must send status and headers within 20s (the
+  // budget also includes a cold instance start). Bail before that so
+  // dedup()'s outer catch can fall back to all-singletons instead of
+  // the platform answering 502. A single deadline spans all chunks.
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25_000);
+  const timer = setTimeout(() => controller.abort(), 18_000);
   try {
     const out: number[][] = [];
     for (let start = 0; start < input.length; start += EMBEDDING_BATCH_SIZE) {
@@ -201,9 +202,10 @@ async function requestGeminiEmbeddings(
     process.env.EMBEDDING_GEMINI_API_KEY ?? process.env.GEMINI_API_KEY;
   const url = `${baseURL}/models/${model}:batchEmbedContents`;
 
-  // Netlify Functions cap at ~30s; bail well before the platform does.
+  // Same 18s budget as the OpenAI path: status and headers have to
+  // leave the Netlify Server within 20s.
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25_000);
+  const timer = setTimeout(() => controller.abort(), 18_000);
   try {
     const out: number[][] = [];
     for (let start = 0; start < input.length; start += GEMINI_BATCH_SIZE) {

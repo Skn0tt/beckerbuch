@@ -13,9 +13,11 @@
  *     stock** (finalised, not yet cooked), regardless of finalise batch — the
  *     same lane as the kitchen stock list. It's read-only (no manual edits),
  *     so it ignores the snapshot and just clusters the current in-stock
- *     ingredients by embedding similarity on the fly. Ordered A–Z by
- *     representative item name (unlike handoff, which pins merges to the top
- *     for Split/override). See {@link loadCombinedList}.
+ *     ingredients by embedding similarity on the fly. A cluster stays one
+ *     row titled with the item name; each recipe's amount is on the line
+ *     below, even when the units cannot be added. Ordered A–Z by that
+ *     name (handoff pins merges to the top for Split/override). See
+ *     {@link loadCombinedList}.
  *
  * The handoff page drops pantry staples after {@link computeCombinedList}
  * (see lib/pantry.ts). This view does not: it is a cooking aid, and a
@@ -104,10 +106,12 @@ export async function computeCombinedList(
  * The view is read-only (no manual split/unsplit), so it never touches the
  * persisted dedup snapshot on the flat row — that snapshot exists only to
  * preserve manual edits on the handoff page. Here we cluster the current
- * in-stock ingredients by embedding similarity on the fly. Embeddings are
- * cached (see lib/embeddings.ts), so this is a couple of reads plus in-memory
- * clustering, and it never writes. On any embedding failure `dedup` degrades
- * to an all-singletons list.
+ * in-stock ingredients by embedding similarity on the fly, then assembles
+ * groups with `incompatibleUnits: "keep"` (see lib/dedup.ts): the row title
+ * is the item name, and each recipe's amount stays on its source line.
+ * Embeddings are cached (see lib/embeddings.ts), so this is a couple of
+ * reads plus in-memory clustering, and it never writes. On any embedding
+ * failure `dedup` degrades to an all-singletons list.
  *
  * Sort: alphabetical by each group's representative `item` (merged and
  * singleton rows interleaved) so the read-only list is easy to scan. Handoff
@@ -150,7 +154,7 @@ export async function loadCombinedList(flatId: string): Promise<CombinedList> {
   for (const r of rows) for (const id of r.omittedIngredientIds) omitted.add(id);
 
   const input = buildDedupInputFromData(rows, allIngs, omitted);
-  const { groups } = await dedup(input);
+  const { groups } = await dedup(input, { incompatibleUnits: "keep" });
 
   // A–Z by canonical item name so the shopping summary is easy to scan.
   // (Handoff keeps merged-first for Split/override — see computeCombinedList.)
