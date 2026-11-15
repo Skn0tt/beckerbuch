@@ -413,12 +413,16 @@ DESKTOP / MOBILE (same layout)
 - The handoff URL is stable for the life of the flat — it always shows
   the latest finalise batch. After the next finalise, the same URL just
   shows the new contents.
+- Lines whose item text matches the flat's pantry list are left off
+  the combined list and the JSON-LD. The per-recipe cards on this page
+  still show them; the recipe page does too. Editing the pantry list
+  changes the next view of this page.
 
 ---
 
-## 9. Flat settings (members + invite)
+## 9. Flat settings (members, pantry, invite)
 
-**Purpose:** see the flat, invite a new member. Opens from the **⚙** menu.
+**Purpose:** see the flat, keep a pantry list of staple names, invite a new member. Opens from the **⚙** menu.
 
 ```
 DESKTOP (modal)                                       MOBILE (full-screen)
@@ -462,6 +466,20 @@ DESKTOP (modal)                                       MOBILE (full-screen)
   into an LLM client. "Claude" links to Anthropic's docs on adding a
   custom connector — no auto-install button (no stable deep-link
   scheme exists upstream).
+- **Pantry** is a list of short staple names (salt, pepper, oil). Add
+  one name at a time; remove drops that name. No amounts. Matching
+  ingredient lines stay on the recipe and scale with portions, and
+  stay off the combined shopping list and the Bring! JSON-LD
+  (DESIGN.md §4.4). The same block sits between Members and Invite on
+  mobile.
+
+```
+│ Pantry                                       │
+│ Staples you always have. Names only.         │
+│ · Salz                            [ Remove ] │
+│ · Pfeffer                         [ Remove ] │
+│ [ Salz, Pfeffer, Öl…        ] [ Add ]        │
+```
 
 ---
 

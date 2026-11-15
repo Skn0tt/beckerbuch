@@ -70,13 +70,13 @@ const addRecipeInput = {
     .array(ingredientSchema)
     .min(1)
     .describe(
-      "Ingredient lines, in order. Do not list kitchen staples like salt, pepper, sugar, or oil here — assume the cook already has them. Mention their amounts inline in the steps instead.",
+      "Ingredient lines, in order. Include kitchen staples (salt, pepper, sugar, oil, butter) with amounts so they scale with portions. The flat's pantry list keeps matching staples off the shopping list.",
     ),
   steps: z
     .string()
     .default("")
     .describe(
-      "Free-text cooking steps. Give the amounts of kitchen staples (salt, pepper, sugar, oil) inline here rather than listing them as ingredients.",
+      "Free-text cooking steps. Put staple amounts on ingredient lines so they scale with portions; the steps can still say how to use them.",
     ),
   sourceUrl: z.string().url().optional().describe("Where the recipe came from"),
   photo: photoBytesSchema,
@@ -130,13 +130,13 @@ const editRecipeInput = {
     .min(1)
     .optional()
     .describe(
-      "Replace the full ingredient list. Do not list kitchen staples like salt, pepper, sugar, or oil here — assume the cook already has them. Mention their amounts inline in the steps instead.",
+      "Replace the full ingredient list. Include kitchen staples (salt, pepper, sugar, oil, butter) with amounts so they scale with portions. The flat's pantry list keeps matching staples off the shopping list.",
     ),
   steps: z
     .string()
     .optional()
     .describe(
-      "Replace the steps text; use an empty string to clear it. Give the amounts of kitchen staples (salt, pepper, sugar, oil) inline here rather than listing them as ingredients.",
+      "Replace the steps text; use an empty string to clear it. Put staple amounts on ingredient lines so they scale with portions.",
     ),
   sourceUrl: z
     .string()

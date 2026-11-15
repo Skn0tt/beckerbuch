@@ -180,6 +180,15 @@ Finalise, the snapshot becomes stale and the page renders an
 all-singletons fallback with a **Regenerate** button. See TECH.md
 §6.3.
 
+A flat can keep a **pantry list** of staple names (salt, oil, butter)
+in Flat settings. Names only — not amounts on hand, and not a place
+for household items. When the handoff builds the combined shopping
+list and the JSON-LD Bring! reads, a line whose item text is close to
+a pantry name is left off. The recipe page still shows that line, and
+the amount still scales with portions. Editing the list changes the
+next handoff; recipes are not rewritten. The in-stock
+planned-ingredients view is a cooking aid and still shows those lines.
+
 ### 4.5 In stock
 
 The in-stock board lists every recipe currently shoppable-for-cooking. For
@@ -250,7 +259,8 @@ To keep the scope honest, these are explicitly **not** in v1:
 
 - Calendar / day-by-day meal planning.
 - Nutrition info.
-- Pantry tracking beyond the in-stock board (no "we have 200g flour left").
+- Pantry inventory (no "we have 200g flour left"). A list of staple
+  names that stay off the shopping list is separate — see §4.4.
 - Ad-hoc / household items in the shopping list.
 - Per-line ingredient editing in the draft (only the recipe-wide target
   quantity is adjustable).
@@ -280,6 +290,9 @@ attribution, forking into another flat's collection.
 
 - **Bring!** — third-party shopping-list app (getbring.com) used by the
   household for the actual in-store shop.
+- **Pantry list** — staple names a flat keeps at home. Matching
+  ingredient lines stay on the recipe and off the shopping list. Not
+  an inventory of amounts.
 - **Base quantity** — the serving size a recipe's ingredients are written
   for (e.g. "serves 4"). The default starting point when the recipe is
   added to the draft.

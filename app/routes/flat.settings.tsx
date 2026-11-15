@@ -20,7 +20,13 @@ import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Route } from "./+types/flat.settings";
 import { db } from "../db/client";
-import { flatMembers, invites, users } from "../db/schema";
+import { flatMembers, flats, invites, users } from "../db/schema";
+import {
+  PANTRY_LIST_MAX,
+  PANTRY_NAME_MAX,
+  cleanPantryName,
+  pantryNameKey,
+} from "../lib/pantry";
 import { requireFlatMember } from "../auth/require";
 import { requireCsrf, csrfTokenForSession } from "../auth/csrf.server";
 import { isSameOrigin } from "../auth/origin";
@@ -47,6 +53,14 @@ const ActionSchema = z.discriminatedUnion("intent", [
       .max(80, "Display name 1–80 chars."),
   }),
   z.object({ intent: z.literal("remove-avatar") }),
+  z.object({
+    intent: z.literal("add-pantry-item"),
+    name: z.string().max(200),
+  }),
+  z.object({
+    intent: z.literal("remove-pantry-item"),
+    name: z.string().max(200),
+  }),
 ]);
 
 type Member = {
@@ -87,18 +101,71 @@ async function getCurrentInvite(flatId: string): Promise<CurrentInvite> {
   return row ?? null;
 }
 
+async function updatePantry(
+  flatId: string,
+  data:
+    | { intent: "add-pantry-item"; name: string }
+    | { intent: "remove-pantry-item"; name: string },
+) {
+  const [row] = await db()
+    .select({ pantryItems: flats.pantryItems })
+    .from(flats)
+    .where(eq(flats.id, flatId))
+    .limit(1);
+  const current = row?.pantryItems ?? [];
+  const name = cleanPantryName(data.name);
+
+  if (data.intent === "remove-pantry-item") {
+    const next = current.filter((item) => item !== name);
+    if (next.length !== current.length) {
+      await db()
+        .update(flats)
+        .set({ pantryItems: next })
+        .where(eq(flats.id, flatId));
+    }
+    return redirect("/flat/settings");
+  }
+
+  if (!name || name.length > PANTRY_NAME_MAX) {
+    return {
+      error: `Name is 1–${PANTRY_NAME_MAX} characters.`,
+      scope: "pantry" as const,
+    };
+  }
+  if (current.some((item) => pantryNameKey(item) === pantryNameKey(name))) {
+    return { error: "Already on the pantry list.", scope: "pantry" as const };
+  }
+  if (current.length >= PANTRY_LIST_MAX) {
+    return {
+      error: `The pantry list holds up to ${PANTRY_LIST_MAX} names.`,
+      scope: "pantry" as const,
+    };
+  }
+  await db()
+    .update(flats)
+    .set({ pantryItems: [...current, name] })
+    .where(eq(flats.id, flatId));
+  return redirect("/flat/settings");
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requireFlatMember(request);
-  const [members, currentInvite] = await Promise.all([
+  const [members, currentInvite, flatRow] = await Promise.all([
     listMembers(ctx.flat.id),
     getCurrentInvite(ctx.flat.id),
+    db()
+      .select({ pantryItems: flats.pantryItems })
+      .from(flats)
+      .where(eq(flats.id, ctx.flat.id))
+      .limit(1),
   ]);
   return {
     flat: ctx.flat,
+    pantryItems: flatRow[0]?.pantryItems ?? [],
     user: {
       id: ctx.user.id,
       displayName: ctx.user.displayName,
-      avatarKey: (members.find((m) => m.id === ctx.user.id)?.avatarKey ?? null),
+      avatarKey: members.find((m) => m.id === ctx.user.id)?.avatarKey ?? null,
     },
     csrfToken: csrfTokenForSession(ctx.session.id),
     members,
@@ -117,7 +184,13 @@ export async function action({ request }: Route.ActionArgs) {
   const form = await request.formData();
   const parsed = ActionSchema.safeParse(formDataToObject(form));
   if (!parsed.success) {
-    return { error: firstMessage(parsed.error) };
+    const intent = form.get("intent");
+    const pantry =
+      intent === "add-pantry-item" || intent === "remove-pantry-item";
+    return {
+      error: firstMessage(parsed.error),
+      ...(pantry ? { scope: "pantry" as const } : {}),
+    };
   }
 
   if (parsed.data.intent === "rotate-invite") {
@@ -141,6 +214,13 @@ export async function action({ request }: Route.ActionArgs) {
     });
 
     return redirect("/flat/settings");
+  }
+
+  if (
+    parsed.data.intent === "add-pantry-item" ||
+    parsed.data.intent === "remove-pantry-item"
+  ) {
+    return updatePantry(ctx.flat.id, parsed.data);
   }
 
   const [me] = await db()
@@ -181,9 +261,12 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function FlatSettings({ loaderData }: Route.ComponentProps) {
-  const actionData = useActionData<{ error?: string } | undefined>();
+  const actionData = useActionData<
+    { error?: string; scope?: "pantry" } | undefined
+  >();
   const navigation = useNavigation();
-  const { members, currentInvite, origin, csrfToken, user } = loaderData;
+  const { members, currentInvite, origin, csrfToken, user, pantryItems } =
+    loaderData;
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -241,7 +324,11 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
                   aria-busy={isAvatarUploading}
                   disabled={isAvatarUploading}
                   onClick={() => avatarInputRef.current?.click()}
-                  style={{ borderRadius: "50%", display: "inline-flex", position: "relative" }}
+                  style={{
+                    borderRadius: "50%",
+                    display: "inline-flex",
+                    position: "relative",
+                  }}
                 >
                   <UserAvatar user={user} />
                   {isAvatarUploading ? (
@@ -256,7 +343,10 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
                         background: "rgba(255, 255, 255, 0.6)",
                       }}
                     >
-                      <Loader size="xs" aria-label="Uploading profile picture" />
+                      <Loader
+                        size="xs"
+                        aria-label="Uploading profile picture"
+                      />
                     </span>
                   ) : null}
                 </UnstyledButton>
@@ -264,7 +354,11 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
               {isEditingName ? (
                 <Form method="post" style={{ flex: 1 }}>
                   <CsrfField token={csrfToken} />
-                  <input type="hidden" name="intent" value="update-display-name" />
+                  <input
+                    type="hidden"
+                    name="intent"
+                    value="update-display-name"
+                  />
                   <TextInput
                     ref={nameInputRef}
                     name="displayName"
@@ -297,7 +391,9 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
                 </UnstyledButton>
               )}
             </Group>
-            {actionData?.error ? <Alert color="red">{actionData.error}</Alert> : null}
+            {actionData?.error && actionData.scope !== "pantry" ? (
+              <Alert color="red">{actionData.error}</Alert>
+            ) : null}
           </Stack>
         </section>
 
@@ -320,6 +416,78 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
               </List.Item>
             ))}
           </List>
+        </section>
+
+        <section>
+          <Title order={4} mb="xs">
+            Pantry
+          </Title>
+          <Stack gap="xs">
+            <Text c="dimmed" size="sm">
+              Staples you always have, as short names (salt, pepper, oil).
+              Matching ingredient lines stay on the recipe and scale with
+              portions. They stay off the shopping list.
+            </Text>
+            {pantryItems.length === 0 ? (
+              <Text c="dimmed" size="sm">
+                Nothing yet.
+              </Text>
+            ) : (
+              <List
+                spacing={4}
+                listStyleType="none"
+                withPadding={false}
+                aria-label="Pantry"
+              >
+                {pantryItems.map((name) => (
+                  <List.Item key={name}>
+                    <Group justify="space-between" wrap="nowrap" gap="xs">
+                      <Text>{name}</Text>
+                      <Form method="post">
+                        <CsrfField token={csrfToken} />
+                        <input
+                          type="hidden"
+                          name="intent"
+                          value="remove-pantry-item"
+                        />
+                        <input type="hidden" name="name" value={name} />
+                        <Button
+                          type="submit"
+                          variant="subtle"
+                          size="sm"
+                          aria-label={`Remove ${name}`}
+                        >
+                          Remove
+                        </Button>
+                      </Form>
+                    </Group>
+                  </List.Item>
+                ))}
+              </List>
+            )}
+            {actionData?.scope === "pantry" && actionData.error ? (
+              <Alert color="red">{actionData.error}</Alert>
+            ) : null}
+            <Form method="post" key={pantryItems.length}>
+              <CsrfField token={csrfToken} />
+              <input type="hidden" name="intent" value="add-pantry-item" />
+              <Group align="flex-end" wrap="nowrap" gap="xs">
+                <TextInput
+                  name="name"
+                  aria-label="Pantry item"
+                  placeholder="Salz"
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  type="submit"
+                  variant="default"
+                  aria-label="Add to pantry"
+                >
+                  Add
+                </Button>
+              </Group>
+            </Form>
+          </Stack>
         </section>
 
         <section>
@@ -360,7 +528,10 @@ export default function FlatSettings({ loaderData }: Route.ComponentProps) {
               No active invite link. Generate one to invite someone.
             </Text>
           )}
-          <Form method="post" style={{ marginTop: "var(--mantine-spacing-sm)" }}>
+          <Form
+            method="post"
+            style={{ marginTop: "var(--mantine-spacing-sm)" }}
+          >
             <CsrfField token={csrfToken} />
             <input type="hidden" name="intent" value="rotate-invite" />
             <Button type="submit" variant="default">

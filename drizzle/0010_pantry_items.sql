@@ -1,0 +1,1 @@
+ALTER TABLE "flats" ADD COLUMN "pantry_items" jsonb DEFAULT '[]'::jsonb NOT NULL;

@@ -71,6 +71,13 @@
       "when": 1784638880854,
       "tag": "0009_ingredient_search_vector_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794763958259,
+      "tag": "0010_pantry_items",
+      "breakpoints": true
     }
   ]
 }

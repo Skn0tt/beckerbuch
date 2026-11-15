@@ -589,6 +589,23 @@ which is why its threshold (`0.95`) sits well above the old OpenAI value
 (`0.82`) — the two numbers live on different scales and are not
 comparable.
 
+**Pantry filter** (read time, handoff only). `flats.pantry_items` is a
+jsonb array of staple names, edited on Flat settings. The handoff
+loader drops a combined-list group when its representative item text
+is within `PANTRY_SIMILARITY_THRESHOLD` (default `0.90`) cosine of any
+pantry name, using the same `embedTexts` cache and
+`gemini-embedding-001` model as dedup. `0.90` is not a tuned gap.
+`ml/pantry-eval/` scores labeled pairs from the production embedding
+cache: same-staple wording and different foods overlap, and no cutoff
+from 0.80 to 0.99 separates them ("pfeffer"/"pepper" 0.899 should drop;
+"zitrone"/"limette" 0.907 must stay). An empty
+list matches nothing and does not call the embedder. If the embedding
+call fails, every line stays — same fail-open idea as dedup. The
+filter runs on the groups the page is about to render (fresh snapshot
+or stale singleton fallback), so it does not change the dedup hash and
+editing the list does not force Regenerate. Planned ingredients
+(`loadCombinedList`) is not filtered.
+
 During `npm test` each Playwright worker runs a bespoke HTTPS-MITM
 forward proxy (`tests/playwright-mocks/`); specs that exercise dedup opt in to the
 `mocks` fixture and register a Gemini route via

@@ -18,6 +18,10 @@
  *     below, even when the units cannot be added. Ordered A–Z by that
  *     name (handoff pins merges to the top for Split/override). See
  *     {@link loadCombinedList}.
+ *
+ * The handoff page drops pantry staples after {@link computeCombinedList}
+ * (see lib/pantry.ts). This view does not: it is a cooking aid, and a
+ * line you will not buy can still be something you are about to use.
  */
 import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "../db/client";
