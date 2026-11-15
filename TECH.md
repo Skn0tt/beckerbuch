@@ -594,13 +594,11 @@ jsonb array of staple names, edited on Flat settings. The handoff
 loader drops a combined-list group when its representative item text
 is within `PANTRY_SIMILARITY_THRESHOLD` (default `0.90`) cosine of any
 pantry name, using the same `embedTexts` cache and
-`gemini-embedding-001` model as dedup. That cutoff is not `0.95`: the
-dedup value is the zero-false-merge point for near-duplicates, and a
-short staple against a more specific line ("Öl" / "Olivenöl") sits
-looser than that. `0.90` is the gap between that identity cutoff and
-ingredient search's `0.85` synonym floor. `ml/embedding-eval/` (the
-gold set `0.95` was tuned on) is not checked into this repo; re-tune
-the constant against it when those vectors are available. An empty
+`gemini-embedding-001` model as dedup. `0.90` is not a tuned gap.
+`ml/pantry-eval/` scores labeled pairs from the production embedding
+cache: same-staple wording and different foods overlap, and no cutoff
+from 0.80 to 0.99 separates them ("pfeffer"/"pepper" 0.899 should drop;
+"zitrone"/"limette" 0.907 must stay). An empty
 list matches nothing and does not call the embedder. If the embedding
 call fails, every line stays — same fail-open idea as dedup. The
 filter runs on the groups the page is about to render (fresh snapshot

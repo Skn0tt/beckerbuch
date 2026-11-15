@@ -11,18 +11,12 @@
  * cosine similarity. We reuse {@link embedTexts} (and therefore the
  * `ingredient_embeddings` cache and `gemini-embedding-001`).
  *
- * The cutoff is not dedup's 0.95. That value is the lowest one with
- * zero hard-negative violations on the Gemini gold set (Paprika stays
- * apart from Paprikapulver, Zitrone from Limette) and it is too tight
- * for a short staple against a more specific line ("Öl" vs "Olivenöl").
- * Ingredient search already uses 0.85 for neighbours that sit below the
- * merge cutoff. 0.90 is this job's own point in that gap: below the
- * identity cutoff, above the search floor.
- *
- * `ml/embedding-eval/` — the gold set 0.95 was tuned on — is not in
- * this repository, and this default should be re-checked against it
- * when those vectors are available. Override with
- * PANTRY_SIMILARITY_THRESHOLD.
+ * 0.90 is not a measured separator. On the production
+ * `gemini-embedding-001` cache, same-staple lines and different foods
+ * overlap: "pfeffer"/"pepper" is 0.899 (should drop) while
+ * "zitrone"/"limette" is 0.907 and "paprika"/"paprikapulver, edelsüß"
+ * is 0.905 (must stay). No cutoff from 0.80 to 0.99 is clean. See
+ * `ml/pantry-eval/`. Override with PANTRY_SIMILARITY_THRESHOLD.
  */
 import type { DedupGroup } from "../db/schema";
 import {

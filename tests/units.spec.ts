@@ -23,6 +23,11 @@ import {
   pantryNameKey,
   pantrySimilarityThreshold,
 } from "../app/lib/pantry";
+import {
+  cleanPantryThresholds,
+  pantryEval,
+  pantryEvalMistakes,
+} from "../ml/pantry-eval/eval";
 
 test.describe("normalizeUnit", () => {
   const cases: [string | null, string | null][] = [
@@ -729,6 +734,30 @@ test.describe("pantry matching", () => {
   test("names collapse whitespace and ignore case", () => {
     expect(cleanPantryName("  Öl   extra  ")).toBe("Öl extra");
     expect(pantryNameKey(" Salz ")).toBe(pantryNameKey("salz"));
+  });
+
+  test("production cache: no cosine cutoff separates pantry drops from keeps", () => {
+    const atDefault = pantryEvalMistakes(DEFAULT_PANTRY_SIMILARITY_THRESHOLD);
+    expect(atDefault.falseKeeps.length).toBeGreaterThan(0);
+    expect(atDefault.falseDrops.length).toBeGreaterThan(0);
+    expect(cleanPantryThresholds()).toEqual([]);
+
+    const pepper = pantryEval.pairs.find(
+      (pair) => pair.pantry === "pfeffer" && pair.item === "pepper",
+    );
+    const lime = pantryEval.pairs.find(
+      (pair) => pair.pantry === "zitrone" && pair.item === "limette",
+    );
+    const powder = pantryEval.pairs.find(
+      (pair) =>
+        pair.pantry === "paprika" && pair.item === "paprikapulver, edelsüß",
+    );
+    expect(pepper).toMatchObject({ expect: "drop" });
+    expect(lime).toMatchObject({ expect: "keep" });
+    expect(powder).toMatchObject({ expect: "keep" });
+    expect(pepper!.cosine).toBeLessThan(DEFAULT_PANTRY_SIMILARITY_THRESHOLD);
+    expect(lime!.cosine).toBeGreaterThan(DEFAULT_PANTRY_SIMILARITY_THRESHOLD);
+    expect(powder!.cosine).toBeGreaterThan(DEFAULT_PANTRY_SIMILARITY_THRESHOLD);
   });
 
   test("PANTRY_SIMILARITY_THRESHOLD overrides the default", () => {
