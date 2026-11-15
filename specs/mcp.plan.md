@@ -62,6 +62,22 @@ The MCP server exposes OAuth-protected cookbook tools for external clients, incl
   4. Open the home page.
     - expect: An image named `MCP Bytes Photo` is visible and has loaded (natural width greater than 0).
 
+#### 1.4b. add-recipe-stores-a-photo-passed-as-a-host-file
+
+**File:** `tests/mcp.spec.ts`
+
+**Steps:**
+  1. Mock four https PNGs, then log in, approve OAuth, and connect an MCP client.
+  2. List tools.
+    - expect: `kochbuch_add_recipe` and `kochbuch_edit_recipe` advertise `photo` via `openai/fileParams`, `anthropic/fileInputs`, and `xai/fileParams`.
+  3. Call `kochbuch_add_recipe` with a ChatGPT file `{download_url, file_id}`, a Claude `{source.url}`, a Claude `{source.data, media_type}`, a Grok `image_url` string, and a Grok `{image_url: {url}}`.
+    - expect: Each call stores the PNG bytes.
+  4. Call `kochbuch_add_recipe` with only `file_id`.
+    - expect: The tool text says the photo file needs an https URL or image bytes.
+    - expect: `File Id Only` is not on the home page.
+  5. Call `kochbuch_edit_recipe` with a Claude base64 `source` for the ChatGPT recipe.
+    - expect: The tool result is not an error.
+
 #### 1.5. add-recipe-rejects-a-null-photo
 
 **File:** `tests/mcp.spec.ts`

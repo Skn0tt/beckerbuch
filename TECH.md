@@ -676,8 +676,12 @@ Marking a stock entry as cooked is the symmetric one-liner:
 - MCP `kochbuch_add_recipe` requires `photo`, so a client cannot save
   a recipe and quietly skip the picture. `fetch_recipe` returns the
   cover's https URL (a kptncook API key is added only when the server
-  fetches that image). A data URL is also accepted. A failed fetch or
-  invalid image does not save the recipe. Edit takes the same string,
+  fetches that image). A data URL is also accepted. A chat attachment
+  is the same argument as a file object: ChatGPT `{download_url, file_id}`
+  (`openai/fileParams`), Claude `{source}` (`anthropic/fileInputs`), or
+  Grok `{image_url}` (`xai/fileParams`). The server downloads the https
+  URL or decodes the base64. A file id alone is rejected. A failed fetch
+  or invalid image does not save the recipe. Edit takes the same value,
   clears the cover with `removePhoto`, or leaves it alone when `photo`
   is omitted. The web form still allows a recipe with no photo.
 

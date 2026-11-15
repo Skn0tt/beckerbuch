@@ -355,11 +355,51 @@ export type FetchPhotoResult =
   | { ok: false; error: string };
 
 const DATA_URL = /^data:([^;,]+);base64,([\s\S]*)$/i;
+const IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function normalizeImageMime(contentType: string): string {
   const type = contentType.split(";")[0].trim().toLowerCase();
   if (type === "image/jpg") return "image/jpeg";
   return type;
+}
+
+function sniffImageMime(bytes: Uint8Array): string | null {
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  ) {
+    return "image/png";
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
+function imageMime(declared: string, bytes: Uint8Array, hint?: string): string {
+  const sniffed = sniffImageMime(bytes);
+  if (sniffed) return sniffed;
+  const header = normalizeImageMime(declared);
+  if (IMAGE_MIME.has(header)) return header;
+  const hinted = hint ? normalizeImageMime(hint) : "";
+  if (IMAGE_MIME.has(hinted)) return hinted;
+  return header || hinted;
 }
 
 function photoFromBase64(
@@ -380,16 +420,96 @@ function photoFromBase64(
   }
 
   const bytes = new Uint8Array(Buffer.from(compact, "base64"));
-  const v = validatePhotoBytes(bytes.byteLength, contentType);
+  const v = validatePhotoBytes(bytes.byteLength, imageMime(contentType, bytes));
   if (!v.ok) return { ok: false, error: v.error };
   return { ok: true, bytes, contentType: v.contentType };
 }
 
 /**
- * The one photo value MCP add/edit accept: a base64 data URL, or an
- * https URL the server fetches. Anything else is rejected.
+ * A chat attachment. ChatGPT sends `download_url` + `file_id`, Claude
+ * sends an image `source`, and Grok sends `image_url`.
  */
-export async function resolvePhoto(photo: string): Promise<FetchPhotoResult> {
+export type HostPhotoFile = {
+  download_url?: string;
+  file_id?: string;
+  mime_type?: string;
+  file_name?: string;
+  url?: string;
+  mimeType?: string;
+  media_type?: string;
+  data?: string;
+  image_url?: string | { url?: string };
+  source?: {
+    type?: string;
+    url?: string;
+    media_type?: string;
+    data?: string;
+  };
+};
+
+export type PhotoInput = string | HostPhotoFile;
+
+function trimmed(value: string | undefined): string | undefined {
+  const next = value?.trim();
+  return next ? next : undefined;
+}
+
+function hostPhotoUrl(file: HostPhotoFile): string | undefined {
+  const imageUrl =
+    typeof file.image_url === "string" ? file.image_url : file.image_url?.url;
+  return (
+    trimmed(file.download_url) ??
+    trimmed(file.url) ??
+    trimmed(imageUrl) ??
+    trimmed(file.source?.url)
+  );
+}
+
+function hostPhotoBytes(
+  file: HostPhotoFile,
+): { mime: string; data: string } | undefined {
+  const data = trimmed(file.source?.data) ?? trimmed(file.data);
+  if (!data) return undefined;
+  const mime =
+    trimmed(file.source?.media_type) ??
+    trimmed(file.mimeType) ??
+    trimmed(file.mime_type) ??
+    trimmed(file.media_type) ??
+    "";
+  return { mime, data };
+}
+
+function hostPhotoHint(file: HostPhotoFile): string | undefined {
+  return (
+    trimmed(file.mimeType) ??
+    trimmed(file.mime_type) ??
+    trimmed(file.media_type) ??
+    trimmed(file.source?.media_type)
+  );
+}
+
+/**
+ * Photo value MCP add/edit accept: an https URL, a base64 data URL, or
+ * a host file object whose bytes the server downloads or decodes.
+ */
+export async function resolvePhoto(photo: PhotoInput): Promise<FetchPhotoResult> {
+  if (typeof photo !== "string") {
+    const url = hostPhotoUrl(photo);
+    if (url) return resolvePhotoString(url, hostPhotoHint(photo));
+    const inline = hostPhotoBytes(photo);
+    if (inline) return photoFromBase64(inline.mime, inline.data);
+    return {
+      ok: false,
+      error: "photo file needs an https URL or image bytes.",
+    };
+  }
+  return resolvePhotoString(photo);
+}
+
+async function resolvePhotoString(
+  photo: string,
+  mimeHint?: string,
+): Promise<FetchPhotoResult> {
   const value = photo.trim();
   const dataUrl = DATA_URL.exec(value);
   if (dataUrl) {
@@ -407,7 +527,7 @@ export async function resolvePhoto(photo: string): Promise<FetchPhotoResult> {
   if (parsed.protocol !== "https:") {
     return { ok: false, error: "photo must be a data URL or an https URL." };
   }
-  return fetchPhotoFromUrl(value);
+  return fetchPhotoFromUrl(value, mimeHint);
 }
 
 /**
@@ -416,6 +536,7 @@ export async function resolvePhoto(photo: string): Promise<FetchPhotoResult> {
  */
 async function fetchPhotoFromUrl(
   url: string,
+  mimeHint?: string,
 ): Promise<FetchPhotoResult> {
   let parsed: URL;
   try {
@@ -467,7 +588,10 @@ async function fetchPhotoFromUrl(
     };
   }
 
-  const v = validatePhotoBytes(bytes.byteLength, contentType);
+  const v = validatePhotoBytes(
+    bytes.byteLength,
+    imageMime(contentType, bytes, mimeHint),
+  );
   if (!v.ok) return { ok: false, error: v.error };
   return { ok: true, bytes, contentType: v.contentType };
 }
