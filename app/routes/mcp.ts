@@ -10,6 +10,7 @@ import {
   resolvePhoto,
   searchRecipes,
   type FlatRecipe,
+  type PhotoInput,
   type RecipeListItem,
 } from "../lib/recipes";
 import { importRecipe } from "../lib/recipe-import";
@@ -36,13 +37,34 @@ const ingredientSchema = z.object({
   item: z.string().trim().min(1).max(200),
 });
 
-const photoParam = z
+const photoString = z
   .string()
   .trim()
   .min(1)
+  .describe("An https URL, or a data URL (data:image/jpeg;base64,...).");
+
+const chatGptPhotoFile = z
+  .object({
+    download_url: z.string().trim().min(1),
+    file_id: z.string().trim().min(1),
+    mime_type: z.string().optional(),
+    file_name: z.string().optional(),
+  })
+  .strict()
   .describe(
-    "A data URL (data:image/jpeg;base64,...) or an https URL of the image.",
+    "A file ChatGPT attached. ChatGPT fills download_url and file_id.",
   );
+
+const photoParam = z
+  .union([photoString, chatGptPhotoFile])
+  .describe(
+    "Required. Pass fetch_recipe's https URL through unchanged, a data URL, or a ChatGPT file {download_url, file_id}.",
+  );
+
+/** ChatGPT fills `photo` from an attached file instead of the model copying bytes. */
+const photoFileMeta = {
+  "openai/fileParams": ["photo"],
+};
 
 const addRecipeInput = {
   name: z.string().trim().min(1).max(200).describe("Recipe name"),
@@ -65,9 +87,7 @@ const addRecipeInput = {
       "Free-text cooking steps. Give the amounts of kitchen staples (salt, pepper, sugar, oil) inline here rather than listing them as ingredients.",
     ),
   sourceUrl: z.string().url().optional().describe("Where the recipe came from"),
-  photo: photoParam.describe(
-    "Required. Pass fetch_recipe's https URL through unchanged, or a data URL.",
-  ),
+  photo: photoParam,
 };
 
 const recipeIdSchema = UUID_SCHEMA.describe("Recipe id");
@@ -128,7 +148,7 @@ const editRecipeInput = {
   photo: photoParam
     .optional()
     .describe(
-      "Replace the cover with a data URL or an https URL. Omit to leave the current cover.",
+      "Replace the cover. Omit to leave the current cover. Same value as kochbuch_add_recipe's photo.",
     ),
   removePhoto: z
     .boolean()
@@ -399,7 +419,7 @@ async function applyPlanUpdate(
  * leaves the current cover alone.
  */
 async function resolveEditPhoto(args: {
-  photo?: string;
+  photo?: PhotoInput;
   removePhoto?: boolean;
 }): Promise<
   | {
@@ -409,7 +429,7 @@ async function resolveEditPhoto(args: {
     }
   | { ok: false; error: string }
 > {
-  const hasPhoto = typeof args.photo === "string" && args.photo.length > 0;
+  const hasPhoto = args.photo !== undefined;
   const remove = args.removePhoto === true;
   if (hasPhoto && remove) {
     return {
@@ -445,8 +465,9 @@ async function handle(request: Request): Promise<Response> {
     {
       title: "Add a recipe",
       description:
-        "Add a new recipe to the authenticated user's flat. photo is required: pass fetch_recipe's https URL through unchanged, or a data URL. A call without a photo is rejected and nothing is saved. Returns the recipe id and a URL to view it.",
+        "Add a new recipe to the authenticated user's flat. photo is required: pass fetch_recipe's https URL through unchanged, a data URL, or a ChatGPT file {download_url, file_id}. A call without a photo is rejected and nothing is saved. Returns the recipe id and a URL to view it.",
       inputSchema: addRecipeInput,
+      _meta: photoFileMeta,
     },
     async (args) => {
       let sourceHost: string | null = null;
@@ -521,8 +542,9 @@ async function handle(request: Request): Promise<Response> {
     {
       title: "Edit a recipe",
       description:
-        "Patch fields on an existing recipe in the authenticated user's flat. Returns the recipe id and a URL to view it. Replace the cover with photo (a data URL or an https URL). Pass removePhoto to clear it. Use only one of those.",
+        "Patch fields on an existing recipe in the authenticated user's flat. Returns the recipe id and a URL to view it. Replace the cover with photo (an https URL, a data URL, or a ChatGPT file {download_url, file_id}). Pass removePhoto to clear it. Use only one of those.",
       inputSchema: editRecipeInput,
+      _meta: photoFileMeta,
     },
     async (args) => {
       if (!UUID_SCHEMA.safeParse(args.id).success)

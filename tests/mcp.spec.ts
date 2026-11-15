@@ -352,6 +352,91 @@ test.describe("MCP server", () => {
     ).toBeVisible();
   });
 
+  test("add_recipe stores a photo passed as a ChatGPT file", async ({
+    page,
+    flat,
+    mocks,
+  }) => {
+    await mockHttpsPhoto(
+      mocks,
+      "https://photos.example/openai.png",
+      TINY_PNG,
+      "image/png",
+    );
+    await mockHttpsPhoto(
+      mocks,
+      "https://photos.example/openai-edit.png",
+      RED_PNG,
+      "image/png",
+    );
+    await login(page, flat.user);
+    const result = await runOAuthFlow(page);
+    if (!result.ok) throw new Error("flow failed");
+    const client = await mcpClient(result.tokens.accessToken);
+
+    const listed = await client.listTools();
+    for (const name of ["kochbuch_add_recipe", "kochbuch_edit_recipe"]) {
+      const tool = listed.tools.find((entry) => entry.name === name);
+      expect(tool?._meta).toEqual({ "openai/fileParams": ["photo"] });
+    }
+
+    const callResult = await client.callTool({
+      name: "kochbuch_add_recipe",
+      arguments: {
+        name: "OpenAI File",
+        baseQuantity: 1,
+        ingredients: [{ item: "water" }],
+        photo: {
+          download_url: "https://photos.example/openai.png",
+          file_id: "file_openai",
+          mime_type: "image/png",
+          file_name: "cover.png",
+        },
+      },
+    });
+    expect(callResult.isError, textFromToolResult(callResult)).toBeFalsy();
+    const id = recipeRefFromToolResult(callResult).id;
+
+    const missing = await client.callTool({
+      name: "kochbuch_add_recipe",
+      arguments: {
+        name: "File Id Only",
+        baseQuantity: 1,
+        ingredients: [{ item: "water" }],
+        photo: { file_id: "file_only" },
+      },
+    });
+    expect(missing.isError).toBe(true);
+
+    const edited = await client.callTool({
+      name: "kochbuch_edit_recipe",
+      arguments: {
+        id,
+        photo: {
+          download_url: "https://photos.example/openai-edit.png",
+          file_id: "file_edit",
+        },
+      },
+    });
+    expect(edited.isError, textFromToolResult(edited)).toBeFalsy();
+
+    const got = await client.callTool({
+      name: "kochbuch_get_recipe",
+      arguments: { id },
+    });
+    const photoUrl = jsonFromToolResult<{ photoUrl: string | null }>(got)
+      .photoUrl;
+    expect(photoUrl).toContain(`/r/${id}/photo`);
+    const img = await page.request.get(photoUrl!);
+    expect(img.headers()["content-type"]).toContain("image/png");
+    expect(Buffer.from(await img.body()).equals(RED_PNG)).toBe(true);
+    await client.close();
+
+    await page.goto("/");
+    await expect(page.getByText("File Id Only")).toHaveCount(0);
+    await expect(page.getByText("OpenAI File")).toBeVisible();
+  });
+
   test("add_recipe rejects a non-image https photo", async ({
     page,
     flat,
