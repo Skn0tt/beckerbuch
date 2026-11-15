@@ -2,11 +2,13 @@
 
 ## Application Overview
 
-The Ingredients lane summarizes ingredient needs from **every recipe currently in stock** (finalised, not yet cooked) — the same lane as the kitchen stock list — giving flat members a shopping-oriented view that stays empty until draft recipes are finalised. It reuses the shared combined-list rendering, so duplicate ingredients across recipes are merged into a single summed row. Crucially, it shows all in-stock recipes regardless of which finalise batch they belong to: finalising a new draft while older recipes are still uncooked never hides the older ones.
+The Ingredients lane summarizes ingredient needs from **every recipe currently in stock** (finalised, not yet cooked) — the same lane as the kitchen stock list — so flat members can see what is still spoken for. It stays empty until draft recipes are finalised. It reuses the shared combined-list rendering, so duplicate ingredients across recipes collapse to one row. Crucially, it shows all in-stock recipes regardless of which finalise batch they belong to: finalising a new draft while older recipes are still uncooked never hides the older ones.
 
 This is a deliberately different data source from the handoff / shopping page (`/h/$flatId`), which scopes to the **latest finalise batch only** — the trip you're about to shop for — and renders the persisted dedup snapshot on the `flats` row so manual split / unsplit edits survive. The Ingredients lane shares none of that snapshot machinery.
 
-The kitchen surfaces (mobile `/kitchen?lane=ingredients` tab and the desktop sidebar "Planned ingredients" modal) render the combined list **read-only** — a plain shopping summary with no split / unsplit / regenerate affordances (those live only on the handoff page). Both surfaces load the combined list on demand from a dedicated resource route (`/kitchen/combined`, fetched via `useFetcher().load()` when the tab is opened / the modal opens), showing a spinner while it resolves. That route is never part of a page's loader chain and is never reached from a `<Link>`, so it is never prefetched on hover.
+Compatible amounts still collapse to one summed headline (`600 g tomato`) with each recipe's original line underneath. Unit families that cannot be added do **not** follow the shopping list: mass and cups of the same ingredient stay on one row (`200 g + 2 cups flour`) instead of silently splitting into two unrelated lines. The per-recipe amounts stay on the source lines. The handoff page still splits those into separate buyable rows.
+
+The kitchen surfaces (mobile `/kitchen?lane=ingredients` tab and the desktop sidebar "Planned ingredients" modal) render the combined list **read-only** — a plain summary of what is still spoken for, with no split / unsplit / regenerate affordances (those live only on the handoff page). Both surfaces load the combined list on demand from a dedicated resource route (`/kitchen/combined`, fetched via `useFetcher().load()` when the tab is opened / the modal opens), showing a spinner while it resolves. That route is never part of a page's loader chain and is never reached from a `<Link>`, so it is never prefetched on hover.
 
 Because the view is read-only it holds **no snapshot and performs no writes**. Every read clusters the current in-stock ingredients by embedding similarity on the fly (embeddings are cached in `ingredient_embeddings`, so this is a couple of reads plus in-memory clustering — no LLM call and no snapshot to go stale). This means re-merging happens automatically: cook a recipe and the next read simply clusters over the smaller in-stock set. Clustering is best-effort — on any embedding failure the surface falls back to an unmerged all-singletons list. Finalise and the handoff page's Regenerate still write the latest-batch snapshot eagerly as before; that snapshot no longer feeds the Ingredients lane at all.
 
@@ -94,7 +96,20 @@ everything currently in stock.
     - expect: `400 g spaghetti` and `Pasta al limone` (batch A) are listed.
     - expect: `200 g rice` and `Risotto` (batch B) are listed.
 
-#### 1.6. ingredients-tab-lists-rows-alphabetically-by-item-name
+#### 1.6. ingredients-tab-keeps-unit-incompatible-lines-on-one-row
+
+**File:** `tests/planned-ingredients.spec.ts`
+
+**Steps:**
+  1. Log in and finalise `Pancakes` (`2 cups flour`) and `Bread` (`200 g flour`).
+  2. Open `/kitchen?lane=ingredients`.
+    - expect: Exactly one combined row, marked merged, headlined
+      `200 g + 2 cups flour`.
+    - expect: Both source lines (`200 g flour` — Bread, `2 cups flour` —
+      Pancakes) are visible.
+    - expect: The two amounts are not split into separate rows.
+
+#### 1.7. ingredients-tab-lists-rows-alphabetically-by-item-name
 
 **File:** `tests/planned-ingredients.spec.ts`
 
@@ -106,7 +121,7 @@ everything currently in stock.
       `apple`, then merged `tomato`, then `zucchini`.
     - expect: The merged tomato row is **not** forced to the top.
 
-#### 1.7. ingredients-tab-filter-icon-narrows-the-list
+#### 1.8. ingredients-tab-filter-icon-narrows-the-list
 
 **File:** `tests/planned-ingredients.spec.ts`
 
@@ -119,7 +134,7 @@ everything currently in stock.
     - expect: Filtering to a non-match shows `No matches`.
     - expect: Clearing the filter restores both rows.
 
-#### 1.8. ingredients-tab-filter-fts-prefix-match
+#### 1.9. ingredients-tab-filter-fts-prefix-match
 
 **File:** `tests/planned-ingredients.spec.ts`
 
@@ -129,7 +144,7 @@ everything currently in stock.
   2. Filter to `spag`.
     - expect: Only the spaghetti row remains (prefix `:*` tsquery).
 
-#### 1.9. ingredients-tab-filter-embedding-synonym-fallback
+#### 1.10. ingredients-tab-filter-embedding-synonym-fallback
 
 **File:** `tests/planned-ingredients.spec.ts`
 
@@ -139,7 +154,7 @@ everything currently in stock.
   2. Filter to `carotten` (no text match with `möhren`).
     - expect: Only the möhren row remains (meaning / embedding stage).
 
-#### 1.10. ingredients-tab-filter-trigram-typo-fallback
+#### 1.11. ingredients-tab-filter-trigram-typo-fallback
 
 **File:** `tests/planned-ingredients.spec.ts`
 

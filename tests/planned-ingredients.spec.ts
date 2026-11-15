@@ -187,6 +187,36 @@ test("ingredients tab: shows recipes from every in-stock finalise batch, not jus
   await expect(page.getByText("Risotto")).toBeVisible();
 });
 
+test("ingredients tab: keeps unit-incompatible lines on one ingredient row", async ({
+  page,
+  flat,
+}) => {
+  await login(page, flat.user);
+
+  // Same ingredient, units that cannot be added. The shopping list splits
+  // these into two buyable rows; planned ingredients keeps one row so you
+  // can see flour is spoken for by both recipes.
+  await createRecipeWithIngredient(page, "Pancakes", "2", "cups", "flour");
+  await createRecipeWithIngredient(page, "Bread", "200", "g", "flour");
+
+  await page.goto("/kitchen");
+  await page.getByRole("button", { name: "Finalise draft" }).click();
+  await page.getByRole("button", { name: "Confirm finalise draft" }).click();
+  await expect(page).toHaveURL(`/h/${flat.id}`);
+
+  await page.goto("/kitchen?lane=ingredients");
+
+  const rows = page.getByTestId("combined-row");
+  await expect(rows).toHaveCount(1);
+  const flour = rows.filter({
+    has: page.getByText("200 g + 2 cups flour", { exact: true }),
+  });
+  await expect(flour).toHaveCount(1);
+  await expect(flour).toHaveAttribute("data-merged", "true");
+  await expect(flour.getByText(/200 g flour\s*—\s*Bread/)).toBeVisible();
+  await expect(flour.getByText(/2 cups flour\s*—\s*Pancakes/)).toBeVisible();
+});
+
 test("ingredients tab: lists rows alphabetically by item name (merges not pinned to top)", async ({
   page,
   flat,

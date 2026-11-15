@@ -349,6 +349,180 @@ test.describe("postProcess family split", () => {
     expect(groups[0].displayText).toBe("5 tsp oil");
   });
 
+  test("planned: g flour + cups flour stay one row", () => {
+    const input: DedupInput = {
+      items: [
+        {
+          id: "a",
+          amount: "2",
+          unit: "cups",
+          item: "flour",
+          recipeName: "Pancakes",
+        },
+        {
+          id: "b",
+          amount: "200",
+          unit: "g",
+          item: "flour",
+          recipeName: "Bread",
+        },
+      ],
+    };
+    const groups = postProcess(
+      input,
+      { merges: [{ ids: ["a", "b"] }] },
+      {
+        incompatibleUnits: "keep",
+      },
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0].displayText).toBe("200 g + 2 cups flour");
+    expect(groups[0].amount).toBeNull();
+    expect(groups[0].unit).toBeNull();
+    expect(groups[0].item).toBe("flour");
+    expect(groups[0].sources.map((s) => s.displayText)).toEqual([
+      "2 cups flour",
+      "200 g flour",
+    ]);
+    expect(groups[0].sources.map((s) => s.recipeName)).toEqual([
+      "Pancakes",
+      "Bread",
+    ]);
+  });
+
+  test("planned: compatible masses still sum", () => {
+    const input: DedupInput = {
+      items: [
+        {
+          id: "a",
+          amount: "500",
+          unit: "g",
+          item: "sugar",
+          recipeName: "Cake",
+        },
+        {
+          id: "b",
+          amount: "1",
+          unit: "kg",
+          item: "sugar",
+          recipeName: "Cookies",
+        },
+      ],
+    };
+    const groups = postProcess(
+      input,
+      { merges: [{ ids: ["a", "b"] }] },
+      {
+        incompatibleUnits: "keep",
+      },
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0].displayText).toBe("1.5 kg sugar");
+    expect(groups[0].amount).toBe("1.5");
+    expect(groups[0].unit).toBe("kg");
+  });
+
+  test("planned: summed family plus an incompatible line", () => {
+    const input: DedupInput = {
+      items: [
+        {
+          id: "a",
+          amount: "200",
+          unit: "g",
+          item: "flour",
+          recipeName: "Bread",
+        },
+        {
+          id: "b",
+          amount: "300",
+          unit: "g",
+          item: "flour",
+          recipeName: "Pizza",
+        },
+        {
+          id: "c",
+          amount: "2",
+          unit: "cups",
+          item: "flour",
+          recipeName: "Pancakes",
+        },
+      ],
+    };
+    const groups = postProcess(
+      input,
+      { merges: [{ ids: ["c", "a", "b"] }] },
+      { incompatibleUnits: "keep" },
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0].displayText).toBe("500 g + 2 cups flour");
+    expect(groups[0].sources.map((s) => s.recipeName)).toEqual([
+      "Pancakes",
+      "Bread",
+      "Pizza",
+    ]);
+  });
+
+  test("planned: pinch salt + tsp salt stay one row", () => {
+    const input: DedupInput = {
+      items: [
+        {
+          id: "a",
+          amount: "1",
+          unit: "tsp",
+          item: "salt",
+          recipeName: "A",
+        },
+        {
+          id: "b",
+          amount: "1",
+          unit: "pinch",
+          item: "salt",
+          recipeName: "B",
+        },
+      ],
+    };
+    const groups = postProcess(
+      input,
+      { merges: [{ ids: ["a", "b"] }] },
+      {
+        incompatibleUnits: "keep",
+      },
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0].displayText).toBe("1 tsp + 1 pinch salt");
+    expect(groups[0].amount).toBeNull();
+  });
+
+  test("planned: count plus mass stays one row", () => {
+    const input: DedupInput = {
+      items: [
+        {
+          id: "a",
+          amount: "200",
+          unit: "g",
+          item: "Peperoni",
+          recipeName: "A",
+        },
+        {
+          id: "b",
+          amount: "3",
+          unit: null,
+          item: "Peperoni",
+          recipeName: "B",
+        },
+      ],
+    };
+    const groups = postProcess(
+      input,
+      { merges: [{ ids: ["a", "b"] }] },
+      {
+        incompatibleUnits: "keep",
+      },
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0].displayText).toBe("200 g + 3 Peperoni");
+  });
+
   test("3 Peperoni + 1 Stück Peperoni → 4 Peperoni", () => {
     const input: DedupInput = {
       items: [
