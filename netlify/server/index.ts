@@ -1,12 +1,9 @@
-import { createRequestHandler, type ServerBuild } from "react-router";
+import { createRequestHandler } from "react-router";
 import type { Config } from "@netlify/server";
-import * as serverBuildNs from "#server-build";
+import * as serverBuild from "../../build/server/server-build.js";
 
-// Same `build/server/server-build.js` the tests boot with `react-router-serve`.
-const handleRequest = createRequestHandler(
-  serverBuildNs as unknown as ServerBuild,
-  "production",
-);
+// Same file the tests boot with `react-router-serve`.
+const handleRequest = createRequestHandler(serverBuild, "production");
 
 const startedAt = new Date().toISOString();
 

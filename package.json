@@ -2,12 +2,6 @@
   "name": "kochbuch",
   "private": true,
   "type": "module",
-  "imports": {
-    "#server-build": {
-      "types": "./netlify/server/server-build-stub.ts",
-      "default": "./build/server/server-build.js"
-    }
-  },
   "scripts": {
     "test": "playwright test",
     "db:generate": "drizzle-kit generate",
