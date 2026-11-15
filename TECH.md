@@ -15,7 +15,7 @@
 | Concern              | Choice                                                                 |
 | -------------------- | ---------------------------------------------------------------------- |
 | Framework            | **React Router v7** (Remix successor), TypeScript, SSR                 |
-| Hosting              | **Netlify** (`@netlify/vite-plugin-react-router`)                      |
+| Hosting              | **Netlify Server** (`netlify/server`, Node 24). Static assets stay on the CDN. |
 | Styling / components | **Mantine** (component library + hooks: `@mantine/core`, `@mantine/form`, `@mantine/notifications`, `@mantine/dropzone`); drag-and-drop via `@hello-pangea/dnd` |
 | Database             | **Neon Postgres** (Netlify DB) in production; **Testcontainers** (`pgvector/pgvector:pg16`) in tests. Pinned to Postgres 16. |
 | ORM / migrations     | **Drizzle ORM** + `drizzle-kit`                                        |
@@ -38,7 +38,7 @@
             ┌──────────────────────────────────────────────────────────┐
             │                       Netlify                            │
             │                                                          │
-   browser ─┼──▶  CDN / edge  ──▶  Netlify Function (React Router SSR) │
+   browser ─┼──▶  CDN / edge  ──▶  Netlify Server (React Router SSR)   │
             │                                │                         │
             │                                │ pg over TLS             │
             │                                ▼                         │
@@ -53,12 +53,30 @@
 ```
 
 - **All app code runs in one place:** the React Router server bundle
-  hosted as a Netlify Function (Node 22 runtime). No separate API
-  service, no Edge Functions, no client-only routes that bypass the
-  server. Edge Functions were considered and rejected: they'd run far
-  from the DB region (cross-region latency on every query), can't use
-  the standard `pg` driver, and can't run argon2id natively. Functions
-  pinned to the DB region win on the metric that actually matters.
+  (`build/server/server-build.js`) hosted as a **Netlify Server**
+  (long-lived Node 24 process; entry at `netlify/server/index.ts`).
+  Static files in `build/client` are served by the CDN before they
+  reach the process. No separate API service, no Edge Functions, no
+  client-only routes that bypass the server. Edge Functions were
+  considered and rejected: they'd run far from the DB region
+  (cross-region latency on every query), can't use the standard `pg`
+  driver, and can't run argon2id natively. The server is pinned to
+  `fra` for the same reason — confirm that matches the Neon region
+  (`cmh` is the other early-access option).
+- **Why not the React Router function adapter:** Netlify's own docs
+  say full-stack adapters publish a function on `/*`, and functions
+  run before the server, so the server would receive nothing. The
+  adapter (`@netlify/vite-plugin-react-router`) is not installed.
+  Tests still boot the server build with `react-router-serve`;
+  production wraps that same file in a Fetch handler.
+- **Process lifetime:** an instance stays up while it has requests,
+  then sleeps after a few minutes idle (early access always scales
+  to zero). The `pg` pool is one module-level binding in `app/db/client.ts`,
+  inlined into the server build (the Netlify entry does not import it),
+  and warmed with `SELECT 1` in `onStart`. Idle clients
+  are closed at 20s because the platform drops outbound connections
+  that exchange no bytes for 60s. Status and headers must be sent
+  within 20s, which is why embedding calls abort at 18s.
 - **Loaders** (data fetching, GET) and **actions** (mutations, POST)
   live next to their routes (`app/routes/*.tsx`). Both run server-side
   and have direct access to Drizzle + the session.
@@ -233,8 +251,9 @@ Hand-rolled, deliberately small. Three tables (`users`, `sessions`,
 
 - **Algorithm:** argon2id, via the `argon2` npm package.
 - **Parameters:** `memoryCost: 19 MiB, timeCost: 2, parallelism: 1`
-  (OWASP 2024 baseline for argon2id). Tuneable via env in case Netlify
-  Functions' memory budget gets tight.
+  (OWASP 2024 baseline for argon2id). Tuneable via env in case the
+  server instance's memory budget gets tight. A `small` instance is
+  1 GB, which is the only size on Free and Personal plans.
 - **Comparison** uses the library's verify (constant-time).
 
 ### 4.2 Sessions
@@ -689,7 +708,7 @@ The test process owns the database lifecycle end-to-end:
   work without `netlify dev`. The fixture parses the
   `[react-router-serve] http://…` ready line for that worker's
   `baseURL`. Production deploy still goes through `netlify.toml` +
-  `@netlify/vite-plugin-react-router`.
+  `netlify/server`, which imports this same server build.
 - Locally, `TESTCONTAINERS_REUSE_ENABLE=true` is honoured for fast
   iteration; CI always cold-starts.
 
@@ -880,9 +899,12 @@ CLI directly — see §11.1.
 
 - Netlify site connected to the GitHub repo. Production branch:
   `main`. Preview deploys per PR.
-- **Build:** `npm run build` (React Router → `build/` server bundle +
-  `build/client/` assets). The `@netlify/vite-plugin-react-router`
-  Netlify plugin wraps the server bundle as a Function automatically.
+- **Build:** `npm run build` (React Router → `build/server/server-build.js`
+  + `build/client/` assets). `netlify/server/index.ts` is the Netlify
+  Server entry and handles every path the CDN doesn't serve as a
+  static file. The build image is Node 24 (`NODE_VERSION` in
+  `netlify.toml`); Netlify Server rejects an earlier major. CI and
+  the Playwright suite stay on Node 22.
 - **Migrations:** the Netlify build command applies pending Drizzle
   migrations against `$DATABASE_URL` before building:
   `npx drizzle-kit migrate && npm run build`. Roll-forward only —
